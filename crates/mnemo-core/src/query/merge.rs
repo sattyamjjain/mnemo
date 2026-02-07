@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::hash::compute_content_hash;
 use crate::model::checkpoint::Checkpoint;
-use crate::model::event::{AgentEvent, EventType};
+use crate::model::event::EventType;
 use crate::query::MnemoEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,11 +24,35 @@ pub struct MergeRequest {
     pub cherry_pick_ids: Option<Vec<Uuid>>,
 }
 
+impl MergeRequest {
+    pub fn new(thread_id: String, source_branch: String) -> Self {
+        Self {
+            thread_id,
+            agent_id: None,
+            source_branch,
+            target_branch: None,
+            strategy: None,
+            cherry_pick_ids: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MergeResponse {
     pub checkpoint_id: Uuid,
     pub target_branch: String,
     pub merged_memory_count: usize,
+}
+
+impl MergeResponse {
+    pub fn new(checkpoint_id: Uuid, target_branch: String, merged_memory_count: usize) -> Self {
+        Self {
+            checkpoint_id,
+            target_branch,
+            merged_memory_count,
+        }
+    }
 }
 
 pub async fn execute(engine: &MnemoEngine, request: MergeRequest) -> Result<MergeResponse> {
@@ -129,33 +152,22 @@ pub async fn execute(engine: &MnemoEngine, request: MergeRequest) -> Result<Merg
     engine.storage.insert_checkpoint(&new_cp).await?;
 
     // Emit Merge event
-    let event = AgentEvent {
-        id: Uuid::now_v7(),
-        agent_id,
-        thread_id: Some(request.thread_id),
-        run_id: None,
-        parent_event_id: None,
-        event_type: EventType::Merge,
-        payload: serde_json::json!({
+    let event = super::event_builder::build_event(
+        engine,
+        &agent_id,
+        EventType::Merge,
+        serde_json::json!({
             "checkpoint_id": id.to_string(),
             "source_branch": request.source_branch,
             "target_branch": target_branch,
             "strategy": format!("{strategy:?}"),
         }),
-        trace_id: None,
-        span_id: None,
-        model: None,
-        tokens_input: None,
-        tokens_output: None,
-        latency_ms: None,
-        cost_usd: None,
-        timestamp: now.clone(),
-        logical_clock: 0,
-        content_hash: compute_content_hash(&id.to_string(), &new_cp.agent_id, &now),
-        prev_hash: None,
-        embedding: None,
-    };
-    let _ = engine.storage.insert_event(&event).await;
+        &id.to_string(),
+        Some(request.thread_id),
+    ).await;
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
+    }
 
     Ok(MergeResponse {
         checkpoint_id: id,

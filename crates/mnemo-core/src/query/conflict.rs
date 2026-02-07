@@ -127,21 +127,19 @@ pub async fn detect_conflicts(
             }
 
             // Verify the candidate belongs to the same agent
-            if let Some(candidate) = engine.storage.get_memory(candidate_id).await? {
-                if candidate.agent_id != agent_id || candidate.is_deleted() || candidate.quarantined {
-                    continue;
-                }
-                if candidate.content != record.content {
-                    conflicts.push(ConflictPair {
-                        memory_a: record.id,
-                        memory_b: candidate_id,
-                        similarity,
-                        reason: format!(
-                            "High semantic similarity ({:.3}) between different content",
-                            similarity
-                        ),
-                    });
-                }
+            if let Some(candidate) = engine.storage.get_memory(candidate_id).await?
+                && !(candidate.agent_id != agent_id || candidate.is_deleted() || candidate.quarantined)
+                && candidate.content != record.content
+            {
+                conflicts.push(ConflictPair {
+                    memory_a: record.id,
+                    memory_b: candidate_id,
+                    similarity,
+                    reason: format!(
+                        "High semantic similarity ({:.3}) between different content",
+                        similarity
+                    ),
+                });
             }
         }
     }
@@ -191,6 +189,14 @@ pub async fn resolve_conflict(
             let embedding = engine.embedding.embed(&combined_content).await?;
             let content_hash = crate::hash::compute_content_hash(&combined_content, &mem_a.agent_id, &now);
 
+            let prev_hash_raw = engine
+                .storage
+                .get_latest_memory_hash(&mem_a.agent_id, None)
+                .await
+                .ok()
+                .flatten();
+            let prev_hash = Some(crate::hash::compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
+
             let new_record = MemoryRecord {
                 id: Uuid::now_v7(),
                 agent_id: mem_a.agent_id.clone(),
@@ -204,7 +210,7 @@ pub async fn resolve_conflict(
                 }),
                 embedding: Some(embedding.clone()),
                 content_hash,
-                prev_hash: None,
+                prev_hash,
                 source_type: SourceType::Consolidation,
                 source_id: None,
                 consolidation_state: ConsolidationState::Active,

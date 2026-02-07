@@ -192,7 +192,7 @@ impl ColdStorage for InMemoryColdStorage {
         let ids: Vec<Uuid> = guard
             .iter()
             .filter(|(_, entry)| {
-                agent_id.map_or(true, |aid| entry.agent_id == aid)
+                agent_id.is_none_or(|aid| entry.agent_id == aid)
             })
             .map(|(id, _)| *id)
             .take(limit)

@@ -84,11 +84,22 @@ fn hours_since_creation(created_at: &str) -> f32 {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecayPassResult {
     pub archived: usize,
     pub forgotten: usize,
     pub total_processed: usize,
+}
+
+impl DecayPassResult {
+    pub fn new(archived: usize, forgotten: usize, total_processed: usize) -> Self {
+        Self {
+            archived,
+            forgotten,
+            total_processed,
+        }
+    }
 }
 
 /// Run a decay pass over all active memories for the given agent.
@@ -105,7 +116,7 @@ pub async fn run_decay_pass(
         include_deleted: false,
         ..Default::default()
     };
-    let memories = engine.storage.list_memories(&filter, 10000, 0).await?;
+    let memories = engine.storage.list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0).await?;
 
     let mut archived = 0;
     let mut forgotten = 0;
@@ -140,11 +151,26 @@ pub async fn run_decay_pass(
     })
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsolidationResult {
     pub clusters_found: usize,
     pub new_memories_created: usize,
     pub originals_consolidated: usize,
+}
+
+impl ConsolidationResult {
+    pub fn new(
+        clusters_found: usize,
+        new_memories_created: usize,
+        originals_consolidated: usize,
+    ) -> Self {
+        Self {
+            clusters_found,
+            new_memories_created,
+            originals_consolidated,
+        }
+    }
 }
 
 /// Consolidate episodic memories into semantic summaries.
@@ -160,7 +186,7 @@ pub async fn run_consolidation(
         include_deleted: false,
         ..Default::default()
     };
-    let memories = engine.storage.list_memories(&filter, 10000, 0).await?;
+    let memories = engine.storage.list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0).await?;
 
     // Only consider memories that are Raw or Active
     let active: Vec<MemoryRecord> = memories
@@ -218,6 +244,14 @@ pub async fn run_consolidation(
 
         let embedding = engine.embedding.embed(&content).await?;
 
+        let prev_hash_raw = engine
+            .storage
+            .get_latest_memory_hash(agent_id, None)
+            .await
+            .ok()
+            .flatten();
+        let prev_hash = Some(crate::hash::compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
+
         let new_record = MemoryRecord {
             id: new_id,
             agent_id: agent_id.to_string(),
@@ -229,7 +263,7 @@ pub async fn run_consolidation(
             metadata: serde_json::json!({"consolidated_from": cluster.iter().map(|m| m.id.to_string()).collect::<Vec<_>>()}),
             embedding: Some(embedding.clone()),
             content_hash: content_hash.clone(),
-            prev_hash: None,
+            prev_hash,
             source_type: SourceType::Consolidation,
             source_id: None,
             consolidation_state: ConsolidationState::Active,
@@ -269,12 +303,16 @@ pub async fn run_consolidation(
                 metadata: serde_json::Value::Object(serde_json::Map::new()),
                 created_at: new_record.created_at.clone(),
             };
-            let _ = engine.storage.insert_relation(&relation).await;
+            if let Err(e) = engine.storage.insert_relation(&relation).await {
+                tracing::error!(relation_id = %relation.id, error = %e, "failed to insert consolidation relation");
+            }
 
             let mut updated = (*original).clone();
             updated.consolidation_state = ConsolidationState::Consolidated;
             updated.updated_at = chrono::Utc::now().to_rfc3339();
-            let _ = engine.storage.update_memory(&updated).await;
+            if let Err(e) = engine.storage.update_memory(&updated).await {
+                tracing::error!(memory_id = %updated.id, error = %e, "failed to update consolidation state");
+            }
             originals_consolidated += 1;
         }
     }

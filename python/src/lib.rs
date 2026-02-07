@@ -82,6 +82,7 @@ impl MnemoClient {
     }
 
     #[pyo3(signature = (content, memory_type=None, scope=None, importance=None, tags=None, metadata=None, thread_id=None, ttl_seconds=None, related_to=None))]
+    #[allow(clippy::too_many_arguments)]
     fn remember(
         &self,
         content: String,

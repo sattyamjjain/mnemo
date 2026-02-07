@@ -35,7 +35,7 @@ impl MemoryCache {
 
     /// Get a cached record by ID. Returns None if not cached or expired.
     pub fn get(&self, id: Uuid) -> Option<MemoryRecord> {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = entries.get(&id) {
             if entry.inserted_at.elapsed() < self.ttl {
                 return Some(entry.record.clone());
@@ -48,7 +48,7 @@ impl MemoryCache {
 
     /// Insert or update a record in the cache.
     pub fn put(&self, record: MemoryRecord) {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
 
         // Evict expired entries if we're at capacity
         if entries.len() >= self.max_entries {
@@ -57,14 +57,18 @@ impl MemoryCache {
         }
 
         // If still at capacity, evict oldest
-        if entries.len() >= self.max_entries {
-            if let Some(&oldest_id) = entries
+        if entries.len() >= self.max_entries
+            && let Some(&oldest_id) = entries
                 .iter()
                 .min_by_key(|(_, e)| e.inserted_at)
                 .map(|(id, _)| id)
-            {
-                entries.remove(&oldest_id);
-            }
+        {
+            entries.remove(&oldest_id);
+        }
+
+        // If still at capacity after eviction attempts, skip insert to prevent unbounded growth
+        if entries.len() >= self.max_entries && !entries.contains_key(&record.id) {
+            return;
         }
 
         entries.insert(
@@ -78,22 +82,22 @@ impl MemoryCache {
 
     /// Invalidate (remove) a cached record.
     pub fn invalidate(&self, id: Uuid) {
-        self.entries.lock().unwrap().remove(&id);
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
     }
 
     /// Clear all cached entries.
     pub fn clear(&self) {
-        self.entries.lock().unwrap().clear();
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     /// Number of entries currently in cache.
     pub fn len(&self) -> usize {
-        self.entries.lock().unwrap().len()
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Whether the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.lock().unwrap().is_empty()
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
     }
 }
 

@@ -1,6 +1,7 @@
 pub mod branch;
 pub mod causality;
 pub mod checkpoint;
+pub mod event_builder;
 pub mod conflict;
 pub mod forget;
 pub mod lifecycle;
@@ -24,6 +25,10 @@ use crate::storage::StorageBackend;
 use crate::storage::cold::ColdStorage;
 
 const MAX_AGENT_ID_LEN: usize = 256;
+
+/// Maximum number of records returned by a single batch query.
+/// Prevents unbounded memory growth while supporting reasonable workloads.
+pub const MAX_BATCH_QUERY_LIMIT: usize = 10_000;
 
 /// Validate that an agent_id contains only safe characters and is within length limits.
 pub fn validate_agent_id(agent_id: &str) -> Result<()> {

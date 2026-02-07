@@ -12,10 +12,16 @@ use crate::model::memory::{MemoryRecord, MemoryType, Scope};
 use crate::query::MnemoEngine;
 use crate::storage::MemoryFilter;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TemporalRange {
     pub after: Option<String>,
     pub before: Option<String>,
+}
+
+impl TemporalRange {
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,12 +43,42 @@ pub struct RecallRequest {
     pub as_of: Option<String>,
 }
 
+impl RecallRequest {
+    pub fn new(query: String) -> Self {
+        Self {
+            query,
+            agent_id: None,
+            limit: None,
+            memory_type: None,
+            memory_types: None,
+            scope: None,
+            min_importance: None,
+            tags: None,
+            org_id: None,
+            strategy: None,
+            temporal_range: None,
+            recency_half_life_hours: None,
+            hybrid_weights: None,
+            rrf_k: None,
+            as_of: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecallResponse {
     pub memories: Vec<ScoredMemory>,
     pub total: usize,
 }
 
+impl RecallResponse {
+    pub fn new(memories: Vec<ScoredMemory>, total: usize) -> Self {
+        Self { memories, total }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoredMemory {
     pub id: Uuid,
@@ -80,16 +116,16 @@ impl From<(MemoryRecord, f32)> for ScoredMemory {
 
 /// Get a memory by ID, checking cache first then falling back to storage.
 async fn get_memory_cached(engine: &MnemoEngine, id: Uuid) -> Result<Option<MemoryRecord>> {
-    if let Some(ref cache) = engine.cache {
-        if let Some(record) = cache.get(id) {
-            return Ok(Some(record));
-        }
+    if let Some(ref cache) = engine.cache
+        && let Some(record) = cache.get(id)
+    {
+        return Ok(Some(record));
     }
     let result = engine.storage.get_memory(id).await?;
-    if let Some(ref record) = result {
-        if let Some(ref cache) = engine.cache {
-            cache.put(record.clone());
-        }
+    if let Some(ref record) = result
+        && let Some(ref cache) = engine.cache
+    {
+        cache.put(record.clone());
     }
     Ok(result)
 }
@@ -108,7 +144,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     // Pre-compute accessible memory IDs for permission-safe ANN pre-filtering
     let accessible_ids: HashSet<Uuid> = engine
         .storage
-        .list_accessible_memory_ids(&agent_id, 10000)
+        .list_accessible_memory_ids(&agent_id, super::MAX_BATCH_QUERY_LIMIT)
         .await?
         .into_iter()
         .collect();
@@ -122,10 +158,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             if let Some(ref ft) = engine.full_text {
                 let bm25_results = ft.search(&request.query, limit * 3)?;
                 for (id, score) in bm25_results {
-                    if let Some(record) = get_memory_cached(engine, id).await? {
-                        if passes_filters(&record, &request, &agent_id, engine).await {
-                            scored_memories.push((record, score));
-                        }
+                    if let Some(record) = get_memory_cached(engine, id).await?
+                        && passes_filters(&record, &request, &agent_id, engine).await
+                    {
+                        scored_memories.push((record, score));
                     }
                 }
             }
@@ -134,11 +170,11 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             // Vector-only path with permission pre-filtering
             let search_results = engine.index.filtered_search(&query_embedding, limit * 3, &perm_filter)?;
             for (id, distance) in search_results {
-                if let Some(record) = get_memory_cached(engine, id).await? {
-                    if passes_filters(&record, &request, &agent_id, engine).await {
-                        let score = 1.0 - distance;
-                        scored_memories.push((record, score));
-                    }
+                if let Some(record) = get_memory_cached(engine, id).await?
+                    && passes_filters(&record, &request, &agent_id, engine).await
+                {
+                    let score = 1.0 - distance;
+                    scored_memories.push((record, score));
                 }
             }
         }
@@ -147,10 +183,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             let search_results = engine.index.filtered_search(&query_embedding, limit * 3, &perm_filter)?;
             let mut seeds: Vec<(Uuid, f32)> = Vec::new();
             for (id, distance) in &search_results {
-                if let Some(record) = get_memory_cached(engine, *id).await? {
-                    if passes_filters(&record, &request, &agent_id, engine).await {
-                        seeds.push((*id, 1.0 - distance));
-                    }
+                if let Some(record) = get_memory_cached(engine, *id).await?
+                    && passes_filters(&record, &request, &agent_id, engine).await
+                {
+                    seeds.push((*id, 1.0 - distance));
                 }
             }
 
@@ -174,13 +210,12 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                     let to_rels = engine.storage.get_relations_to(id).await?;
                     for rel in from_rels.iter().chain(to_rels.iter()) {
                         let related_id = if rel.source_id == id { rel.target_id } else { rel.source_id };
-                        if seen.insert(related_id) {
-                            if let Some(record) = get_memory_cached(engine, related_id).await? {
-                                if passes_filters(&record, &request, &agent_id, engine).await {
-                                    graph_ranked.push((related_id, decay));
-                                    next_frontier.push(related_id);
-                                }
-                            }
+                        if seen.insert(related_id)
+                            && let Some(record) = get_memory_cached(engine, related_id).await?
+                            && passes_filters(&record, &request, &agent_id, engine).await
+                        {
+                            graph_ranked.push((related_id, decay));
+                            next_frontier.push(related_id);
                         }
                     }
                 }
@@ -202,10 +237,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             };
 
             for (id, score) in fused {
-                if let Some(record) = get_memory_cached(engine, id).await? {
-                    if passes_filters(&record, &request, &agent_id, engine).await {
-                        scored_memories.push((record, score));
-                    }
+                if let Some(record) = get_memory_cached(engine, id).await?
+                    && passes_filters(&record, &request, &agent_id, engine).await
+                {
+                    scored_memories.push((record, score));
                 }
             }
         }
@@ -251,11 +286,11 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 }
                 // Also add BM25 candidates to recency
                 for &(id, _) in &bm25_results {
-                    if !recency_ranked.iter().any(|(rid, _)| *rid == id) {
-                        if let Some(record) = get_memory_cached(engine, id).await? {
-                            let r_score = crate::query::retrieval::recency_score(&record.created_at, request.recency_half_life_hours.unwrap_or(168.0));
-                            recency_ranked.push((id, r_score));
-                        }
+                    if !recency_ranked.iter().any(|(rid, _)| *rid == id)
+                        && let Some(record) = get_memory_cached(engine, id).await?
+                    {
+                        let r_score = crate::query::retrieval::recency_score(&record.created_at, request.recency_half_life_hours.unwrap_or(168.0));
+                        recency_ranked.push((id, r_score));
                     }
                 }
 
@@ -279,20 +314,30 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 for _hop in 0..max_hops {
                     let mut next_frontier: Vec<Uuid> = Vec::new();
                     for &fid in &frontier {
-                        if let Ok(from_rels) = engine.storage.get_relations_from(fid).await {
-                            for rel in &from_rels {
-                                if graph_seen.insert(rel.target_id) {
-                                    graph_ranked.push((rel.target_id, decay));
-                                    next_frontier.push(rel.target_id);
+                        match engine.storage.get_relations_from(fid).await {
+                            Ok(from_rels) => {
+                                for rel in &from_rels {
+                                    if graph_seen.insert(rel.target_id) {
+                                        graph_ranked.push((rel.target_id, decay));
+                                        next_frontier.push(rel.target_id);
+                                    }
                                 }
                             }
+                            Err(e) => {
+                                tracing::warn!(memory_id = %fid, error = %e, "graph expansion: failed to get outgoing relations");
+                            }
                         }
-                        if let Ok(to_rels) = engine.storage.get_relations_to(fid).await {
-                            for rel in &to_rels {
-                                if graph_seen.insert(rel.source_id) {
-                                    graph_ranked.push((rel.source_id, decay));
-                                    next_frontier.push(rel.source_id);
+                        match engine.storage.get_relations_to(fid).await {
+                            Ok(to_rels) => {
+                                for rel in &to_rels {
+                                    if graph_seen.insert(rel.source_id) {
+                                        graph_ranked.push((rel.source_id, decay));
+                                        next_frontier.push(rel.source_id);
+                                    }
                                 }
+                            }
+                            Err(e) => {
+                                tracing::warn!(memory_id = %fid, error = %e, "graph expansion: failed to get incoming relations");
                             }
                         }
                     }
@@ -310,19 +355,19 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 };
 
                 for (id, score) in fused {
-                    if let Some(record) = get_memory_cached(engine, id).await? {
-                        if passes_filters(&record, &request, &agent_id, engine).await {
-                            scored_memories.push((record, score));
-                        }
+                    if let Some(record) = get_memory_cached(engine, id).await?
+                        && passes_filters(&record, &request, &agent_id, engine).await
+                    {
+                        scored_memories.push((record, score));
                     }
                 }
             } else {
                 // Fallback to semantic-only
                 for (id, score) in vector_ranked {
-                    if let Some(record) = get_memory_cached(engine, id).await? {
-                        if passes_filters(&record, &request, &agent_id, engine).await {
-                            scored_memories.push((record, score));
-                        }
+                    if let Some(record) = get_memory_cached(engine, id).await?
+                        && passes_filters(&record, &request, &agent_id, engine).await
+                    {
+                        scored_memories.push((record, score));
                     }
                 }
             }
@@ -337,17 +382,31 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
 
     // Touch accessed memories
     for (record, _) in &scored_memories {
-        let _ = engine.storage.touch_memory(record.id).await;
+        if let Err(e) = engine.storage.touch_memory(record.id).await {
+            tracing::warn!(memory_id = %record.id, error = %e, "failed to update access timestamp");
+        }
     }
 
     // Decrypt content if encryption is configured
     if let Some(ref enc) = engine.encryption {
         for (record, _) in &mut scored_memories {
-            if let Ok(encrypted_bytes) = base64::engine::general_purpose::STANDARD.decode(&record.content) {
-                if let Ok(decrypted) = enc.decrypt(&encrypted_bytes) {
-                    if let Ok(plaintext) = String::from_utf8(decrypted) {
-                        record.content = plaintext;
+            match base64::engine::general_purpose::STANDARD.decode(&record.content) {
+                Ok(encrypted_bytes) => match enc.decrypt(&encrypted_bytes) {
+                    Ok(decrypted) => match String::from_utf8(decrypted) {
+                        Ok(plaintext) => record.content = plaintext,
+                        Err(e) => {
+                            tracing::error!(memory_id = %record.id, error = %e, "decrypted content is not valid UTF-8");
+                            record.content = "[content unavailable: decryption error]".to_string();
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!(memory_id = %record.id, error = %e, "failed to decrypt memory content");
+                        record.content = "[content unavailable: decryption error]".to_string();
                     }
+                },
+                Err(e) => {
+                    tracing::error!(memory_id = %record.id, error = %e, "failed to decode encrypted content");
+                    record.content = "[content unavailable: decryption error]".to_string();
                 }
             }
         }
@@ -361,7 +420,13 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     // Emit MemoryRead event with hash chain linking (fire-and-forget)
     let now = chrono::Utc::now().to_rfc3339();
     let event_content_hash = compute_content_hash(&request.query, &agent_id, &now);
-    let prev_event_hash = engine.storage.get_latest_event_hash(&agent_id, None).await.unwrap_or(None);
+    let prev_event_hash = match engine.storage.get_latest_event_hash(&agent_id, None).await {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
+            None
+        }
+    };
     let event_prev_hash = Some(crate::hash::compute_chain_hash(&event_content_hash, prev_event_hash.as_deref()));
     let mut event = AgentEvent {
         id: Uuid::now_v7(),
@@ -389,12 +454,14 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         embedding: None,
     };
     // Optionally embed the event payload
-    if engine.embed_events {
-        if let Ok(emb) = engine.embedding.embed(&event.payload.to_string()).await {
-            event.embedding = Some(emb);
-        }
+    if engine.embed_events
+        && let Ok(emb) = engine.embedding.embed(&event.payload.to_string()).await
+    {
+        event.embedding = Some(emb);
     }
-    let _ = engine.storage.insert_event(&event).await;
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
+    }
 
     Ok(RecallResponse { memories, total })
 }
@@ -411,12 +478,11 @@ async fn passes_filters(
     }
 
     // Skip expired
-    if let Some(ref expires_at) = record.expires_at {
-        if let Ok(exp) = chrono::DateTime::parse_from_rfc3339(expires_at) {
-            if exp < chrono::Utc::now() {
-                return false;
-            }
-        }
+    if let Some(ref expires_at) = record.expires_at
+        && let Ok(exp) = chrono::DateTime::parse_from_rfc3339(expires_at)
+        && exp < chrono::Utc::now()
+    {
+        return false;
     }
 
     // Skip quarantined
@@ -425,10 +491,10 @@ async fn passes_filters(
     }
 
     // Scope filter (explicit request scope filter, separate from visibility below)
-    if let Some(ref s) = request.scope {
-        if record.scope != *s {
-            return false;
-        }
+    if let Some(ref s) = request.scope
+        && record.scope != *s
+    {
+        return false;
     }
 
     // Type filter: memory_types (multi) takes precedence over memory_type (single)
@@ -436,51 +502,68 @@ async fn passes_filters(
         if !mts.contains(&record.memory_type) {
             return false;
         }
-    } else if let Some(ref mt) = request.memory_type {
-        if record.memory_type != *mt {
-            return false;
-        }
+    } else if let Some(ref mt) = request.memory_type
+        && record.memory_type != *mt
+    {
+        return false;
     }
 
     // Importance filter
-    if let Some(min_imp) = request.min_importance {
-        if record.importance < min_imp {
-            return false;
-        }
+    if let Some(min_imp) = request.min_importance
+        && record.importance < min_imp
+    {
+        return false;
     }
 
     // Tags filter
-    if let Some(ref req_tags) = request.tags {
-        if !req_tags.iter().any(|t| record.tags.contains(t)) {
-            return false;
-        }
+    if let Some(ref req_tags) = request.tags
+        && !req_tags.iter().any(|t| record.tags.contains(t))
+    {
+        return false;
     }
 
-    // Temporal range filter
+    // Temporal range filter (parse to DateTime for correct comparison)
     if let Some(ref tr) = request.temporal_range {
-        if let Some(ref after) = tr.after {
-            if record.created_at < *after {
-                return false;
-            }
+        if let Some(ref after) = tr.after
+            && let (Ok(after_dt), Ok(record_dt)) = (
+                chrono::DateTime::parse_from_rfc3339(after),
+                chrono::DateTime::parse_from_rfc3339(&record.created_at),
+            )
+            && record_dt < after_dt
+        {
+            return false;
         }
-        if let Some(ref before) = tr.before {
-            if record.created_at > *before {
-                return false;
-            }
+        if let Some(ref before) = tr.before
+            && let (Ok(before_dt), Ok(record_dt)) = (
+                chrono::DateTime::parse_from_rfc3339(before),
+                chrono::DateTime::parse_from_rfc3339(&record.created_at),
+            )
+            && record_dt > before_dt
+        {
+            return false;
         }
     }
 
     // Point-in-time as_of filter: show memory state at time T
     if let Some(ref as_of) = request.as_of {
-        // Exclude memories created after as_of
-        if record.created_at > *as_of {
+        if let (Ok(as_of_dt), Ok(record_dt)) = (
+            chrono::DateTime::parse_from_rfc3339(as_of),
+            chrono::DateTime::parse_from_rfc3339(&record.created_at),
+        )
+            && record_dt > as_of_dt
+        {
+            // Exclude memories created after as_of
             return false;
         }
         // Exclude memories already deleted at as_of
-        if let Some(ref deleted_at) = record.deleted_at {
-            if *deleted_at <= *as_of {
-                return false;
-            }
+        if let Some(ref deleted_at) = record.deleted_at
+            && let (Ok(del_dt), Ok(as_of_dt)) = (
+                chrono::DateTime::parse_from_rfc3339(deleted_at),
+                chrono::DateTime::parse_from_rfc3339(as_of),
+            )
+            && del_dt <= as_of_dt
+        {
+            return false;
         }
     }
 
@@ -497,7 +580,10 @@ async fn passes_filters(
                         crate::model::acl::Permission::Read,
                     )
                     .await
-                    .unwrap_or(false)
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(memory_id = %record.id, error = %e, "permission check failed, denying access");
+                        false
+                    })
         }
         Scope::Private => record.agent_id == agent_id,
     }

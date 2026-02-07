@@ -95,7 +95,7 @@ impl FullTextIndex for TantivyFullTextIndex {
         writer.delete_term(id_term);
 
         let mut doc = TantivyDocument::default();
-        doc.add_text(self.id_field, &id.to_string());
+        doc.add_text(self.id_field, id.to_string());
         doc.add_text(self.content_field, content);
         writer.add_document(doc).map_err(|e| Error::Index(e.to_string()))?;
         Ok(())
@@ -124,12 +124,11 @@ impl FullTextIndex for TantivyFullTextIndex {
             let doc: TantivyDocument = searcher
                 .doc(doc_address)
                 .map_err(|e| Error::Index(e.to_string()))?;
-            if let Some(id_value) = doc.get_first(self.id_field) {
-                if let Some(id_str) = id_value.as_str() {
-                    if let Ok(uuid) = Uuid::parse_str(id_str) {
-                        results.push((uuid, score));
-                    }
-                }
+            if let Some(id_value) = doc.get_first(self.id_field)
+                && let Some(id_str) = id_value.as_str()
+                && let Ok(uuid) = Uuid::parse_str(id_str)
+            {
+                results.push((uuid, score));
             }
         }
         Ok(results)

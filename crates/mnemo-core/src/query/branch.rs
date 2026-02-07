@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::hash::compute_content_hash;
 use crate::model::checkpoint::Checkpoint;
-use crate::model::event::{AgentEvent, EventType};
+use crate::model::event::EventType;
 use crate::query::MnemoEngine;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,11 +15,34 @@ pub struct BranchRequest {
     pub source_branch: Option<String>,
 }
 
+impl BranchRequest {
+    pub fn new(thread_id: String, new_branch_name: String) -> Self {
+        Self {
+            thread_id,
+            agent_id: None,
+            new_branch_name,
+            source_checkpoint_id: None,
+            source_branch: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchResponse {
     pub checkpoint_id: Uuid,
     pub branch_name: String,
     pub source_checkpoint_id: Uuid,
+}
+
+impl BranchResponse {
+    pub fn new(checkpoint_id: Uuid, branch_name: String, source_checkpoint_id: Uuid) -> Self {
+        Self {
+            checkpoint_id,
+            branch_name,
+            source_checkpoint_id,
+        }
+    }
 }
 
 pub async fn execute(engine: &MnemoEngine, request: BranchRequest) -> Result<BranchResponse> {
@@ -68,32 +90,21 @@ pub async fn execute(engine: &MnemoEngine, request: BranchRequest) -> Result<Bra
     engine.storage.insert_checkpoint(&new_cp).await?;
 
     // Emit Branch event
-    let event = AgentEvent {
-        id: Uuid::now_v7(),
-        agent_id,
-        thread_id: Some(request.thread_id),
-        run_id: None,
-        parent_event_id: None,
-        event_type: EventType::Branch,
-        payload: serde_json::json!({
+    let event = super::event_builder::build_event(
+        engine,
+        &agent_id,
+        EventType::Branch,
+        serde_json::json!({
             "checkpoint_id": id.to_string(),
             "new_branch": request.new_branch_name,
             "source_checkpoint": source_cp.id.to_string(),
         }),
-        trace_id: None,
-        span_id: None,
-        model: None,
-        tokens_input: None,
-        tokens_output: None,
-        latency_ms: None,
-        cost_usd: None,
-        timestamp: now.clone(),
-        logical_clock: 0,
-        content_hash: compute_content_hash(&id.to_string(), &new_cp.agent_id, &now),
-        prev_hash: None,
-        embedding: None,
-    };
-    let _ = engine.storage.insert_event(&event).await;
+        &id.to_string(),
+        Some(request.thread_id),
+    ).await;
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
+    }
 
     Ok(BranchResponse {
         checkpoint_id: id,

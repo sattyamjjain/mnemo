@@ -68,16 +68,16 @@ pub fn verify_chain(records: &[MemoryRecord]) -> ChainVerificationResult {
         if i > 0 {
             let prev_record = &records[i - 1];
             let expected_chain = compute_chain_hash(&record.content_hash, Some(&prev_record.content_hash));
-            if let Some(ref prev_hash) = record.prev_hash {
-                if !hashes_equal(prev_hash, &expected_chain) {
-                    return ChainVerificationResult {
-                        valid: false,
-                        total_records: records.len(),
-                        verified_records: verified,
-                        first_broken_at: Some(record.id),
-                        error_message: Some(format!("chain hash mismatch at record {}", record.id)),
-                    };
-                }
+            if let Some(ref prev_hash) = record.prev_hash
+                && !hashes_equal(prev_hash, &expected_chain)
+            {
+                return ChainVerificationResult {
+                    valid: false,
+                    total_records: records.len(),
+                    verified_records: verified,
+                    first_broken_at: Some(record.id),
+                    error_message: Some(format!("chain hash mismatch at record {}", record.id)),
+                };
             }
         }
 
@@ -128,16 +128,16 @@ pub fn verify_event_chain(events: &[AgentEvent]) -> ChainVerificationResult {
         if i > 0 {
             let prev_event = &events[i - 1];
             let expected_chain = compute_chain_hash(&event.content_hash, Some(&prev_event.content_hash));
-            if let Some(ref prev_hash) = event.prev_hash {
-                if !hashes_equal(prev_hash, &expected_chain) {
-                    return ChainVerificationResult {
-                        valid: false,
-                        total_records: events.len(),
-                        verified_records: verified,
-                        first_broken_at: Some(event.id),
-                        error_message: Some(format!("event chain hash mismatch at {}", event.id)),
-                    };
-                }
+            if let Some(ref prev_hash) = event.prev_hash
+                && !hashes_equal(prev_hash, &expected_chain)
+            {
+                return ChainVerificationResult {
+                    valid: false,
+                    total_records: events.len(),
+                    verified_records: verified,
+                    first_broken_at: Some(event.id),
+                    error_message: Some(format!("event chain hash mismatch at {}", event.id)),
+                };
             }
         }
 

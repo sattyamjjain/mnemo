@@ -87,25 +87,45 @@ impl MnemoService for MnemoGrpcServer {
     ) -> Result<Response<ProtoRememberResponse>, Status> {
         let req = request.into_inner();
 
-        let memory_type = req
-            .memory_type
-            .as_deref()
-            .and_then(|s| s.parse::<MemoryType>().ok());
+        let memory_type = match req.memory_type {
+            Some(ref s) => match s.parse::<MemoryType>() {
+                Ok(mt) => Some(mt),
+                Err(_) => return Err(Status::invalid_argument(format!(
+                    "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working", s
+                ))),
+            },
+            None => None,
+        };
 
-        let scope = req
-            .scope
-            .as_deref()
-            .and_then(|s| s.parse::<Scope>().ok());
+        let scope = match req.scope {
+            Some(ref s) => match s.parse::<Scope>() {
+                Ok(sc) => Some(sc),
+                Err(_) => return Err(Status::invalid_argument(format!(
+                    "invalid scope '{}': expected one of: private, shared, public, global", s
+                ))),
+            },
+            None => None,
+        };
 
-        let source_type = req
-            .source_type
-            .as_deref()
-            .and_then(|s| s.parse::<SourceType>().ok());
+        let source_type = match req.source_type {
+            Some(ref s) => match s.parse::<SourceType>() {
+                Ok(st) => Some(st),
+                Err(_) => return Err(Status::invalid_argument(format!(
+                    "invalid source_type '{}': expected one of: agent, human, system, user_input, tool_output, model_response, retrieval, consolidation, import", s
+                ))),
+            },
+            None => None,
+        };
 
-        let metadata: Option<serde_json::Value> = req
-            .metadata
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let metadata: Option<serde_json::Value> = match req.metadata {
+            Some(ref s) => match serde_json::from_str(s) {
+                Ok(v) => Some(v),
+                Err(e) => return Err(Status::invalid_argument(format!(
+                    "invalid metadata JSON: {}", e
+                ))),
+            },
+            None => None,
+        };
 
         let tags = if req.tags.is_empty() {
             None
@@ -157,15 +177,25 @@ impl MnemoService for MnemoGrpcServer {
     ) -> Result<Response<ProtoRecallResponse>, Status> {
         let req = request.into_inner();
 
-        let memory_type = req
-            .memory_type
-            .as_deref()
-            .and_then(|s| s.parse::<MemoryType>().ok());
+        let memory_type = match req.memory_type {
+            Some(ref s) => match s.parse::<MemoryType>() {
+                Ok(mt) => Some(mt),
+                Err(_) => return Err(Status::invalid_argument(format!(
+                    "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working", s
+                ))),
+            },
+            None => None,
+        };
 
-        let scope = req
-            .scope
-            .as_deref()
-            .and_then(|s| s.parse::<Scope>().ok());
+        let scope = match req.scope {
+            Some(ref s) => match s.parse::<Scope>() {
+                Ok(sc) => Some(sc),
+                Err(_) => return Err(Status::invalid_argument(format!(
+                    "invalid scope '{}': expected one of: private, shared, public, global", s
+                ))),
+            },
+            None => None,
+        };
 
         let tags = if req.tags.is_empty() {
             None
@@ -244,13 +274,22 @@ impl MnemoService for MnemoGrpcServer {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let strategy = req.strategy.as_deref().map(|s| match s {
-            "hard_delete" => ForgetStrategy::HardDelete,
-            "decay" => ForgetStrategy::Decay,
-            "consolidate" => ForgetStrategy::Consolidate,
-            "archive" => ForgetStrategy::Archive,
-            _ => ForgetStrategy::SoftDelete,
-        });
+        let strategy = match req.strategy {
+            Some(ref s) => {
+                let st = match s.as_str() {
+                    "soft_delete" => ForgetStrategy::SoftDelete,
+                    "hard_delete" => ForgetStrategy::HardDelete,
+                    "decay" => ForgetStrategy::Decay,
+                    "consolidate" => ForgetStrategy::Consolidate,
+                    "archive" => ForgetStrategy::Archive,
+                    _ => return Err(Status::invalid_argument(format!(
+                        "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive", s
+                    ))),
+                };
+                Some(st)
+            }
+            None => None,
+        };
 
         let core_req = CoreForgetRequest {
             memory_ids,
@@ -300,7 +339,15 @@ impl MnemoService for MnemoGrpcServer {
         let req = request.into_inner();
         let memory_id = Uuid::parse_str(&req.memory_id)
             .map_err(|e| Status::invalid_argument(format!("invalid UUID: {e}")))?;
-        let permission = req.permission.as_deref().and_then(|s| s.parse().ok());
+        let permission = match req.permission {
+            Some(ref s) => match s.parse::<Permission>() {
+                Ok(p) => Some(p),
+                Err(_) => return Err(Status::invalid_argument(format!(
+                    "invalid permission '{}': expected one of: read, write, delete, share, delegate, admin", s
+                ))),
+            },
+            None => None,
+        };
         let target_agent_ids = if req.target_agent_ids.is_empty() {
             None
         } else {
@@ -342,10 +389,15 @@ impl MnemoService for MnemoGrpcServer {
             .map_err(|e| {
                 Status::invalid_argument(format!("invalid JSON state_snapshot: {e}"))
             })?;
-        let metadata: Option<serde_json::Value> = req
-            .metadata
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let metadata: Option<serde_json::Value> = match req.metadata {
+            Some(ref s) => match serde_json::from_str(s) {
+                Ok(v) => Some(v),
+                Err(e) => return Err(Status::invalid_argument(format!(
+                    "invalid metadata JSON: {}", e
+                ))),
+            },
+            None => None,
+        };
 
         let core_req = CoreCheckpointRequest {
             thread_id: req.thread_id,
@@ -375,10 +427,15 @@ impl MnemoService for MnemoGrpcServer {
         request: Request<ProtoBranchRequest>,
     ) -> Result<Response<ProtoBranchResponse>, Status> {
         let req = request.into_inner();
-        let source_checkpoint_id = req
-            .source_checkpoint_id
-            .as_deref()
-            .and_then(|s| Uuid::parse_str(s).ok());
+        let source_checkpoint_id = match req.source_checkpoint_id {
+            Some(ref s) => match Uuid::parse_str(s) {
+                Ok(id) => Some(id),
+                Err(e) => return Err(Status::invalid_argument(format!(
+                    "invalid source_checkpoint_id '{}': {}", s, e
+                ))),
+            },
+            None => None,
+        };
 
         let core_req = CoreBranchRequest {
             thread_id: req.thread_id,
@@ -407,11 +464,20 @@ impl MnemoService for MnemoGrpcServer {
         request: Request<ProtoMergeRequest>,
     ) -> Result<Response<ProtoMergeResponse>, Status> {
         let req = request.into_inner();
-        let strategy = req.strategy.as_deref().map(|s| match s {
-            "cherry_pick" => MergeStrategy::CherryPick,
-            "squash" => MergeStrategy::Squash,
-            _ => MergeStrategy::FullMerge,
-        });
+        let strategy = match req.strategy {
+            Some(ref s) => {
+                let st = match s.as_str() {
+                    "full_merge" => MergeStrategy::FullMerge,
+                    "cherry_pick" => MergeStrategy::CherryPick,
+                    "squash" => MergeStrategy::Squash,
+                    _ => return Err(Status::invalid_argument(format!(
+                        "invalid merge strategy '{}': expected one of: full_merge, cherry_pick, squash", s
+                    ))),
+                };
+                Some(st)
+            }
+            None => None,
+        };
         let cherry_pick_ids = if req.cherry_pick_ids.is_empty() {
             None
         } else {
@@ -455,10 +521,15 @@ impl MnemoService for MnemoGrpcServer {
         request: Request<ProtoReplayRequest>,
     ) -> Result<Response<ProtoReplayResponse>, Status> {
         let req = request.into_inner();
-        let checkpoint_id = req
-            .checkpoint_id
-            .as_deref()
-            .and_then(|s| Uuid::parse_str(s).ok());
+        let checkpoint_id = match req.checkpoint_id {
+            Some(ref s) => match Uuid::parse_str(s) {
+                Ok(id) => Some(id),
+                Err(e) => return Err(Status::invalid_argument(format!(
+                    "invalid checkpoint_id '{}': {}", s, e
+                ))),
+            },
+            None => None,
+        };
 
         let core_req = CoreReplayRequest {
             thread_id: req.thread_id,

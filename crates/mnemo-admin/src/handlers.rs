@@ -201,7 +201,12 @@ pub async fn memories_handler(
         .iter()
         .map(|m| {
             let preview = if m.content.len() > 100 {
-                format!("{}...", &m.content[..100])
+                let end = m.content.char_indices()
+                    .take_while(|(i, _)| *i <= 100)
+                    .last()
+                    .map(|(i, c)| i + c.len_utf8())
+                    .unwrap_or(m.content.len());
+                format!("{}...", &m.content[..end])
             } else {
                 m.content.clone()
             };

@@ -23,8 +23,10 @@ pub async fn handle_connection(
     config: &PgWireConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Phase 1: Startup message
-    let startup_len = stream.read_i32().await? as usize;
-    if startup_len < 8 || startup_len > 10240 {
+    let startup_len_raw = stream.read_i32().await?;
+    let startup_len = usize::try_from(startup_len_raw)
+        .map_err(|_| format!("negative startup message length: {startup_len_raw}"))?;
+    if !(8..=10240).contains(&startup_len) {
         return Err("invalid startup message length".into());
     }
 
@@ -42,8 +44,10 @@ pub async fn handle_connection(
     if protocol_version == 80877103 {
         stream.write_all(b"N").await?;
         // Client will retry with normal startup
-        let startup_len = stream.read_i32().await? as usize;
-        if startup_len < 8 || startup_len > 10240 {
+        let startup_len_raw = stream.read_i32().await?;
+        let startup_len = usize::try_from(startup_len_raw)
+            .map_err(|_| format!("negative startup message length: {startup_len_raw}"))?;
+        if !(8..=10240).contains(&startup_len) {
             return Err("invalid startup message length after SSL".into());
         }
         startup_buf = vec![0u8; startup_len - 4];
@@ -64,8 +68,10 @@ pub async fn handle_connection(
             send_error(&mut stream, "expected password message").await?;
             return Err("expected password message".into());
         }
-        let pw_len = stream.read_i32().await? as usize;
-        if pw_len < 5 || pw_len > 10240 {
+        let pw_len_raw = stream.read_i32().await?;
+        let pw_len = usize::try_from(pw_len_raw)
+            .map_err(|_| format!("negative password message length: {pw_len_raw}"))?;
+        if !(5..=10240).contains(&pw_len) {
             return Err("invalid password message length".into());
         }
         let mut pw_buf = vec![0u8; pw_len - 4];
@@ -95,14 +101,11 @@ pub async fn handle_connection(
     send_ready_for_query(&mut stream).await?;
 
     // Phase 3: Query loop
-    loop {
-        let msg_type = match stream.read_u8().await {
-            Ok(b) => b,
-            Err(_) => break, // Connection closed
-        };
-
-        let msg_len = stream.read_i32().await? as usize;
-        if msg_len < 4 || msg_len > 1_048_576 {
+    while let Ok(msg_type) = stream.read_u8().await {
+        let msg_len_raw = stream.read_i32().await?;
+        let msg_len = usize::try_from(msg_len_raw)
+            .map_err(|_| format!("negative message length: {msg_len_raw}"))?;
+        if !(4..=1_048_576).contains(&msg_len) {
             break;
         }
 

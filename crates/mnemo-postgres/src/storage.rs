@@ -634,10 +634,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
         for row in &acl_rows {
             let perm_str: String = row.get("permission");
-            if let Ok(perm) = perm_str.parse::<Permission>() {
-                if perm.satisfies(required) {
-                    return Ok(true);
-                }
+            if let Ok(perm) = perm_str.parse::<Permission>()
+                && perm.satisfies(required)
+            {
+                return Ok(true);
             }
         }
 
@@ -653,10 +653,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
         for row in &public_rows {
             let perm_str: String = row.get("permission");
-            if let Ok(perm) = perm_str.parse::<Permission>() {
-                if perm.satisfies(required) {
-                    return Ok(true);
-                }
+            if let Ok(perm) = perm_str.parse::<Permission>()
+                && perm.satisfies(required)
+            {
+                return Ok(true);
             }
         }
 

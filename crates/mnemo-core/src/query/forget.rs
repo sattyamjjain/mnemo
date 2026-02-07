@@ -35,10 +35,28 @@ pub struct ForgetRequest {
     pub criteria: Option<ForgetCriteria>,
 }
 
+impl ForgetRequest {
+    pub fn new(memory_ids: Vec<Uuid>) -> Self {
+        Self {
+            memory_ids,
+            agent_id: None,
+            strategy: None,
+            criteria: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForgetResponse {
     pub forgotten: Vec<Uuid>,
     pub errors: Vec<ForgetError>,
+}
+
+impl ForgetResponse {
+    pub fn new(forgotten: Vec<Uuid>, errors: Vec<ForgetError>) -> Self {
+        Self { forgotten, errors }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,18 +85,18 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
             memories
                 .into_iter()
                 .filter(|m| {
-                    if let Some(max_age) = criteria.max_age_hours {
-                        if let Ok(created) = chrono::DateTime::parse_from_rfc3339(&m.created_at) {
-                            let age_hours = (now - created.with_timezone(&chrono::Utc)).num_seconds() as f64 / 3600.0;
-                            if age_hours < max_age {
-                                return false;
-                            }
-                        }
-                    }
-                    if let Some(min_below) = criteria.min_importance_below {
-                        if m.importance >= min_below {
+                    if let Some(max_age) = criteria.max_age_hours
+                        && let Ok(created) = chrono::DateTime::parse_from_rfc3339(&m.created_at)
+                    {
+                        let age_hours = (now - created.with_timezone(&chrono::Utc)).num_seconds() as f64 / 3600.0;
+                        if age_hours < max_age {
                             return false;
                         }
+                    }
+                    if let Some(min_below) = criteria.min_importance_below
+                        && m.importance >= min_below
+                    {
+                        return false;
                     }
                     true
                 })
@@ -126,10 +144,16 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
             ForgetStrategy::SoftDelete => {
                 match engine.storage.soft_delete_memory(*id).await {
                     Ok(()) => {
-                        let _ = engine.index.remove(*id);
+                        if let Err(e) = engine.index.remove(*id) {
+                            tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during soft delete");
+                        }
                         if let Some(ref ft) = engine.full_text {
-                            let _ = ft.remove(*id);
-                            let _ = ft.commit();
+                            if let Err(e) = ft.remove(*id) {
+                                tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index");
+                            }
+                            if let Err(e) = ft.commit() {
+                                tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index");
+                            }
                         }
                         forgotten.push(*id);
                     }
@@ -141,10 +165,16 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
             ForgetStrategy::HardDelete => {
                 match engine.storage.hard_delete_memory(*id).await {
                     Ok(()) => {
-                        let _ = engine.index.remove(*id);
+                        if let Err(e) = engine.index.remove(*id) {
+                            tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during hard delete");
+                        }
                         if let Some(ref ft) = engine.full_text {
-                            let _ = ft.remove(*id);
-                            let _ = ft.commit();
+                            if let Err(e) = ft.remove(*id) {
+                                tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index");
+                            }
+                            if let Err(e) = ft.commit() {
+                                tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index");
+                            }
                         }
                         forgotten.push(*id);
                     }
@@ -176,10 +206,10 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                         match engine.storage.update_memory(&record).await {
                             Ok(()) => {
                                 // Archive to cold storage if configured
-                                if let Some(ref cs) = engine.cold_storage {
-                                    if let Err(e) = cs.archive(&record).await {
-                                        tracing::warn!("cold storage archive failed for {}: {e}", id);
-                                    }
+                                if let Some(ref cs) = engine.cold_storage
+                                    && let Err(e) = cs.archive(&record).await
+                                {
+                                    tracing::warn!("cold storage archive failed for {}: {e}", id);
                                 }
                                 forgotten.push(*id);
                             }
@@ -211,7 +241,13 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
     let now = chrono::Utc::now().to_rfc3339();
     for id in &forgotten {
         let event_content_hash = compute_content_hash(&id.to_string(), &agent_id, &now);
-        let prev_event_hash = engine.storage.get_latest_event_hash(&agent_id, None).await.unwrap_or(None);
+        let prev_event_hash = match engine.storage.get_latest_event_hash(&agent_id, None).await {
+            Ok(hash) => hash,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
+                None
+            }
+        };
         let event_prev_hash = Some(crate::hash::compute_chain_hash(&event_content_hash, prev_event_hash.as_deref()));
         let event = AgentEvent {
             id: Uuid::now_v7(),
@@ -234,7 +270,9 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
             prev_hash: event_prev_hash,
             embedding: None,
         };
-        let _ = engine.storage.insert_event(&event).await;
+        if let Err(e) = engine.storage.insert_event(&event).await {
+            tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
+        }
 
         // Invalidate cache on forget
         if let Some(ref cache) = engine.cache {

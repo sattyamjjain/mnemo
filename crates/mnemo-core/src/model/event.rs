@@ -28,6 +28,86 @@ pub struct AgentEvent {
     pub embedding: Option<Vec<f32>>,
 }
 
+impl AgentEvent {
+    /// Create a new `AgentEvent` with required fields; all optional fields default to `None`.
+    pub fn new(
+        agent_id: String,
+        event_type: EventType,
+        payload: serde_json::Value,
+        timestamp: String,
+        content_hash: Vec<u8>,
+    ) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            agent_id,
+            thread_id: None,
+            run_id: None,
+            parent_event_id: None,
+            event_type,
+            payload,
+            trace_id: None,
+            span_id: None,
+            model: None,
+            tokens_input: None,
+            tokens_output: None,
+            latency_ms: None,
+            cost_usd: None,
+            timestamp,
+            logical_clock: 0,
+            content_hash,
+            prev_hash: None,
+            embedding: None,
+        }
+    }
+
+    /// Create an `AgentEvent` with all fields specified.
+    /// Intended for storage backends that reconstruct events from database rows.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        id: Uuid,
+        agent_id: String,
+        thread_id: Option<String>,
+        run_id: Option<String>,
+        parent_event_id: Option<Uuid>,
+        event_type: EventType,
+        payload: serde_json::Value,
+        trace_id: Option<String>,
+        span_id: Option<String>,
+        model: Option<String>,
+        tokens_input: Option<i64>,
+        tokens_output: Option<i64>,
+        latency_ms: Option<i64>,
+        cost_usd: Option<f64>,
+        timestamp: String,
+        logical_clock: i64,
+        content_hash: Vec<u8>,
+        prev_hash: Option<Vec<u8>>,
+        embedding: Option<Vec<f32>>,
+    ) -> Self {
+        Self {
+            id,
+            agent_id,
+            thread_id,
+            run_id,
+            parent_event_id,
+            event_type,
+            payload,
+            trace_id,
+            span_id,
+            model,
+            tokens_input,
+            tokens_output,
+            latency_ms,
+            cost_usd,
+            timestamp,
+            logical_clock,
+            content_hash,
+            prev_hash,
+            embedding,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventType {

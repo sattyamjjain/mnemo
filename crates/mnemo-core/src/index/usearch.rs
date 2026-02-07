@@ -38,12 +38,17 @@ impl UsearchIndex {
     }
 
     fn allocate_key(&self, id: Uuid) -> u64 {
-        let mut next = self.next_key.write().unwrap();
+        let mut next = self.next_key.write().unwrap_or_else(|e| e.into_inner());
         let key = *next;
         *next += 1;
-        self.uuid_to_key.write().unwrap().insert(id, key);
-        self.key_to_uuid.write().unwrap().insert(key, id);
+        self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner()).insert(id, key);
+        self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner()).insert(key, id);
         key
+    }
+
+    fn rollback_key(&self, id: Uuid, key: u64) {
+        self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner()).remove(&key);
     }
 }
 
@@ -58,12 +63,12 @@ impl VectorIndex for UsearchIndex {
         }
 
         // If this UUID already exists, remove it first
-        if self.uuid_to_key.read().unwrap().contains_key(&id) {
+        if self.uuid_to_key.read().unwrap_or_else(|e| e.into_inner()).contains_key(&id) {
             self.remove(id)?;
         }
 
         let key = self.allocate_key(id);
-        let index = self.index.read().unwrap();
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
 
         // Grow capacity if needed
         if index.size() >= index.capacity() {
@@ -72,38 +77,41 @@ impl VectorIndex for UsearchIndex {
                 .map_err(|e| Error::Index(e.to_string()))?;
         }
 
-        index
-            .add(key, vector)
-            .map_err(|e| Error::Index(e.to_string()))?;
+        if let Err(e) = index.add(key, vector) {
+            // Rollback orphaned mappings on add failure
+            drop(index);
+            self.rollback_key(id, key);
+            return Err(Error::Index(e.to_string()));
+        }
         Ok(())
     }
 
     fn remove(&self, id: Uuid) -> Result<()> {
         let key = {
-            let map = self.uuid_to_key.read().unwrap();
+            let map = self.uuid_to_key.read().unwrap_or_else(|e| e.into_inner());
             match map.get(&id) {
                 Some(&k) => k,
                 None => return Ok(()),
             }
         };
 
-        let index = self.index.read().unwrap();
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         index
             .remove(key)
             .map_err(|e| Error::Index(e.to_string()))?;
 
-        self.uuid_to_key.write().unwrap().remove(&id);
-        self.key_to_uuid.write().unwrap().remove(&key);
+        self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner()).remove(&key);
         Ok(())
     }
 
     fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(Uuid, f32)>> {
-        let index = self.index.read().unwrap();
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         let results = index
             .search(query, limit)
             .map_err(|e| Error::Index(e.to_string()))?;
 
-        let key_map = self.key_to_uuid.read().unwrap();
+        let key_map = self.key_to_uuid.read().unwrap_or_else(|e| e.into_inner());
         let mut output = Vec::new();
         for (key, distance) in results.keys.iter().zip(results.distances.iter()) {
             if let Some(&uuid) = key_map.get(key) {
@@ -140,28 +148,34 @@ impl VectorIndex for UsearchIndex {
     }
 
     fn save(&self, path: &Path) -> Result<()> {
-        let index = self.index.read().unwrap();
+        let path_str = path.to_str()
+            .ok_or_else(|| Error::Index("non-UTF-8 index path".to_string()))?;
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         index
-            .save(path.to_str().unwrap())
+            .save(path_str)
             .map_err(|e| Error::Index(e.to_string()))?;
 
         // Save mappings alongside
         let mappings_path = path.with_extension("mappings.json");
-        let uuid_to_key = self.uuid_to_key.read().unwrap();
-        let next_key = *self.next_key.read().unwrap();
+        let uuid_to_key = self.uuid_to_key.read().unwrap_or_else(|e| e.into_inner());
+        let next_key = *self.next_key.read().unwrap_or_else(|e| e.into_inner());
         let data = serde_json::json!({
             "uuid_to_key": uuid_to_key.iter().map(|(k, v)| (k.to_string(), v)).collect::<HashMap<String, &u64>>(),
             "next_key": next_key,
         });
-        std::fs::write(&mappings_path, serde_json::to_string(&data).unwrap())
+        let json_str = serde_json::to_string(&data)
+            .map_err(|e| Error::Index(e.to_string()))?;
+        std::fs::write(&mappings_path, json_str)
             .map_err(|e| Error::Index(e.to_string()))?;
         Ok(())
     }
 
     fn load(&self, path: &Path) -> Result<()> {
-        let index = self.index.read().unwrap();
+        let path_str = path.to_str()
+            .ok_or_else(|| Error::Index("non-UTF-8 index path".to_string()))?;
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         index
-            .load(path.to_str().unwrap())
+            .load(path_str)
             .map_err(|e| Error::Index(e.to_string()))?;
 
         // Load mappings
@@ -172,9 +186,9 @@ impl VectorIndex for UsearchIndex {
             let parsed: serde_json::Value =
                 serde_json::from_str(&data).map_err(|e| Error::Index(e.to_string()))?;
 
-            let mut uuid_to_key = self.uuid_to_key.write().unwrap();
-            let mut key_to_uuid = self.key_to_uuid.write().unwrap();
-            let mut next_key = self.next_key.write().unwrap();
+            let mut uuid_to_key = self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner());
+            let mut key_to_uuid = self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner());
+            let mut next_key = self.next_key.write().unwrap_or_else(|e| e.into_inner());
 
             uuid_to_key.clear();
             key_to_uuid.clear();
@@ -183,7 +197,8 @@ impl VectorIndex for UsearchIndex {
                 for (uuid_str, key_val) in map {
                     let uuid = Uuid::parse_str(uuid_str)
                         .map_err(|e| Error::Index(e.to_string()))?;
-                    let key = key_val.as_u64().unwrap();
+                    let key = key_val.as_u64()
+                        .ok_or_else(|| Error::Index(format!("invalid key value for UUID {uuid_str}")))?;
                     uuid_to_key.insert(uuid, key);
                     key_to_uuid.insert(key, uuid);
                 }
@@ -197,7 +212,7 @@ impl VectorIndex for UsearchIndex {
     }
 
     fn len(&self) -> usize {
-        let index = self.index.read().unwrap();
+        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         index.size()
     }
 }

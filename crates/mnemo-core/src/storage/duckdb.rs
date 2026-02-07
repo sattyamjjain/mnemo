@@ -60,26 +60,44 @@ fn row_to_memory(row: &duckdb::Row<'_>) -> duckdb::Result<MemoryRecord> {
     let content_hash: Vec<u8> = row.get(9)?;
     let prev_hash: Option<Vec<u8>> = row.get(10)?;
 
+    let memory_type_str: String = row.get(3)?;
+    let scope_str: String = row.get(4)?;
+    let source_type_str: String = row.get(11)?;
+    let consolidation_state_str: String = row.get(13)?;
+
     Ok(MemoryRecord {
-        id: Uuid::parse_str(&id_str).unwrap(),
+        id: Uuid::parse_str(&id_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
         agent_id: row.get(1)?,
         content: row.get(2)?,
-        memory_type: row.get::<_, String>(3)?.parse().unwrap(),
-        scope: row.get::<_, String>(4)?.parse().unwrap(),
+        memory_type: memory_type_str.parse()
+            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(3, duckdb::types::Type::Text, e.to_string().into()))?,
+        scope: scope_str.parse()
+            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(4, duckdb::types::Type::Text, e.to_string().into()))?,
         importance: row.get(5)?,
-        tags: tags_json
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default(),
-        metadata: metadata_json
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+        tags: match tags_json {
+            Some(ref s) => serde_json::from_str(s).unwrap_or_else(|e| {
+                tracing::warn!(id = %id_str, error = %e, raw = %s, "corrupted tags JSON, defaulting to empty");
+                vec![]
+            }),
+            None => vec![],
+        },
+        metadata: match metadata_json {
+            Some(ref s) => serde_json::from_str(s).unwrap_or_else(|e| {
+                tracing::warn!(id = %id_str, error = %e, "corrupted metadata JSON, defaulting to empty");
+                serde_json::Value::Object(serde_json::Map::new())
+            }),
+            None => serde_json::Value::Object(serde_json::Map::new()),
+        },
         embedding: deserialize_embedding(embedding_blob),
         content_hash,
         prev_hash,
-        source_type: row.get::<_, String>(11)?.parse().unwrap(),
+        source_type: source_type_str.parse()
+            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(11, duckdb::types::Type::Text, e.to_string().into()))?,
         source_id: row.get(12)?,
-        consolidation_state: row.get::<_, String>(13)?.parse().unwrap(),
-        access_count: row.get::<_, i64>(14)? as u64,
+        consolidation_state: consolidation_state_str.parse()
+            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(13, duckdb::types::Type::Text, e.to_string().into()))?,
+        access_count: u64::try_from(row.get::<_, i64>(14)?).unwrap_or(0),
         org_id: row.get(15)?,
         thread_id: row.get(16)?,
         created_at: row.get(17)?,
@@ -89,9 +107,14 @@ fn row_to_memory(row: &duckdb::Row<'_>) -> duckdb::Result<MemoryRecord> {
         deleted_at: row.get(21)?,
         decay_rate: row.get(22)?,
         created_by: row.get(23)?,
-        version: row.get::<_, i32>(24)? as u32,
-        prev_version_id: row.get::<_, Option<String>>(25)?
-            .and_then(|s| Uuid::parse_str(&s).ok()),
+        version: u32::try_from(row.get::<_, i32>(24)?).unwrap_or(1),
+        prev_version_id: match row.get::<_, Option<String>>(25)? {
+            Some(s) => Uuid::parse_str(&s).map_err(|e| {
+                tracing::warn!(memory_id = %id_str, error = %e, "corrupted prev_version_id UUID");
+                e
+            }).ok(),
+            None => None,
+        },
         quarantined: row.get::<_, bool>(26)?,
         quarantine_reason: row.get(27)?,
         decay_function: row.get(28).unwrap_or(None),
@@ -265,16 +288,16 @@ impl StorageBackend for DuckDbStorage {
             params.push(Box::new(org_id.clone()));
         }
 
+        if let Some(ref thread_id) = filter.thread_id {
+            conditions.push(format!("thread_id = ${}", params.len() + 1));
+            params.push(Box::new(thread_id.clone()));
+        }
+
         let where_clause = if conditions.is_empty() {
             String::new()
         } else {
             format!("WHERE {}", conditions.join(" AND "))
         };
-
-        if let Some(ref thread_id) = filter.thread_id {
-            conditions.push(format!("thread_id = ${}", params.len() + 1));
-            params.push(Box::new(thread_id.clone()));
-        }
 
         let sql = format!(
             "SELECT id, agent_id, content, memory_type, scope, importance, tags, metadata, embedding, content_hash, prev_hash, source_type, source_id, consolidation_state, access_count, org_id, thread_id, created_at, updated_at, last_accessed_at, expires_at, deleted_at, decay_rate, created_by, version, prev_version_id, quarantined, quarantine_reason, decay_function FROM memories {where_clause} ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
@@ -371,10 +394,10 @@ impl StorageBackend for DuckDbStorage {
         }; // conn lock dropped here
 
         for perm_str in &acl_result {
-            if let Ok(perm) = perm_str.parse::<Permission>() {
-                if perm.satisfies(required) {
-                    return Ok(true);
-                }
+            if let Ok(perm) = perm_str.parse::<Permission>()
+                && perm.satisfies(required)
+            {
+                return Ok(true);
             }
         }
 
@@ -922,17 +945,20 @@ fn row_to_event(row: &duckdb::Row<'_>) -> duckdb::Result<AgentEvent> {
     let id_str: String = row.get(0)?;
     let parent_id_str: Option<String> = row.get(4)?;
     let payload_json: Option<String> = row.get(6)?;
+    let event_type_str: String = row.get(5)?;
     let content_hash: Vec<u8> = row.get(16)?;
     let prev_hash: Option<Vec<u8>> = row.get(17)?;
     let embedding_blob: Option<Vec<u8>> = row.get(18).unwrap_or(None);
 
     Ok(AgentEvent {
-        id: Uuid::parse_str(&id_str).unwrap(),
+        id: Uuid::parse_str(&id_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
         agent_id: row.get(1)?,
         thread_id: row.get(2)?,
         run_id: row.get(3)?,
         parent_event_id: parent_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
-        event_type: row.get::<_, String>(5)?.parse().unwrap(),
+        event_type: event_type_str.parse()
+            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(5, duckdb::types::Type::Text, e.to_string().into()))?,
         payload: payload_json
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::Value::Null),
@@ -961,7 +987,8 @@ fn row_to_checkpoint(row: &duckdb::Row<'_>) -> duckdb::Result<Checkpoint> {
     let metadata_json: Option<String> = row.get(11)?;
 
     Ok(Checkpoint {
-        id: Uuid::parse_str(&id_str).unwrap(),
+        id: Uuid::parse_str(&id_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
         thread_id: row.get(1)?,
         agent_id: row.get(2)?,
         parent_id: parent_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
@@ -1006,11 +1033,15 @@ fn row_to_delegation(row: &duckdb::Row<'_>) -> duckdb::Result<Delegation> {
         _ => DelegationScope::AllMemories,
     };
 
+    let permission_str: String = row.get(3)?;
+
     Ok(Delegation {
-        id: Uuid::parse_str(&id_str).unwrap(),
+        id: Uuid::parse_str(&id_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
         delegator_id: row.get(1)?,
         delegate_id: row.get(2)?,
-        permission: row.get::<_, String>(3)?.parse().unwrap(),
+        permission: permission_str.parse()
+            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(3, duckdb::types::Type::Text, e.to_string().into()))?,
         scope,
         max_depth: row.get::<_, i32>(6)? as u32,
         current_depth: row.get::<_, i32>(7)? as u32,
@@ -1028,9 +1059,12 @@ fn row_to_relation(row: &duckdb::Row<'_>) -> duckdb::Result<Relation> {
     let metadata_json: Option<String> = row.get(5)?;
 
     Ok(Relation {
-        id: Uuid::parse_str(&id_str).unwrap(),
-        source_id: Uuid::parse_str(&source_str).unwrap(),
-        target_id: Uuid::parse_str(&target_str).unwrap(),
+        id: Uuid::parse_str(&id_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
+        source_id: Uuid::parse_str(&source_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(1, duckdb::types::Type::Text, Box::new(e)))?,
+        target_id: Uuid::parse_str(&target_str)
+            .map_err(|e| duckdb::Error::FromSqlConversionFailure(2, duckdb::types::Type::Text, Box::new(e)))?,
         relation_type: row.get(3)?,
         weight: row.get(4)?,
         metadata: metadata_json

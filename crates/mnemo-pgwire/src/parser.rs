@@ -82,20 +82,20 @@ fn parse_select(sql: &str) -> ParsedStatement {
     // Extract LIMIT
     if let Some(pos) = upper.find("LIMIT") {
         let after = &sql[pos + 5..].trim();
-        if let Some(num_str) = after.split_whitespace().next() {
-            if let Ok(n) = num_str.parse::<usize>() {
-                query.limit = n;
-            }
+        if let Some(num_str) = after.split_whitespace().next()
+            && let Ok(n) = num_str.parse::<usize>()
+        {
+            query.limit = n;
         }
     }
 
     // Extract OFFSET
     if let Some(pos) = upper.find("OFFSET") {
         let after = &sql[pos + 6..].trim();
-        if let Some(num_str) = after.split_whitespace().next() {
-            if let Ok(n) = num_str.parse::<usize>() {
-                query.offset = n;
-            }
+        if let Some(num_str) = after.split_whitespace().next()
+            && let Ok(n) = num_str.parse::<usize>()
+        {
+            query.offset = n;
         }
     }
 
@@ -212,10 +212,10 @@ fn extract_string_condition(upper: &str, original: &str, column: &str) -> Option
 /// Extract a single-quoted string value.
 fn extract_quoted_value(s: &str) -> Option<String> {
     let s = s.trim();
-    if s.starts_with('\'') {
-        if let Some(end) = s[1..].find('\'') {
-            return Some(s[1..1 + end].to_string());
-        }
+    if let Some(stripped) = s.strip_prefix('\'')
+        && let Some(end) = stripped.find('\'')
+    {
+        return Some(stripped[..end].to_string());
     }
     None
 }

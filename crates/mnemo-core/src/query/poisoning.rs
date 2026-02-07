@@ -88,14 +88,14 @@ pub async fn check_for_anomaly(
         // We approximate by checking if total_memories suggests rapid growth
         if profile.total_memories > 10 {
             // Parse last_updated to get time window
-            if let Ok(last_updated) = chrono::DateTime::parse_from_rfc3339(&profile.last_updated) {
-                if let Ok(created) = chrono::DateTime::parse_from_rfc3339(&record.created_at) {
-                    let seconds_since_update = (created - last_updated).num_seconds().max(1);
-                    // If profile was updated less than 1 second ago, it's a burst
-                    if seconds_since_update < 1 {
-                        score += 0.4;
-                        reasons.push("high-frequency burst detected".to_string());
-                    }
+            if let Ok(last_updated) = chrono::DateTime::parse_from_rfc3339(&profile.last_updated)
+                && let Ok(created) = chrono::DateTime::parse_from_rfc3339(&record.created_at)
+            {
+                let seconds_since_update = (created - last_updated).num_seconds().max(1);
+                // If profile was updated less than 1 second ago, it's a burst
+                if seconds_since_update < 1 {
+                    score += 0.4;
+                    reasons.push("high-frequency burst detected".to_string());
                 }
             }
         }

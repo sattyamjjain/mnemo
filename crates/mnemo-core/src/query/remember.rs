@@ -31,10 +31,39 @@ pub struct RememberRequest {
     pub created_by: Option<String>,
 }
 
+impl RememberRequest {
+    pub fn new(content: String) -> Self {
+        Self {
+            content,
+            agent_id: None,
+            memory_type: None,
+            scope: None,
+            importance: None,
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: None,
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RememberResponse {
     pub id: Uuid,
     pub content_hash: String,
+}
+
+impl RememberResponse {
+    pub fn new(id: Uuid, content_hash: String) -> Self {
+        Self { id, content_hash }
+    }
 }
 
 pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<RememberResponse> {
@@ -154,13 +183,21 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
                     metadata: serde_json::Value::Object(serde_json::Map::new()),
                     created_at: record.created_at.clone(),
                 };
-                let _ = engine.storage.insert_relation(&relation).await;
+                if let Err(e) = engine.storage.insert_relation(&relation).await {
+                    tracing::error!(relation_id = %relation.id, error = %e, "failed to insert relation");
+                }
             }
         }
     }
 
     // Emit MemoryWrite event with hash chain linking (fire-and-forget)
-    let prev_event_hash = engine.storage.get_latest_event_hash(&agent_id, record.thread_id.as_deref()).await.unwrap_or(None);
+    let prev_event_hash = match engine.storage.get_latest_event_hash(&agent_id, record.thread_id.as_deref()).await {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
+            None
+        }
+    };
     let event_prev_hash = Some(compute_chain_hash(&content_hash, prev_event_hash.as_deref()));
     let mut event = AgentEvent {
         id: Uuid::now_v7(),
@@ -184,12 +221,14 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
         embedding: None,
     };
     // Optionally embed the event payload
-    if engine.embed_events {
-        if let Ok(emb) = engine.embedding.embed(&event.payload.to_string()).await {
-            event.embedding = Some(emb);
-        }
+    if engine.embed_events
+        && let Ok(emb) = engine.embedding.embed(&event.payload.to_string()).await
+    {
+        event.embedding = Some(emb);
     }
-    let _ = engine.storage.insert_event(&event).await;
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
+    }
 
     // Put in cache if configured
     if let Some(ref cache) = engine.cache {

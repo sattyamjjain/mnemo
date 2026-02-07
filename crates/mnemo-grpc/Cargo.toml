@@ -6,7 +6,7 @@ license.workspace = true
 description = "gRPC API server for Mnemo"
 
 [dependencies]
-mnemo-core = { path = "../mnemo-core" }
+mnemo-core = { workspace = true }
 tonic = "0.12"
 prost = "0.13"
 tokio = { workspace = true }

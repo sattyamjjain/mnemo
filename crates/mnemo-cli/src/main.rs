@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use clap::Parser;
 use rmcp::{ServiceExt, transport::stdio};
+use tokio::sync::Notify;
 
 use mnemo_core::embedding::openai::OpenAiEmbedding;
 use mnemo_core::embedding::{EmbeddingProvider, NoopEmbedding};
@@ -93,6 +94,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Build engine based on backend selection
+    // Keep a reference to the DuckDB vector index for shutdown save
+    #[allow(unused_assignments)]
+    let mut duckdb_index: Option<Arc<UsearchIndex>> = None;
     let engine = if let Some(_pg_url) = &cli.postgres_url {
         #[cfg(feature = "postgres")]
         {
@@ -138,6 +142,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let full_text = Arc::new(TantivyFullTextIndex::new(&ft_path)?);
         tracing::info!("Full-text index ready at {:?} ({} docs)", ft_path, full_text.len());
 
+        // Keep a clone of the actual index for shutdown save
+        duckdb_index = Some(index.clone());
+
         let mut eng = MnemoEngine::new(
                 storage,
                 index.clone(),
@@ -160,11 +167,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let rest_engine = engine.clone();
         tokio::spawn(async move {
             let app = mnemo_rest::router(rest_engine);
-            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
-                .await
-                .expect("Failed to bind REST port");
-            tracing::info!("REST API listening on 0.0.0.0:{port}");
-            axum::serve(listener, app).await.expect("REST server failed");
+            match tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await {
+                Ok(listener) => {
+                    tracing::info!("REST API listening on 0.0.0.0:{port}");
+                    if let Err(e) = axum::serve(listener, app).await {
+                        tracing::error!("REST server failed: {e}");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to bind REST port {port}: {e}");
+                }
+            }
         });
     }
 
@@ -180,11 +193,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    // Shared shutdown signal
+    let shutdown_notify = Arc::new(Notify::new());
+
     // Start idle timeout watchdog (for scale-to-zero)
     if let Some(ref tracker) = activity_tracker {
         let timeout = cli.idle_timeout_seconds;
         let watchdog_tracker = tracker.clone();
         let watchdog_engine = engine.clone();
+        let watchdog_shutdown = shutdown_notify.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -211,13 +228,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(resp) => tracing::info!("Shutdown checkpoint created: {}", resp.id),
                         Err(e) => tracing::warn!("Failed to create shutdown checkpoint: {e}"),
                     }
-                    std::process::exit(0);
+                    watchdog_shutdown.notify_one();
+                    return;
                 }
             }
         });
 
         tracing::info!("Idle timeout watchdog enabled: {timeout}s");
     }
+
+    // Signal handler for graceful shutdown (Ctrl+C / SIGTERM)
+    let signal_shutdown = shutdown_notify.clone();
+    tokio::spawn(async move {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!("Failed to listen for Ctrl+C: {e}");
+            return;
+        }
+        tracing::info!("Received shutdown signal");
+        signal_shutdown.notify_one();
+    });
 
     // Create and start MCP server
     let mut server = MnemoServer::new(engine);
@@ -227,12 +256,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting Mnemo MCP server on stdio");
 
     let service = server.serve(stdio()).await?;
-    service.waiting().await?;
 
-    // Save DuckDB indices on shutdown (only when using DuckDB backend)
-    if cli.postgres_url.is_none() {
+    // Wait for either MCP service to end or a shutdown signal
+    tokio::select! {
+        result = service.waiting() => {
+            if let Err(e) = result {
+                tracing::error!("MCP service error: {e}");
+            }
+        }
+        _ = shutdown_notify.notified() => {
+            tracing::info!("Shutdown initiated, saving state...");
+        }
+    }
+
+    // Save DuckDB vector index on shutdown (using the actual populated index)
+    if let Some(ref index) = duckdb_index {
         let index_path = cli.db_path.with_extension("usearch");
-        let index = UsearchIndex::new(cli.dimensions)?;
+        tracing::info!("Saving vector index ({} vectors)...", index.len());
         if let Err(e) = index.save(&index_path) {
             tracing::error!("Failed to save vector index: {}", e);
         }

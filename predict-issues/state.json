@@ -1,0 +1,11 @@
+{
+  "scan_date": "2026-02-07",
+  "total_issues": 42,
+  "critical": 10,
+  "high": 16,
+  "medium": 12,
+  "low": 4,
+  "status": "scan_complete",
+  "fixed": 0,
+  "agents_used": ["concurrency-safety", "performance-bottlenecks", "silent-failure-hunter", "architecture-reviewer"]
+}

@@ -13,6 +13,9 @@ path = "src/main.rs"
 mnemo-core = { workspace = true }
 mnemo-mcp = { workspace = true }
 mnemo-rest = { workspace = true, optional = true }
+mnemo-admin = { workspace = true, optional = true }
+mnemo-pgwire = { workspace = true, optional = true }
+mnemo-grpc = { workspace = true, optional = true }
 mnemo-postgres = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 tokio = { workspace = true }
@@ -25,4 +28,7 @@ serde_json = { workspace = true }
 [features]
 default = ["rest"]
 rest = ["dep:mnemo-rest", "dep:axum"]
+admin = ["dep:mnemo-admin"]
+pgwire = ["dep:mnemo-pgwire"]
+grpc = ["dep:mnemo-grpc"]
 postgres = ["dep:mnemo-postgres"]

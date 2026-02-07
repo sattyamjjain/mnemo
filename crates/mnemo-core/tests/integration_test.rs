@@ -707,7 +707,7 @@ async fn test_ttl_sets_expires_at() {
     let expires_at = chrono::DateTime::parse_from_rfc3339(record.expires_at.as_ref().unwrap()).unwrap();
     let now = chrono::Utc::now();
     let diff = (expires_at.timestamp() - now.timestamp()).abs();
-    assert!(diff >= 3500 && diff <= 3700, "expires_at should be ~1 hour from now, got diff={diff}");
+    assert!((3500..=3700).contains(&diff), "expires_at should be ~1 hour from now, got diff={diff}");
 }
 
 #[tokio::test]

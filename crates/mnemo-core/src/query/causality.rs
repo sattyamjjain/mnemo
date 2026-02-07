@@ -231,7 +231,7 @@ mod tests {
         let read_event = make_event(EventType::MemoryRead);
         let checkpoint_event = make_event(EventType::Checkpoint);
 
-        let all_nodes = vec![
+        let all_nodes = [
             CausalNode { event: write_event.clone(), children: vec![], depth: 0 },
             CausalNode { event: read_event.clone(), children: vec![], depth: 1 },
             CausalNode { event: checkpoint_event.clone(), children: vec![], depth: 2 },

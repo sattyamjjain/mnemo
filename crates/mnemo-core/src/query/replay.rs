@@ -16,12 +16,40 @@ pub struct ReplayRequest {
     pub branch_name: Option<String>,
 }
 
+impl ReplayRequest {
+    pub fn new(thread_id: String) -> Self {
+        Self {
+            thread_id,
+            agent_id: None,
+            checkpoint_id: None,
+            branch_name: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayResponse {
     pub checkpoint: Checkpoint,
     pub memories: Vec<MemoryRecord>,
     pub events: Vec<AgentEvent>,
     pub chain_verification: Option<ChainVerificationResult>,
+}
+
+impl ReplayResponse {
+    pub fn new(
+        checkpoint: Checkpoint,
+        memories: Vec<MemoryRecord>,
+        events: Vec<AgentEvent>,
+        chain_verification: Option<ChainVerificationResult>,
+    ) -> Self {
+        Self {
+            checkpoint,
+            memories,
+            events,
+            chain_verification,
+        }
+    }
 }
 
 pub async fn execute(engine: &MnemoEngine, request: ReplayRequest) -> Result<ReplayResponse> {

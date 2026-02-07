@@ -73,30 +73,49 @@ impl MnemoServer {
         Parameters(input): Parameters<RememberInput>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
-        let memory_type = input
-            .memory_type
-            .and_then(|s| s.parse::<MemoryType>().ok());
-        let scope = input.scope.and_then(|s| s.parse::<Scope>().ok());
-
-        let source_type = input.source_type.as_deref().and_then(parse_source_type);
-
-        let request = RememberRequest {
-            content: input.content,
-            agent_id: None,
-            memory_type,
-            scope,
-            importance: input.importance,
-            tags: input.tags,
-            metadata: input.metadata,
-            source_type,
-            source_id: input.source_id,
-            org_id: input.org_id,
-            thread_id: input.thread_id,
-            ttl_seconds: input.ttl_seconds,
-            related_to: input.related_to,
-            decay_rate: input.decay_rate,
-            created_by: input.created_by,
+        let memory_type = match input.memory_type {
+            Some(ref s) => match s.parse::<MemoryType>() {
+                Ok(mt) => Some(mt),
+                Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working", s
+                ))])),
+            },
+            None => None,
         };
+        let scope = match input.scope {
+            Some(ref s) => match s.parse::<Scope>() {
+                Ok(sc) => Some(sc),
+                Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid scope '{}': expected one of: private, shared, public, global", s
+                ))])),
+            },
+            None => None,
+        };
+
+        let source_type = match input.source_type {
+            Some(ref s) => match parse_source_type(s) {
+                Some(st) => Some(st),
+                None => return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid source_type '{}': expected one of: agent, human, system, user_input, tool_output, model_response, retrieval, consolidation, import", s
+                ))])),
+            },
+            None => None,
+        };
+
+        let mut request = RememberRequest::new(input.content);
+        request.memory_type = memory_type;
+        request.scope = scope;
+        request.importance = input.importance;
+        request.tags = input.tags;
+        request.metadata = input.metadata;
+        request.source_type = source_type;
+        request.source_id = input.source_id;
+        request.org_id = input.org_id;
+        request.thread_id = input.thread_id;
+        request.ttl_seconds = input.ttl_seconds;
+        request.related_to = input.related_to;
+        request.decay_rate = input.decay_rate;
+        request.created_by = input.created_by;
 
         match self.engine.remember(request).await {
             Ok(response) => {
@@ -106,7 +125,7 @@ impl MnemoServer {
                     "status": "remembered"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -122,38 +141,63 @@ impl MnemoServer {
         Parameters(input): Parameters<RecallInput>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
-        let memory_type = input
-            .memory_type
-            .and_then(|s| s.parse::<MemoryType>().ok());
-
-        let memory_types = input.memory_types.map(|types| {
-            types.iter().filter_map(|s| s.parse::<MemoryType>().ok()).collect()
-        });
-
-        let scope = input.scope.and_then(|s| s.parse::<Scope>().ok());
-
-        let temporal_range = input.temporal_range.map(|tr| TemporalRange {
-            after: tr.after,
-            before: tr.before,
-        });
-
-        let request = RecallRequest {
-            query: input.query,
-            agent_id: None,
-            limit: input.limit,
-            memory_type,
-            memory_types,
-            scope,
-            min_importance: input.min_importance,
-            tags: input.tags,
-            org_id: input.org_id,
-            strategy: input.strategy,
-            temporal_range,
-            recency_half_life_hours: input.recency_half_life_hours,
-            hybrid_weights: input.hybrid_weights,
-            rrf_k: input.rrf_k,
-            as_of: input.as_of,
+        let memory_type = match input.memory_type {
+            Some(ref s) => match s.parse::<MemoryType>() {
+                Ok(mt) => Some(mt),
+                Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working", s
+                ))])),
+            },
+            None => None,
         };
+
+        let memory_types = match input.memory_types {
+            Some(ref types) => {
+                let mut parsed = Vec::with_capacity(types.len());
+                for s in types {
+                    match s.parse::<MemoryType>() {
+                        Ok(mt) => parsed.push(mt),
+                        Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                            "invalid memory_type '{}' in memory_types: expected one of: episodic, semantic, procedural, working", s
+                        ))])),
+                    }
+                }
+                Some(parsed)
+            }
+            None => None,
+        };
+
+        let scope = match input.scope {
+            Some(ref s) => match s.parse::<Scope>() {
+                Ok(sc) => Some(sc),
+                Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid scope '{}': expected one of: private, shared, public, global", s
+                ))])),
+            },
+            None => None,
+        };
+
+        let temporal_range = input.temporal_range.map(|tr| {
+            let mut range = TemporalRange::new();
+            range.after = tr.after;
+            range.before = tr.before;
+            range
+        });
+
+        let mut request = RecallRequest::new(input.query);
+        request.limit = input.limit;
+        request.memory_type = memory_type;
+        request.memory_types = memory_types;
+        request.scope = scope;
+        request.min_importance = input.min_importance;
+        request.tags = input.tags;
+        request.org_id = input.org_id;
+        request.strategy = input.strategy;
+        request.temporal_range = temporal_range;
+        request.recency_half_life_hours = input.recency_half_life_hours;
+        request.hybrid_weights = input.hybrid_weights;
+        request.rrf_k = input.rrf_k;
+        request.as_of = input.as_of;
 
         match self.engine.recall(request).await {
             Ok(response) => {
@@ -162,7 +206,7 @@ impl MnemoServer {
                     "total": response.total
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -193,29 +237,46 @@ impl MnemoServer {
             }
         };
 
-        let strategy = input.strategy.map(|s| match s.as_str() {
-            "hard_delete" => ForgetStrategy::HardDelete,
-            "decay" => ForgetStrategy::Decay,
-            "consolidate" => ForgetStrategy::Consolidate,
-            "archive" => ForgetStrategy::Archive,
-            _ => ForgetStrategy::SoftDelete,
-        });
-
-        let criteria = input.criteria.map(|c| {
-            mnemo_core::query::forget::ForgetCriteria {
-                max_age_hours: c.max_age_hours,
-                min_importance_below: c.min_importance_below,
-                memory_type: c.memory_type.and_then(|s| s.parse().ok()),
-                tags: c.tags,
-            }
-        });
-
-        let request = ForgetRequest {
-            memory_ids,
-            agent_id: None,
-            strategy,
-            criteria,
+        let strategy = match input.strategy {
+            Some(ref s) => match s.as_str() {
+                "soft_delete" => Some(ForgetStrategy::SoftDelete),
+                "hard_delete" => Some(ForgetStrategy::HardDelete),
+                "decay" => Some(ForgetStrategy::Decay),
+                "consolidate" => Some(ForgetStrategy::Consolidate),
+                "archive" => Some(ForgetStrategy::Archive),
+                unknown => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "invalid strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive", unknown
+                    ))]));
+                }
+            },
+            None => None,
         };
+
+        let criteria = match input.criteria {
+            Some(c) => {
+                let memory_type = match c.memory_type {
+                    Some(ref s) => match s.parse::<MemoryType>() {
+                        Ok(mt) => Some(mt),
+                        Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                            "invalid memory_type '{}' in criteria: expected one of: episodic, semantic, procedural, working", s
+                        ))])),
+                    },
+                    None => None,
+                };
+                Some(mnemo_core::query::forget::ForgetCriteria {
+                    max_age_hours: c.max_age_hours,
+                    min_importance_below: c.min_importance_below,
+                    memory_type,
+                    tags: c.tags,
+                })
+            }
+            None => None,
+        };
+
+        let mut request = ForgetRequest::new(memory_ids);
+        request.strategy = strategy;
+        request.criteria = criteria;
 
         match self.engine.forget(request).await {
             Ok(response) => {
@@ -225,7 +286,7 @@ impl MnemoServer {
                     "status": "forgotten"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -245,7 +306,15 @@ impl MnemoServer {
         // Support batch: memory_ids takes precedence over memory_id
         let id_strings = input.memory_ids.unwrap_or_else(|| vec![input.memory_id.clone()]);
 
-        let permission = input.permission.and_then(|s| s.parse().ok());
+        let permission = match input.permission {
+            Some(ref s) => match s.parse() {
+                Ok(p) => Some(p),
+                Err(_) => return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid permission '{}': expected one of: read, write, delete, share, delegate, admin", s
+                ))])),
+            },
+            None => None,
+        };
 
         let mut all_acl_ids: Vec<String> = Vec::new();
         let mut all_shared_with: Vec<String> = Vec::new();
@@ -260,14 +329,10 @@ impl MnemoServer {
                 }
             };
 
-            let request = ShareRequest {
-                memory_id,
-                agent_id: None,
-                target_agent_id: input.target_agent_id.clone(),
-                target_agent_ids: input.target_agent_ids.clone(),
-                permission,
-                expires_in_hours: input.expires_in_hours,
-            };
+            let mut request = ShareRequest::new(memory_id, input.target_agent_id.clone());
+            request.target_agent_ids = input.target_agent_ids.clone();
+            request.permission = permission;
+            request.expires_in_hours = input.expires_in_hours;
 
             match self.engine.share(request).await {
                 Ok(response) => {
@@ -292,7 +357,7 @@ impl MnemoServer {
             "status": "shared"
         });
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&result).unwrap(),
+            serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
         )]))
     }
 
@@ -305,14 +370,10 @@ impl MnemoServer {
         Parameters(input): Parameters<CheckpointInput>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
-        let request = CheckpointRequest {
-            thread_id: input.thread_id,
-            agent_id: None,
-            branch_name: input.branch_name,
-            state_snapshot: input.state_snapshot,
-            label: input.label,
-            metadata: input.metadata,
-        };
+        let mut request = CheckpointRequest::new(input.thread_id, input.state_snapshot);
+        request.branch_name = input.branch_name;
+        request.label = input.label;
+        request.metadata = input.metadata;
 
         match self.engine.checkpoint(request).await {
             Ok(response) => {
@@ -323,7 +384,7 @@ impl MnemoServer {
                     "status": "checkpointed"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -342,13 +403,9 @@ impl MnemoServer {
         let source_checkpoint_id = input.source_checkpoint_id
             .and_then(|s| uuid::Uuid::parse_str(&s).ok());
 
-        let request = BranchRequest {
-            thread_id: input.thread_id,
-            agent_id: None,
-            new_branch_name: input.new_branch_name,
-            source_checkpoint_id,
-            source_branch: input.source_branch,
-        };
+        let mut request = BranchRequest::new(input.thread_id, input.new_branch_name);
+        request.source_checkpoint_id = source_checkpoint_id;
+        request.source_branch = input.source_branch;
 
         match self.engine.branch(request).await {
             Ok(response) => {
@@ -359,7 +416,7 @@ impl MnemoServer {
                     "status": "branched"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -375,11 +432,17 @@ impl MnemoServer {
         Parameters(input): Parameters<MergeInput>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
-        let strategy = input.strategy.as_deref().map(|s| match s {
-            "cherry_pick" => MergeStrategy::CherryPick,
-            "squash" => MergeStrategy::Squash,
-            _ => MergeStrategy::FullMerge,
-        });
+        let strategy = match input.strategy.as_deref() {
+            Some("full_merge") => Some(MergeStrategy::FullMerge),
+            Some("cherry_pick") => Some(MergeStrategy::CherryPick),
+            Some("squash") => Some(MergeStrategy::Squash),
+            Some(unknown) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid strategy '{}': expected one of: full_merge, cherry_pick, squash", unknown
+                ))]));
+            }
+            None => None,
+        };
 
         let cherry_pick_ids = input.cherry_pick_ids.map(|ids| {
             ids.iter()
@@ -387,14 +450,10 @@ impl MnemoServer {
                 .collect()
         });
 
-        let request = MergeRequest {
-            thread_id: input.thread_id,
-            agent_id: None,
-            source_branch: input.source_branch,
-            target_branch: input.target_branch,
-            strategy,
-            cherry_pick_ids,
-        };
+        let mut request = MergeRequest::new(input.thread_id, input.source_branch);
+        request.target_branch = input.target_branch;
+        request.strategy = strategy;
+        request.cherry_pick_ids = cherry_pick_ids;
 
         match self.engine.merge(request).await {
             Ok(response) => {
@@ -405,7 +464,7 @@ impl MnemoServer {
                     "status": "merged"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -424,12 +483,9 @@ impl MnemoServer {
         let checkpoint_id = input.checkpoint_id
             .and_then(|s| uuid::Uuid::parse_str(&s).ok());
 
-        let request = ReplayRequest {
-            thread_id: input.thread_id,
-            agent_id: None,
-            checkpoint_id,
-            branch_name: input.branch_name,
-        };
+        let mut request = ReplayRequest::new(input.thread_id);
+        request.checkpoint_id = checkpoint_id;
+        request.branch_name = input.branch_name;
 
         match self.engine.replay(request).await {
             Ok(response) => {
@@ -454,7 +510,7 @@ impl MnemoServer {
                     "status": "replayed"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -519,7 +575,7 @@ impl MnemoServer {
                     "status": "delegated"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&result).unwrap(),
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -546,7 +602,7 @@ impl MnemoServer {
                     "status": if result.valid { "verified" } else { "integrity_violation" }
                 });
                 Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::to_string_pretty(&response).unwrap(),
+                    serde_json::to_string_pretty(&response).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),

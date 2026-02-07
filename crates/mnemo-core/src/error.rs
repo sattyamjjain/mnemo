@@ -14,11 +14,32 @@ pub enum Error {
     #[error("storage error: {0}")]
     Storage(String),
 
+    #[error("storage error: {message}")]
+    StorageSource {
+        message: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
     #[error("index error: {0}")]
     Index(String),
 
+    #[error("index error: {message}")]
+    IndexSource {
+        message: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
     #[error("embedding error: {0}")]
     Embedding(String),
+
+    #[error("embedding error: {message}")]
+    EmbeddingSource {
+        message: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 
     #[error("internal error: {0}")]
     Internal(String),

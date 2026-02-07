@@ -37,7 +37,7 @@ impl SyncEngine {
         let watermark_key = "push_watermark";
         let effective_since = self.local.get_sync_watermark(watermark_key).await?
             .unwrap_or_else(|| since.to_string());
-        let local_memories = self.local.list_memories_since(&effective_since, 10000).await?;
+        let local_memories = self.local.list_memories_since(&effective_since, crate::query::MAX_BATCH_QUERY_LIMIT).await?;
         let mut pushed = 0;
         for record in &local_memories {
             self.remote.upsert_memory(record).await?;
@@ -56,7 +56,7 @@ impl SyncEngine {
         let watermark_key = "pull_watermark";
         let effective_since = self.local.get_sync_watermark(watermark_key).await?
             .unwrap_or_else(|| since.to_string());
-        let remote_memories = self.remote.list_memories_since(&effective_since, 10000).await?;
+        let remote_memories = self.remote.list_memories_since(&effective_since, crate::query::MAX_BATCH_QUERY_LIMIT).await?;
         let mut pulled = 0;
         for record in &remote_memories {
             self.local.upsert_memory(record).await?;
@@ -72,8 +72,8 @@ impl SyncEngine {
     /// Full bidirectional sync. Pushes local changes, then pulls remote changes.
     /// Detects conflicts where both sides have been modified since `since`.
     pub async fn full_sync(&self, since: &str) -> Result<SyncResult> {
-        let local_memories = self.local.list_memories_since(since, 10000).await?;
-        let remote_memories = self.remote.list_memories_since(since, 10000).await?;
+        let local_memories = self.local.list_memories_since(since, crate::query::MAX_BATCH_QUERY_LIMIT).await?;
+        let remote_memories = self.remote.list_memories_since(since, crate::query::MAX_BATCH_QUERY_LIMIT).await?;
 
         // Build a map of remote memory IDs → updated_at for conflict detection
         let remote_map: std::collections::HashMap<Uuid, String> = remote_memories

@@ -35,6 +35,111 @@ pub struct MemoryRecord {
 }
 
 impl MemoryRecord {
+    /// Create a new MemoryRecord with sensible defaults.
+    /// Only `agent_id` and `content` are required; all other fields use defaults.
+    pub fn new(agent_id: String, content: String) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+        let content_hash = crate::hash::compute_content_hash(&content, &agent_id, &now);
+        Self {
+            id: Uuid::now_v7(),
+            agent_id,
+            content,
+            memory_type: MemoryType::Episodic,
+            scope: Scope::Private,
+            importance: 0.5,
+            tags: vec![],
+            metadata: serde_json::json!({}),
+            embedding: None,
+            content_hash,
+            prev_hash: None,
+            source_type: SourceType::Agent,
+            source_id: None,
+            consolidation_state: ConsolidationState::Raw,
+            access_count: 0,
+            org_id: None,
+            thread_id: None,
+            created_at: now.clone(),
+            updated_at: now,
+            last_accessed_at: None,
+            expires_at: None,
+            deleted_at: None,
+            decay_rate: None,
+            created_by: None,
+            version: 1,
+            prev_version_id: None,
+            quarantined: false,
+            quarantine_reason: None,
+            decay_function: None,
+        }
+    }
+
+    /// Create a `MemoryRecord` with all fields specified.
+    /// Intended for storage backends that reconstruct records from database rows.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        id: Uuid,
+        agent_id: String,
+        content: String,
+        memory_type: MemoryType,
+        scope: Scope,
+        importance: f32,
+        tags: Vec<String>,
+        metadata: serde_json::Value,
+        embedding: Option<Vec<f32>>,
+        content_hash: Vec<u8>,
+        prev_hash: Option<Vec<u8>>,
+        source_type: SourceType,
+        source_id: Option<String>,
+        consolidation_state: ConsolidationState,
+        access_count: u64,
+        org_id: Option<String>,
+        thread_id: Option<String>,
+        created_at: String,
+        updated_at: String,
+        last_accessed_at: Option<String>,
+        expires_at: Option<String>,
+        deleted_at: Option<String>,
+        decay_rate: Option<f32>,
+        created_by: Option<String>,
+        version: u32,
+        prev_version_id: Option<Uuid>,
+        quarantined: bool,
+        quarantine_reason: Option<String>,
+        decay_function: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            agent_id,
+            content,
+            memory_type,
+            scope,
+            importance,
+            tags,
+            metadata,
+            embedding,
+            content_hash,
+            prev_hash,
+            source_type,
+            source_id,
+            consolidation_state,
+            access_count,
+            org_id,
+            thread_id,
+            created_at,
+            updated_at,
+            last_accessed_at,
+            expires_at,
+            deleted_at,
+            decay_rate,
+            created_by,
+            version,
+            prev_version_id,
+            quarantined,
+            quarantine_reason,
+            decay_function,
+        }
+    }
+
     pub fn is_deleted(&self) -> bool {
         self.deleted_at.is_some()
     }

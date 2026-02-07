@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::hash::compute_content_hash;
 use crate::model::checkpoint::Checkpoint;
-use crate::model::event::{AgentEvent, EventType};
+use crate::model::event::EventType;
 use crate::query::MnemoEngine;
 use crate::storage::MemoryFilter;
 
@@ -18,11 +17,35 @@ pub struct CheckpointRequest {
     pub metadata: Option<serde_json::Value>,
 }
 
+impl CheckpointRequest {
+    pub fn new(thread_id: String, state_snapshot: serde_json::Value) -> Self {
+        Self {
+            thread_id,
+            agent_id: None,
+            branch_name: None,
+            state_snapshot,
+            label: None,
+            metadata: None,
+        }
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointResponse {
     pub id: Uuid,
     pub parent_id: Option<Uuid>,
     pub branch_name: String,
+}
+
+impl CheckpointResponse {
+    pub fn new(id: Uuid, parent_id: Option<Uuid>, branch_name: String) -> Self {
+        Self {
+            id,
+            parent_id,
+            branch_name,
+        }
+    }
 }
 
 pub async fn execute(engine: &MnemoEngine, request: CheckpointRequest) -> Result<CheckpointResponse> {
@@ -77,28 +100,17 @@ pub async fn execute(engine: &MnemoEngine, request: CheckpointRequest) -> Result
     engine.storage.insert_checkpoint(&cp).await?;
 
     // Emit Checkpoint event
-    let event = AgentEvent {
-        id: Uuid::now_v7(),
-        agent_id,
-        thread_id: Some(request.thread_id),
-        run_id: None,
-        parent_event_id: None,
-        event_type: EventType::Checkpoint,
-        payload: serde_json::json!({"checkpoint_id": id.to_string(), "branch": branch_name}),
-        trace_id: None,
-        span_id: None,
-        model: None,
-        tokens_input: None,
-        tokens_output: None,
-        latency_ms: None,
-        cost_usd: None,
-        timestamp: now.clone(),
-        logical_clock: 0,
-        content_hash: compute_content_hash(&id.to_string(), &cp.agent_id, &now),
-        prev_hash: None,
-        embedding: None,
-    };
-    let _ = engine.storage.insert_event(&event).await;
+    let event = super::event_builder::build_event(
+        engine,
+        &agent_id,
+        EventType::Checkpoint,
+        serde_json::json!({"checkpoint_id": id.to_string(), "branch": branch_name}),
+        &id.to_string(),
+        Some(request.thread_id),
+    ).await;
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
+    }
 
     Ok(CheckpointResponse {
         id,

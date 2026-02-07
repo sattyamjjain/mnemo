@@ -128,32 +128,66 @@ pub async fn recall_handler(
     State(engine): State<AppState>,
     Query(params): Query<RecallParams>,
 ) -> Result<Json<RecallResponse>, AppError> {
-    let memory_type = params
-        .memory_type
-        .as_deref()
-        .and_then(|s| s.parse::<MemoryType>().ok());
+    let memory_type = match params.memory_type.as_deref() {
+        Some(s) => Some(s.parse::<MemoryType>().map_err(|_| {
+            AppError(CoreError::Validation(format!(
+                "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working",
+                s
+            )))
+        })?),
+        None => None,
+    };
 
-    let scope = params
-        .scope
-        .as_deref()
-        .and_then(|s| s.parse::<Scope>().ok());
+    let scope = match params.scope.as_deref() {
+        Some(s) => Some(s.parse::<Scope>().map_err(|_| {
+            AppError(CoreError::Validation(format!(
+                "invalid scope '{}': expected one of: private, shared, public, global",
+                s
+            )))
+        })?),
+        None => None,
+    };
 
     let tags = params
         .tags
         .as_deref()
         .map(|t| t.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>());
 
-    let memory_types = params.memory_types.as_deref().map(|s| {
-        s.split(',')
-            .filter_map(|t| t.trim().parse::<MemoryType>().ok())
-            .collect::<Vec<_>>()
-    });
+    let memory_types = match params.memory_types.as_deref() {
+        Some(s) => {
+            let mut parsed = Vec::new();
+            for t in s.split(',') {
+                let trimmed = t.trim();
+                let mt = trimmed.parse::<MemoryType>().map_err(|_| {
+                    AppError(CoreError::Validation(format!(
+                        "invalid memory_type '{}' in memory_types: expected one of: episodic, semantic, procedural, working",
+                        trimmed
+                    )))
+                })?;
+                parsed.push(mt);
+            }
+            Some(parsed)
+        }
+        None => None,
+    };
 
-    let hybrid_weights = params.hybrid_weights.as_deref().map(|s| {
-        s.split(',')
-            .filter_map(|w| w.trim().parse::<f32>().ok())
-            .collect::<Vec<_>>()
-    });
+    let hybrid_weights = match params.hybrid_weights.as_deref() {
+        Some(s) => {
+            let mut weights = Vec::new();
+            for w in s.split(',') {
+                let trimmed = w.trim();
+                let val = trimmed.parse::<f32>().map_err(|_| {
+                    AppError(CoreError::Validation(format!(
+                        "invalid weight '{}' in hybrid_weights: expected a floating-point number",
+                        trimmed
+                    )))
+                })?;
+                weights.push(val);
+            }
+            Some(weights)
+        }
+        None => None,
+    };
 
     let request = RecallRequest {
         query: params.query,
@@ -225,13 +259,22 @@ pub async fn forget_handler(
     Path(id): Path<Uuid>,
     Query(params): Query<ForgetParams>,
 ) -> Result<Json<ForgetResponse>, AppError> {
-    let strategy = params.strategy.as_deref().map(|s| match s {
-        "hard_delete" => ForgetStrategy::HardDelete,
-        "decay" => ForgetStrategy::Decay,
-        "consolidate" => ForgetStrategy::Consolidate,
-        "archive" => ForgetStrategy::Archive,
-        _ => ForgetStrategy::SoftDelete,
-    });
+    let strategy = match params.strategy.as_deref() {
+        Some(s) => Some(match s {
+            "soft_delete" => ForgetStrategy::SoftDelete,
+            "hard_delete" => ForgetStrategy::HardDelete,
+            "decay" => ForgetStrategy::Decay,
+            "consolidate" => ForgetStrategy::Consolidate,
+            "archive" => ForgetStrategy::Archive,
+            other => {
+                return Err(AppError(CoreError::Validation(format!(
+                    "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive",
+                    other
+                ))));
+            }
+        }),
+        None => None,
+    };
 
     let request = ForgetRequest {
         memory_ids: vec![id],
@@ -250,10 +293,15 @@ pub async fn share_handler(
     Path(id): Path<Uuid>,
     Json(body): Json<ShareBody>,
 ) -> Result<Json<ShareResponse>, AppError> {
-    let permission = body
-        .permission
-        .as_deref()
-        .and_then(|s| s.parse::<Permission>().ok());
+    let permission = match body.permission.as_deref() {
+        Some(s) => Some(s.parse::<Permission>().map_err(|_| {
+            AppError(CoreError::Validation(format!(
+                "invalid permission '{}': expected one of: read, write, delete, share, delegate, admin",
+                s
+            )))
+        })?),
+        None => None,
+    };
 
     let request = ShareRequest {
         memory_id: id,
