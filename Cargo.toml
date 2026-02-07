@@ -42,7 +42,7 @@ usearch = "2.21"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Embedding
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # MCP
 rmcp = { version = "0.14", features = ["server", "transport-io"] }
