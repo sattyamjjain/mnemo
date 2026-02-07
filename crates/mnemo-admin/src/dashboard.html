@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mnemo Admin Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181a20;
+    --border: #2a2d35;
+    --text: #e1e4ea;
+    --text-muted: #8b8fa3;
+    --accent: #6c8aff;
+    --accent-hover: #8da4ff;
+    --danger: #e05252;
+    --danger-hover: #e87070;
+    --success: #3fbf7f;
+    --warning: #e0a832;
+    --tag-bg: #252830;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  header .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 32px;
+  }
+
+  /* Stat cards */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+
+  .stat-card .label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .stat-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .tab-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Filters */
+  .filters {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .filters label {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .filters select, .filters input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .filters select:focus, .filters input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* Tables */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(108,138,255,0.04); }
+
+  .content-preview {
+    max-width: 320px;
+    word-break: break-word;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .badge-quarantined {
+    background: rgba(224,82,82,0.15);
+    color: var(--danger);
+  }
+
+  .badge-ok {
+    background: rgba(63,191,127,0.15);
+    color: var(--success);
+  }
+
+  .badge-type {
+    background: var(--tag-bg);
+    color: var(--accent);
+  }
+
+  .tag {
+    display: inline-block;
+    background: var(--tag-bg);
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    margin: 1px 2px;
+  }
+
+  /* Buttons */
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-weight: 500;
+  }
+
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-danger {
+    background: var(--danger);
+  }
+
+  .btn-danger:hover { background: var(--danger-hover); }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  /* Loading */
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  /* Error banner */
+  .error-banner {
+    background: rgba(224,82,82,0.1);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: 10px 16px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    display: none;
+  }
+
+  .mono {
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Mnemo Admin</h1>
+  <span class="subtitle">Memory Database Dashboard</span>
+</header>
+
+<div class="container">
+  <div id="error-banner" class="error-banner"></div>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="label">Memories</div>
+      <div class="value" id="stat-memories">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Events</div>
+      <div class="value" id="stat-events">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Agents</div>
+      <div class="value" id="stat-agents">--</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="memories">Memories</button>
+    <button class="tab-btn" data-tab="events">Events</button>
+  </div>
+
+  <!-- Memories Tab -->
+  <div id="tab-memories" class="tab-content active">
+    <div class="filters">
+      <label for="filter-agent">Agent:</label>
+      <select id="filter-agent">
+        <option value="">All agents</option>
+      </select>
+      <label for="filter-limit">Show:</label>
+      <select id="filter-limit">
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+      <button class="btn btn-sm" onclick="loadMemories(0)">Refresh</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Agent</th>
+            <th>Content</th>
+            <th>Type</th>
+            <th>Scope</th>
+            <th>Importance</th>
+            <th>Tags</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="memories-body">
+          <tr><td colspan="10" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="memories-pagination"></div>
+  </div>
+
+  <!-- Events Tab -->
+  <div id="tab-events" class="tab-content">
+    <div class="filters">
+      <label for="events-limit">Show:</label>
+      <select id="events-limit">
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+      <button class="btn btn-sm" onclick="loadEvents(0)">Refresh</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Agent</th>
+            <th>Event Type</th>
+            <th>Thread</th>
+            <th>Model</th>
+            <th>Tokens In</th>
+            <th>Tokens Out</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="events-body">
+          <tr><td colspan="8" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="events-pagination"></div>
+  </div>
+</div>
+
+<script>
+  const API = '/admin/api';
+  let currentMemoryOffset = 0;
+  let currentEventOffset = 0;
+
+  // ---- Utilities ----
+
+  function showError(msg) {
+    const el = document.getElementById('error-banner');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 8000);
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function shortId(uuid) {
+    return uuid.substring(0, 8);
+  }
+
+  function formatDate(iso) {
+    if (!iso) return '--';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    } catch (_) {
+      return iso;
+    }
+  }
+
+  // ---- Tabs ----
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---- Stats ----
+
+  async function loadStats() {
+    try {
+      const res = await fetch(API + '/stats');
+      if (!res.ok) throw new Error('Failed to fetch stats');
+      const data = await res.json();
+
+      document.getElementById('stat-memories').textContent = data.memory_count;
+      document.getElementById('stat-events').textContent = data.event_count;
+      document.getElementById('stat-agents').textContent = data.agent_ids.length;
+
+      // Populate agent filter
+      const sel = document.getElementById('filter-agent');
+      // Clear existing options beyond the first
+      while (sel.options.length > 1) sel.remove(1);
+      data.agent_ids.forEach(aid => {
+        const opt = document.createElement('option');
+        opt.value = aid;
+        opt.textContent = aid;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      showError('Could not load stats: ' + e.message);
+    }
+  }
+
+  // ---- Memories ----
+
+  async function loadMemories(offset) {
+    currentMemoryOffset = offset || 0;
+    const limit = parseInt(document.getElementById('filter-limit').value, 10);
+    const agentId = document.getElementById('filter-agent').value;
+    const tbody = document.getElementById('memories-body');
+    tbody.innerHTML = '<tr><td colspan="10" class="loading">Loading...</td></tr>';
+
+    let url = API + '/memories?limit=' + limit + '&offset=' + currentMemoryOffset;
+    if (agentId) url += '&agent_id=' + encodeURIComponent(agentId);
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch memories');
+      const data = await res.json();
+
+      if (data.memories.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="loading">No memories found.</td></tr>';
+        document.getElementById('memories-pagination').innerHTML = '';
+        return;
+      }
+
+      let html = '';
+      data.memories.forEach(m => {
+        const statusBadge = m.quarantined
+          ? '<span class="badge badge-quarantined">Quarantined</span>'
+          : '<span class="badge badge-ok">OK</span>';
+
+        const tags = (m.tags || []).map(t => '<span class="tag">' + escapeHtml(t) + '</span>').join(' ');
+
+        const actionBtn = m.quarantined
+          ? '<button class="btn btn-sm" onclick="unquarantine(\'' + m.id + '\')">Release</button>'
+          : '<button class="btn btn-sm btn-danger" onclick="quarantine(\'' + m.id + '\')">Quarantine</button>';
+
+        html += '<tr>'
+          + '<td class="mono" title="' + escapeHtml(m.id) + '">' + shortId(m.id) + '</td>'
+          + '<td>' + escapeHtml(m.agent_id) + '</td>'
+          + '<td class="content-preview">' + escapeHtml(m.content_preview) + '</td>'
+          + '<td><span class="badge badge-type">' + escapeHtml(m.memory_type) + '</span></td>'
+          + '<td>' + escapeHtml(m.scope) + '</td>'
+          + '<td>' + m.importance.toFixed(2) + '</td>'
+          + '<td>' + tags + '</td>'
+          + '<td>' + statusBadge + '</td>'
+          + '<td>' + formatDate(m.created_at) + '</td>'
+          + '<td>' + actionBtn + '</td>'
+          + '</tr>';
+      });
+
+      tbody.innerHTML = html;
+
+      // Pagination
+      let pagHtml = '';
+      if (currentMemoryOffset > 0) {
+        pagHtml += '<button class="btn btn-sm" onclick="loadMemories(' + Math.max(0, currentMemoryOffset - limit) + ')">Previous</button>';
+      }
+      pagHtml += '<span>Showing ' + (currentMemoryOffset + 1) + '-' + (currentMemoryOffset + data.memories.length) + '</span>';
+      if (data.memories.length >= limit) {
+        pagHtml += '<button class="btn btn-sm" onclick="loadMemories(' + (currentMemoryOffset + limit) + ')">Next</button>';
+      }
+      document.getElementById('memories-pagination').innerHTML = pagHtml;
+
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="10" class="loading">Error loading memories.</td></tr>';
+      showError('Could not load memories: ' + e.message);
+    }
+  }
+
+  // ---- Events ----
+
+  async function loadEvents(offset) {
+    currentEventOffset = offset || 0;
+    const limit = parseInt(document.getElementById('events-limit').value, 10);
+    const tbody = document.getElementById('events-body');
+    tbody.innerHTML = '<tr><td colspan="8" class="loading">Loading...</td></tr>';
+
+    const url = API + '/events?limit=' + limit + '&offset=' + currentEventOffset;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch events');
+      const data = await res.json();
+
+      if (data.events.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="loading">No events found.</td></tr>';
+        document.getElementById('events-pagination').innerHTML = '';
+        return;
+      }
+
+      let html = '';
+      data.events.forEach(e => {
+        html += '<tr>'
+          + '<td class="mono" title="' + escapeHtml(e.id) + '">' + shortId(e.id) + '</td>'
+          + '<td>' + escapeHtml(e.agent_id) + '</td>'
+          + '<td><span class="badge badge-type">' + escapeHtml(e.event_type) + '</span></td>'
+          + '<td class="mono">' + (e.thread_id ? escapeHtml(e.thread_id) : '--') + '</td>'
+          + '<td>' + (e.model ? escapeHtml(e.model) : '--') + '</td>'
+          + '<td>' + (e.tokens_input != null ? e.tokens_input : '--') + '</td>'
+          + '<td>' + (e.tokens_output != null ? e.tokens_output : '--') + '</td>'
+          + '<td>' + formatDate(e.timestamp) + '</td>'
+          + '</tr>';
+      });
+
+      tbody.innerHTML = html;
+
+      // Pagination
+      let pagHtml = '';
+      if (currentEventOffset > 0) {
+        pagHtml += '<button class="btn btn-sm" onclick="loadEvents(' + Math.max(0, currentEventOffset - limit) + ')">Previous</button>';
+      }
+      pagHtml += '<span>Showing ' + (currentEventOffset + 1) + '-' + (currentEventOffset + data.events.length) + ' of ' + data.total + '</span>';
+      if (currentEventOffset + limit < data.total) {
+        pagHtml += '<button class="btn btn-sm" onclick="loadEvents(' + (currentEventOffset + limit) + ')">Next</button>';
+      }
+      document.getElementById('events-pagination').innerHTML = pagHtml;
+
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="8" class="loading">Error loading events.</td></tr>';
+      showError('Could not load events: ' + e.message);
+    }
+  }
+
+  // ---- Quarantine Actions ----
+
+  async function quarantine(id) {
+    try {
+      const res = await fetch(API + '/quarantine/' + id, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed');
+      }
+      loadMemories(currentMemoryOffset);
+      loadStats();
+    } catch (e) {
+      showError('Quarantine failed: ' + e.message);
+    }
+  }
+
+  async function unquarantine(id) {
+    try {
+      const res = await fetch(API + '/unquarantine/' + id, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed');
+      }
+      loadMemories(currentMemoryOffset);
+      loadStats();
+    } catch (e) {
+      showError('Unquarantine failed: ' + e.message);
+    }
+  }
+
+  // ---- Init ----
+
+  loadStats();
+  loadMemories(0);
+  loadEvents(0);
+</script>
+</body>
+</html>

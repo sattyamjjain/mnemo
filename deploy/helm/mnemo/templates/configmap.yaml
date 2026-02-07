@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mnemo.fullname" . }}-config
+  labels:
+    {{- include "mnemo.labels" . | nindent 4 }}
+data:
+  MNEMO_AGENT_ID: {{ .Values.agent.id | quote }}
+  MNEMO_EMBEDDING_MODEL: {{ .Values.embedding.model | quote }}
+  MNEMO_DIMENSIONS: {{ .Values.embedding.dimensions | quote }}
+  {{- if .Values.agent.orgId }}
+  MNEMO_ORG_ID: {{ .Values.agent.orgId | quote }}
+  {{- end }}

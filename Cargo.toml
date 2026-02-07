@@ -1,0 +1,91 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mnemo-core",
+    "crates/mnemo-mcp",
+    "crates/mnemo-cli",
+    "crates/mnemo-postgres",
+    "crates/mnemo-rest",
+    "crates/mnemo-admin",
+    "crates/mnemo-pgwire",
+    "crates/mnemo-grpc",
+    "python",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/mnemo-ai/mnemo"
+description = "MCP-native memory database for AI agents"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.48", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# IDs and hashing
+uuid = { version = "1.11", features = ["v7", "serde"] }
+sha2 = "0.10"
+hex = "0.4"
+
+# Storage
+duckdb = { version = "1.4", features = ["bundled"] }
+
+# Vector index
+usearch = "2.21"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Embedding
+reqwest = { version = "0.12", features = ["json"] }
+
+# MCP
+rmcp = { version = "0.14", features = ["server", "transport-io"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Full-text search
+tantivy = "0.22"
+
+# Async trait
+async-trait = "0.1"
+
+# Error handling
+thiserror = "2.0"
+
+# Schema generation
+schemars = "1.2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing
+tempfile = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Python bindings
+pyo3 = { version = "0.23", features = ["extension-module"] }
+
+# HTTP/REST
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# PostgreSQL
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+pgvector = { version = "0.4", features = ["sqlx"] }
+
+# Internal crates
+mnemo-core = { path = "crates/mnemo-core" }
+mnemo-mcp = { path = "crates/mnemo-mcp" }
+mnemo-postgres = { path = "crates/mnemo-postgres" }
+mnemo-rest = { path = "crates/mnemo-rest" }
+mnemo-admin = { path = "crates/mnemo-admin" }
+mnemo-pgwire = { path = "crates/mnemo-pgwire" }
+mnemo-grpc = { path = "crates/mnemo-grpc" }

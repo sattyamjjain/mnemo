@@ -1,0 +1,277 @@
+syntax = "proto3";
+
+package mnemo.v1;
+
+/// The core Mnemo gRPC service for memory operations.
+service MnemoService {
+  /// Store a new memory.
+  rpc Remember(RememberRequest) returns (RememberResponse);
+
+  /// Recall memories matching a query.
+  rpc Recall(RecallRequest) returns (RecallResponse);
+
+  /// Forget (delete/decay/archive) memories by ID.
+  rpc Forget(ForgetRequest) returns (ForgetResponse);
+
+  /// Health check.
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  /// Share a memory with another agent.
+  rpc Share(ShareRequest) returns (ShareResponse);
+
+  /// Create a checkpoint for the current state.
+  rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse);
+
+  /// Fork a new branch from an existing checkpoint.
+  rpc Branch(BranchRequest) returns (BranchResponse);
+
+  /// Merge a source branch into a target branch.
+  rpc Merge(MergeRequest) returns (MergeResponse);
+
+  /// Replay state from a checkpoint.
+  rpc Replay(ReplayRequest) returns (ReplayResponse);
+
+  /// Delegate permissions to another agent.
+  rpc Delegate(DelegateRequest) returns (DelegateResponse);
+
+  /// Verify hash chain integrity.
+  rpc Verify(VerifyRequest) returns (VerifyResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Remember
+// ---------------------------------------------------------------------------
+
+message RememberRequest {
+  string content = 1;
+  optional string memory_type = 2;
+  optional string scope = 3;
+  optional float importance = 4;
+  repeated string tags = 5;
+  optional string metadata = 6;        // JSON-encoded string
+  optional string thread_id = 7;
+  optional uint64 ttl_seconds = 8;
+  optional string agent_id = 9;
+  optional string source_type = 10;
+  optional string source_id = 11;
+  optional string org_id = 12;
+  optional float decay_rate = 13;
+  optional string created_by = 14;
+  repeated string related_to = 15;
+}
+
+message RememberResponse {
+  string id = 1;
+  string content_hash = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Recall
+// ---------------------------------------------------------------------------
+
+message RecallRequest {
+  string query = 1;
+  optional uint32 limit = 2;
+  optional string strategy = 3;
+  optional float min_importance = 4;
+  repeated string tags = 5;
+  optional string agent_id = 6;
+  optional string memory_type = 7;
+  optional string scope = 8;
+  optional string org_id = 9;
+  repeated float hybrid_weights = 10;
+  optional float rrf_k = 11;
+  optional string as_of = 12;
+}
+
+message RecallResponse {
+  repeated ScoredMemory memories = 1;
+  uint32 total = 2;
+}
+
+message ScoredMemory {
+  string id = 1;
+  string content = 2;
+  string memory_type = 3;
+  float importance = 4;
+  float score = 5;
+  string created_at = 6;
+  string agent_id = 7;
+  string scope = 8;
+  repeated string tags = 9;
+  string metadata = 10;                 // JSON-encoded string
+  uint64 access_count = 11;
+  string updated_at = 12;
+}
+
+// ---------------------------------------------------------------------------
+// Forget
+// ---------------------------------------------------------------------------
+
+message ForgetRequest {
+  repeated string memory_ids = 1;
+  optional string strategy = 2;
+  optional string agent_id = 3;
+}
+
+message ForgetResponse {
+  repeated string forgotten = 1;
+  repeated ForgetError errors = 2;
+}
+
+message ForgetError {
+  string id = 1;
+  string error = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Share
+// ---------------------------------------------------------------------------
+
+message ShareRequest {
+  string memory_id = 1;
+  string target_agent_id = 2;
+  repeated string target_agent_ids = 3;
+  optional string permission = 4;
+  optional double expires_in_hours = 5;
+  optional string agent_id = 6;
+  repeated string memory_ids = 7;
+}
+
+message ShareResponse {
+  string acl_id = 1;
+  repeated string acl_ids = 2;
+  string memory_id = 3;
+  string shared_with = 4;
+  repeated string shared_with_all = 5;
+  string permission = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint
+// ---------------------------------------------------------------------------
+
+message CheckpointRequest {
+  string thread_id = 1;
+  optional string agent_id = 2;
+  optional string branch_name = 3;
+  string state_snapshot = 4;
+  optional string label = 5;
+  optional string metadata = 6;
+}
+
+message CheckpointResponse {
+  string checkpoint_id = 1;
+  optional string parent_id = 2;
+  string branch_name = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Branch
+// ---------------------------------------------------------------------------
+
+message BranchRequest {
+  string thread_id = 1;
+  optional string agent_id = 2;
+  string new_branch_name = 3;
+  optional string source_checkpoint_id = 4;
+  optional string source_branch = 5;
+}
+
+message BranchResponse {
+  string checkpoint_id = 1;
+  string branch_name = 2;
+  string source_checkpoint_id = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Merge
+// ---------------------------------------------------------------------------
+
+message MergeRequest {
+  string thread_id = 1;
+  optional string agent_id = 2;
+  string source_branch = 3;
+  optional string target_branch = 4;
+  optional string strategy = 5;
+  repeated string cherry_pick_ids = 6;
+}
+
+message MergeResponse {
+  string checkpoint_id = 1;
+  string target_branch = 2;
+  uint32 merged_memory_count = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Replay
+// ---------------------------------------------------------------------------
+
+message ReplayRequest {
+  string thread_id = 1;
+  optional string agent_id = 2;
+  optional string checkpoint_id = 3;
+  optional string branch_name = 4;
+}
+
+message ReplayResponse {
+  string checkpoint_json = 1;
+  repeated ReplayMemory memories = 2;
+  uint32 event_count = 3;
+  optional bool chain_valid = 4;
+  optional uint32 chain_total = 5;
+  optional uint32 chain_verified = 6;
+}
+
+message ReplayMemory {
+  string id = 1;
+  string content = 2;
+  string memory_type = 3;
+  string created_at = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Delegate
+// ---------------------------------------------------------------------------
+
+message DelegateRequest {
+  string delegator_id = 1;
+  string delegate_id = 2;
+  string permission = 3;
+  repeated string memory_ids = 4;
+  repeated string tags = 5;
+  optional uint32 max_depth = 6;
+  optional double expires_in_hours = 7;
+}
+
+message DelegateResponse {
+  string delegation_id = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Verify
+// ---------------------------------------------------------------------------
+
+message VerifyRequest {
+  optional string agent_id = 1;
+  optional string thread_id = 2;
+}
+
+message VerifyResponse {
+  bool valid = 1;
+  uint32 total_records = 2;
+  uint32 verified_records = 3;
+  optional string first_broken_at = 4;
+  optional string error_message = 5;
+}

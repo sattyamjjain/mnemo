@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mnemo.fullname" . }}
+  labels:
+    {{- include "mnemo.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mnemo.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mnemo.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            {{- if .Values.postgres.url }}
+            - "--postgres-url"
+            - "$(MNEMO_POSTGRES_URL)"
+            {{- else }}
+            - "--db-path"
+            - "/data/mnemo.db"
+            {{- end }}
+            {{- if .Values.rest.enabled }}
+            - "--rest-port"
+            - "{{ .Values.rest.port }}"
+            {{- end }}
+            - "--agent-id"
+            - "{{ .Values.agent.id }}"
+            - "--embedding-model"
+            - "{{ .Values.embedding.model }}"
+            - "--dimensions"
+            - "{{ .Values.embedding.dimensions }}"
+          envFrom:
+            - configMapRef:
+                name: {{ include "mnemo.fullname" . }}-config
+            - secretRef:
+                name: {{ include "mnemo.fullname" . }}-secret
+                optional: true
+          ports:
+            {{- if .Values.rest.enabled }}
+            - name: http
+              containerPort: {{ .Values.rest.port }}
+              protocol: TCP
+            {{- end }}
+          {{- if .Values.rest.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if and .Values.persistence.enabled (not .Values.postgres.url) }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- end }}
+      {{- if and .Values.persistence.enabled (not .Values.postgres.url) }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "mnemo.fullname" . }}-data
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,28 @@
+[package]
+name = "mnemo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI binary for Mnemo MCP memory server"
+
+[[bin]]
+name = "mnemo"
+path = "src/main.rs"
+
+[dependencies]
+mnemo-core = { workspace = true }
+mnemo-mcp = { workspace = true }
+mnemo-rest = { workspace = true, optional = true }
+mnemo-postgres = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rmcp = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = ["rest"]
+rest = ["dep:mnemo-rest", "dep:axum"]
+postgres = ["dep:mnemo-postgres"]

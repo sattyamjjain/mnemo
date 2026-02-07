@@ -1,0 +1,47 @@
+[package]
+name = "mnemo-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core storage, data model, query engine, and indexing for Mnemo"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+duckdb = { workspace = true }
+usearch = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tantivy = { workspace = true }
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+
+# Optional ONNX dependencies (feature-gated)
+ort = { version = "2.0.0-rc.11", optional = true }
+tokenizers = { version = "0.21", optional = true, default-features = false }
+ndarray = { version = "0.16", optional = true }
+
+# Optional S3 dependencies (feature-gated)
+aws-sdk-s3 = { version = "1", optional = true }
+aws-config = { version = "1", optional = true }
+
+[features]
+onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
+s3 = ["dep:aws-sdk-s3", "dep:aws-config"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "engine_bench"
+harness = false

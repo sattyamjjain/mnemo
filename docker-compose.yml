@@ -1,0 +1,11 @@
+services:
+  mnemo:
+    build: .
+    volumes:
+      - mnemo-data:/data
+    environment:
+      - MNEMO_DB_PATH=/data/mnemo.db
+    stdin_open: true
+
+volumes:
+  mnemo-data:

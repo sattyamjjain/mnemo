@@ -1,0 +1,24 @@
+[package]
+name = "mnemo-admin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Admin dashboard for Mnemo memory database"
+
+[dependencies]
+mnemo-core = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+mnemo-core = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+hyper = "1"
