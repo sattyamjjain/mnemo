@@ -32,16 +32,33 @@ Add to your MCP client configuration (e.g. Claude Desktop, Cursor, etc.):
 
 ### 3. Use it
 
-Your AI agent now has persistent memory with four tools:
+Your AI agent now has persistent memory with 10 MCP tools:
 
 | Tool | Description |
 |------|-------------|
 | `mnemo.remember` | Store a new memory with semantic embeddings |
-| `mnemo.recall` | Search memories by semantic similarity |
-| `mnemo.forget` | Delete memories (soft or hard delete) |
+| `mnemo.recall` | Search memories by semantic similarity, keywords, or hybrid |
+| `mnemo.forget` | Delete memories (soft delete, hard delete, decay, consolidate, archive) |
 | `mnemo.share` | Share a memory with another agent |
+| `mnemo.checkpoint` | Snapshot the current agent memory state |
+| `mnemo.branch` | Create a branch from a checkpoint for experimentation |
+| `mnemo.merge` | Merge a branch back into the main state |
+| `mnemo.replay` | Replay events from a checkpoint |
+| `mnemo.delegate` | Delegate scoped, time-bounded permissions to another agent |
+| `mnemo.verify` | Verify SHA-256 hash chain integrity |
 
-## Python SDK
+## Access Protocols
+
+| Protocol | Crate | Use Case |
+|----------|-------|----------|
+| **MCP** (stdio) | `mnemo-mcp` | AI agent integration via rmcp 0.14 |
+| **REST** (HTTP) | `mnemo-rest` | Web clients, dashboards, OTLP ingest |
+| **gRPC** | `mnemo-grpc` | High-performance service-to-service |
+| **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
+
+## SDKs
+
+### Python
 
 ```bash
 pip install mnemo
@@ -50,69 +67,54 @@ pip install mnemo
 ```python
 from mnemo import MnemoClient
 
-client = MnemoClient(
-    db_path="agent.mnemo.db",
-    openai_api_key="sk-...",  # optional, enables semantic search
-)
-
-# Store a memory
+client = MnemoClient(db_path="agent.mnemo.db")
 result = client.remember("The user prefers dark mode", tags=["preference"])
-
-# Search memories
 memories = client.recall("user preferences", limit=5)
-
-# Delete a memory
 client.forget([result["id"]])
 
 # Mem0-compatible aliases also available:
 # client.add(), client.search(), client.delete()
 ```
 
-## MCP Tool Reference
+Integrations: OpenAI Agents SDK, LangGraph, CrewAI.
 
-### mnemo.remember
+### TypeScript
 
-Store a new memory. Memories are searchable by semantic similarity.
+```typescript
+import { MnemoClient } from "@mnemo/sdk";
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `content` | string | yes | The memory content to store |
-| `memory_type` | string | no | `episodic`, `semantic`, or `procedural` (default: `episodic`) |
-| `scope` | string | no | `private`, `shared`, or `public` (default: `private`) |
-| `importance` | float | no | 0.0 to 1.0 (default: 0.5) |
-| `tags` | string[] | no | Searchable tags |
-| `metadata` | object | no | Arbitrary JSON metadata |
+const client = new MnemoClient({ dbPath: "agent.mnemo.db" });
+await client.remember("User prefers dark mode");
+const memories = await client.recall("user preferences");
+```
 
-### mnemo.recall
+### Go
 
-Search and retrieve memories by semantic similarity.
+```go
+client := mnemo.NewClient("agent.mnemo.db")
+client.Remember("User prefers dark mode")
+memories := client.Recall("user preferences")
+```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | yes | Natural language search query |
-| `limit` | integer | no | Max results (default: 10, max: 100) |
-| `memory_type` | string | no | Filter by memory type |
-| `min_importance` | float | no | Minimum importance threshold |
-| `tags` | string[] | no | Filter by tags |
+## Storage Backends
 
-### mnemo.forget
+| Backend | Best For |
+|---------|----------|
+| **DuckDB** (default) | Single-agent, embedded, zero-config |
+| **PostgreSQL** + pgvector | Multi-agent, distributed, production |
 
-Delete one or more memories by ID.
+## Key Features
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `memory_ids` | string[] | yes | UUIDs of memories to delete |
-| `strategy` | string | no | `soft_delete` (default) or `hard_delete` |
-
-### mnemo.share
-
-Share a memory with another agent.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `memory_id` | string | yes | UUID of memory to share |
-| `target_agent_id` | string | yes | Agent ID to share with |
-| `permission` | string | no | `read`, `write`, or `admin` (default: `read`) |
+- **Hybrid retrieval** — Reciprocal Rank Fusion combining semantic vectors (USearch/pgvector), BM25 keywords (Tantivy), knowledge graph signals, and recency scoring
+- **AES-256-GCM encryption** — at-rest content encryption via `MNEMO_ENCRYPTION_KEY`
+- **Hash chain integrity** — SHA-256 content hashes with chain linking and `verify` tool
+- **Memory poisoning detection** — anomaly scoring with prompt injection pattern detection; quarantine for flagged content
+- **Cognitive forgetting** — five strategies: soft delete, hard delete, decay, consolidation, archive
+- **Branching and replay** — checkpoint, branch, merge, and replay agent memory timelines
+- **Point-in-time queries** — recall memories as they existed at any timestamp with `as_of`
+- **Causal debugging** — trace event causality chains up/down with type filtering
+- **RBAC + delegation** — ACL-based permissions with scoped, depth-limited transitive delegation
+- **OTLP observability** — ingest OpenTelemetry GenAI spans as agent events
 
 ## CLI Options
 
@@ -126,53 +128,58 @@ Options:
   --dimensions <DIM>         Embedding dimensions [default: 1536] [env: MNEMO_DIMENSIONS]
   --agent-id <ID>            Default agent ID [default: default] [env: MNEMO_AGENT_ID]
   --org-id <ID>              Organization ID [env: MNEMO_ORG_ID]
+  --rest-port <PORT>         Enable REST API on this port [env: MNEMO_REST_PORT]
+  --postgres-url <URL>       Use PostgreSQL backend [env: MNEMO_POSTGRES_URL]
+  --encryption-key <HEX>     AES-256-GCM encryption key (64 hex chars) [env: MNEMO_ENCRYPTION_KEY]
 ```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  MCP Client                      │
-│           (Claude, GPT, Gemini, etc.)            │
-└───────────────────┬─────────────────────────────┘
-                    │ STDIO (JSON-RPC)
-┌───────────────────▼─────────────────────────────┐
-│              mnemo-mcp                           │
-│   MnemoServer (rmcp ServerHandler)               │
-│   Tools: remember, recall, forget, share         │
-└───────────────────┬─────────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────────┐
-│              mnemo-core                          │
-│   MnemoEngine (query orchestrator)               │
-│                                                  │
-│   ┌──────────┐ ┌──────────┐ ┌───────────────┐  │
-│   │ DuckDB   │ │ USearch  │ │ OpenAI        │  │
-│   │ Storage  │ │ HNSW     │ │ Embeddings    │  │
-│   │          │ │ Index    │ │               │  │
-│   └──────────┘ └──────────┘ └───────────────┘  │
-└─────────────────────────────────────────────────┘
+┌──────────┐  ┌───────────┐  ┌──────────┐  ┌──────────┐
+│MCP Client│  │REST Client│  │  gRPC    │  │  psql    │
+│ (stdio)  │  │  (HTTP)   │  │          │  │ (pgwire) │
+└────┬─────┘  └─────┬─────┘  └────┬─────┘  └────┬─────┘
+     │              │              │              │
+     ▼              ▼              ▼              ▼
+┌────────────────────────────────────────────────────────┐
+│                    MnemoEngine                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
+│  │ Remember │ │  Recall  │ │ Forget/  │ │Checkpoint│ │
+│  │ Pipeline │ │ Pipeline │ │Share/... │ │/Branch/  │ │
+│  │          │ │  (RRF)   │ │          │ │Merge     │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ │
+│       └─────────────┴────────────┴────────────┘       │
+│                         │                              │
+│  ┌──────────────────────▼──────────────────────────┐  │
+│  │          StorageBackend (trait)                   │  │
+│  │   ┌──────────┐              ┌─────────────┐     │  │
+│  │   │  DuckDB   │              │  PostgreSQL  │     │  │
+│  │   └──────────┘              └─────────────┘     │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌────────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐ │
+│  │VectorIndex │ │FullText  │ │Embeddings│ │Encrypt │ │
+│  │USearch/PG  │ │ Tantivy  │ │OpenAI/   │ │AES-256 │ │
+│  │            │ │          │ │ONNX/Noop │ │GCM     │ │
+│  └────────────┘ └──────────┘ └──────────┘ └────────┘ │
+└─────────────────────────────────────────────────────────┘
 ```
-
-- **DuckDB** — Embedded columnar storage for memory records, ACLs, and metadata
-- **USearch** — HNSW-based approximate nearest neighbor index for vector search
-- **OpenAI Embeddings** — Pluggable embedding provider (works without API key using noop embeddings)
 
 ## Development
 
 ```bash
-# Run all tests
+# Run all tests (132 tests)
 cargo test --all
 
 # Run integration tests only
 cargo test -p mnemo-core --test integration_test
 
+# Run benchmarks
+cargo bench -p mnemo-core
+
 # Build Python SDK
 cd python && maturin develop
-
-# Run examples
-python examples/basic_memory.py
-python examples/langgraph_demo.py
 ```
 
 ## License
