@@ -51,6 +51,7 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
     }
 
     let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+    super::validate_agent_id(&agent_id)?;
     let org_id = request.org_id.or_else(|| engine.default_org_id.clone());
     let now = chrono::Utc::now();
     let now_str = now.to_rfc3339();
@@ -63,6 +64,9 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
     let content_hash = compute_content_hash(&request.content, &agent_id, &now_str);
 
     // Chain linking: look up prev_hash
+    // NOTE: Concurrent writes for the same agent_id may race on prev_hash lookup.
+    // DuckDB mode serializes via Arc<Mutex<Connection>>. PostgreSQL deployments
+    // should rely on verify_chain() to detect any broken links.
     let prev_hash_raw = engine
         .storage
         .get_latest_memory_hash(&agent_id, request.thread_id.as_deref())

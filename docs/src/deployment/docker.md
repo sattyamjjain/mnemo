@@ -24,7 +24,7 @@ services:
   mnemo:
     build: .
     environment:
-      MNEMO_POSTGRES_URL: postgres://mnemo:mnemo@postgres/mnemo
+      MNEMO_POSTGRES_URL: postgres://mnemo:${POSTGRES_PASSWORD}@postgres/mnemo
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       MNEMO_REST_PORT: "8080"
     ports:
@@ -36,7 +36,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: mnemo
-      POSTGRES_PASSWORD: mnemo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
       POSTGRES_DB: mnemo
     volumes:
       - pg-data:/var/lib/postgresql/data

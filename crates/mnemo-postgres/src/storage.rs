@@ -7,6 +7,7 @@ use mnemo_core::model::event::AgentEvent;
 use mnemo_core::model::memory::MemoryRecord;
 use mnemo_core::model::relation::Relation;
 use mnemo_core::storage::{MemoryFilter, StorageBackend};
+use pgvector::Vector;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -64,13 +65,6 @@ fn deserialize_embedding(blob: Option<Vec<u8>>) -> Option<Vec<f32>> {
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect()
     })
-}
-
-/// Convert a `Vec<f32>` embedding into the text literal that pgvector accepts,
-/// e.g. `"[0.1,0.2,0.3]"`.
-fn embedding_to_pgvector_literal(embedding: &[f32]) -> String {
-    let inner: Vec<String> = embedding.iter().map(|f| f.to_string()).collect();
-    format!("[{}]", inner.join(","))
 }
 
 fn row_to_memory(row: &sqlx::postgres::PgRow) -> std::result::Result<MemoryRecord, sqlx::Error> {
@@ -295,14 +289,14 @@ impl StorageBackend for PgStorage {
     // -----------------------------------------------------------------------
 
     async fn insert_memory(&self, record: &MemoryRecord) -> Result<()> {
-        // Build the embedding SQL fragment. pgvector accepts a text literal cast
-        // to `vector`.  If there is no embedding we insert NULL.
-        let embedding_literal = record
+        let embedding_param: Option<Vector> = record
             .embedding
             .as_ref()
-            .map(|v| embedding_to_pgvector_literal(v));
+            .map(|v| Vector::from(v.clone()));
 
-        let sql = format!(
+        let tags_slice: &[String] = &record.tags;
+
+        sqlx::query(
             r#"
 INSERT INTO memories (
     id, agent_id, content, memory_type, scope, importance,
@@ -314,23 +308,15 @@ INSERT INTO memories (
     quarantined, quarantine_reason, decay_function
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
-    $7, $8, {embedding},
-    $9, $10, $11, $12,
-    $13, $14, $15, $16,
-    $17, $18, $19, $20,
-    $21, $22, $23, $24, $25,
-    $26, $27, $28
+    $7, $8, $9,
+    $10, $11, $12, $13,
+    $14, $15, $16, $17,
+    $18, $19, $20, $21,
+    $22, $23, $24, $25, $26,
+    $27, $28, $29
 )
 "#,
-            embedding = match &embedding_literal {
-                Some(lit) => format!("'{lit}'::vector"),
-                None => "NULL".to_string(),
-            }
-        );
-
-        let tags_slice: &[String] = &record.tags;
-
-        sqlx::query(&sql)
+        )
             .bind(record.id)
             .bind(&record.agent_id)
             .bind(&record.content)
@@ -339,6 +325,7 @@ INSERT INTO memories (
             .bind(record.importance)
             .bind(tags_slice)
             .bind(&record.metadata)
+            .bind(&embedding_param)
             .bind(&record.content_hash)
             .bind(&record.prev_hash)
             .bind(record.source_type.to_string())
@@ -381,35 +368,29 @@ INSERT INTO memories (
     }
 
     async fn update_memory(&self, record: &MemoryRecord) -> Result<()> {
-        let embedding_literal = record
+        let embedding_param: Option<Vector> = record
             .embedding
             .as_ref()
-            .map(|v| embedding_to_pgvector_literal(v));
+            .map(|v| Vector::from(v.clone()));
 
-        let sql = format!(
+        let tags_slice: &[String] = &record.tags;
+
+        let result = sqlx::query(
             r#"
 UPDATE memories SET
     agent_id = $1, content = $2, memory_type = $3, scope = $4,
     importance = $5, tags = $6, metadata = $7,
-    embedding = {embedding},
-    content_hash = $8, prev_hash = $9, source_type = $10,
-    source_id = $11, consolidation_state = $12, access_count = $13,
-    org_id = $14, thread_id = $15, updated_at = $16,
-    last_accessed_at = $17, expires_at = $18, deleted_at = $19,
-    decay_rate = $20, created_by = $21, version = $22,
-    prev_version_id = $23, quarantined = $24, quarantine_reason = $25,
-    decay_function = $26
-WHERE id = $27
+    embedding = $8,
+    content_hash = $9, prev_hash = $10, source_type = $11,
+    source_id = $12, consolidation_state = $13, access_count = $14,
+    org_id = $15, thread_id = $16, updated_at = $17,
+    last_accessed_at = $18, expires_at = $19, deleted_at = $20,
+    decay_rate = $21, created_by = $22, version = $23,
+    prev_version_id = $24, quarantined = $25, quarantine_reason = $26,
+    decay_function = $27
+WHERE id = $28
 "#,
-            embedding = match &embedding_literal {
-                Some(lit) => format!("'{lit}'::vector"),
-                None => "NULL".to_string(),
-            }
-        );
-
-        let tags_slice: &[String] = &record.tags;
-
-        let result = sqlx::query(&sql)
+        )
             .bind(&record.agent_id)
             .bind(&record.content)
             .bind(record.memory_type.to_string())
@@ -417,6 +398,7 @@ WHERE id = $27
             .bind(record.importance)
             .bind(tags_slice)
             .bind(&record.metadata)
+            .bind(&embedding_param)
             .bind(&record.content_hash)
             .bind(&record.prev_hash)
             .bind(record.source_type.to_string())

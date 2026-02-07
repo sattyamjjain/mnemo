@@ -1,4 +1,10 @@
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+
+/// Constant-time comparison for hash values to prevent timing side-channels.
+fn hashes_equal(a: &[u8], b: &[u8]) -> bool {
+    a.ct_eq(b).into()
+}
 
 pub fn compute_content_hash(content: &str, agent_id: &str, timestamp: &str) -> Vec<u8> {
     let mut hasher = Sha256::new();
@@ -46,9 +52,9 @@ pub fn verify_chain(records: &[MemoryRecord]) -> ChainVerificationResult {
     let mut verified = 0;
 
     for (i, record) in records.iter().enumerate() {
-        // Verify content hash
+        // Verify content hash (constant-time comparison)
         let expected_hash = compute_content_hash(&record.content, &record.agent_id, &record.created_at);
-        if expected_hash != record.content_hash {
+        if !hashes_equal(&expected_hash, &record.content_hash) {
             return ChainVerificationResult {
                 valid: false,
                 total_records: records.len(),
@@ -63,7 +69,7 @@ pub fn verify_chain(records: &[MemoryRecord]) -> ChainVerificationResult {
             let prev_record = &records[i - 1];
             let expected_chain = compute_chain_hash(&record.content_hash, Some(&prev_record.content_hash));
             if let Some(ref prev_hash) = record.prev_hash {
-                if *prev_hash != expected_chain {
+                if !hashes_equal(prev_hash, &expected_chain) {
                     return ChainVerificationResult {
                         valid: false,
                         total_records: records.len(),
@@ -123,7 +129,7 @@ pub fn verify_event_chain(events: &[AgentEvent]) -> ChainVerificationResult {
             let prev_event = &events[i - 1];
             let expected_chain = compute_chain_hash(&event.content_hash, Some(&prev_event.content_hash));
             if let Some(ref prev_hash) = event.prev_hash {
-                if *prev_hash != expected_chain {
+                if !hashes_equal(prev_hash, &expected_chain) {
                     return ChainVerificationResult {
                         valid: false,
                         total_records: events.len(),

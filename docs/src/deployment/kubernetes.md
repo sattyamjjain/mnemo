@@ -6,8 +6,8 @@ Install Mnemo on Kubernetes using the Helm chart:
 
 ```bash
 helm install mnemo deploy/helm/mnemo/ \
-  --set postgres.url="postgres://user:pass@postgres:5432/mnemo" \
-  --set openaiApiKey="sk-..."
+  --set postgres.url="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mnemo" \
+  --set openaiApiKey="${OPENAI_API_KEY}"
 ```
 
 ## Configuration

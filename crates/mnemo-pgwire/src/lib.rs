@@ -29,20 +29,24 @@ use mnemo_core::query::MnemoEngine;
 /// Configuration for the pgwire server.
 #[derive(Debug, Clone)]
 pub struct PgWireConfig {
-    /// TCP bind address (e.g., "0.0.0.0:5433")
+    /// TCP bind address (defaults to localhost for security)
     pub bind_addr: String,
     /// Maximum concurrent connections
     pub max_connections: usize,
     /// Default agent ID for connections without explicit agent context
     pub default_agent_id: String,
+    /// Optional password for cleartext password authentication.
+    /// When `None`, the server uses trust mode (no auth) — only safe on localhost.
+    pub password: Option<String>,
 }
 
 impl Default for PgWireConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "0.0.0.0:5433".to_string(),
+            bind_addr: "127.0.0.1:5433".to_string(),
             max_connections: 100,
             default_agent_id: "default".to_string(),
+            password: None,
         }
     }
 }

@@ -37,7 +37,13 @@ impl IntoResponse for AppError {
             CoreError::Validation(m) => (StatusCode::BAD_REQUEST, m.clone()),
             CoreError::PermissionDenied(m) => (StatusCode::FORBIDDEN, m.clone()),
             CoreError::NotFound(m) => (StatusCode::NOT_FOUND, m.clone()),
-            other => (StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
+            other => {
+                tracing::error!("internal error: {other}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal server error".to_string(),
+                )
+            }
         };
         (status, Json(serde_json::json!({"error": msg}))).into_response()
     }
@@ -99,6 +105,9 @@ pub struct DelegateRequest {
     pub tags: Option<Vec<String>>,
     pub max_depth: Option<u32>,
     pub expires_in_hours: Option<f64>,
+    /// The agent requesting delegation. Required — the server will verify
+    /// this agent has `Delegate` permission on the target memories.
+    pub agent_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +326,10 @@ pub async fn verify_handler(
 }
 
 /// POST /v1/delegate -- delegate permissions to another agent.
+///
+/// The caller must provide their `agent_id` and must have `Delegate`
+/// permission on the target memories. Without a full auth middleware
+/// this is advisory; production deployments should add an auth layer.
 pub async fn delegate_handler(
     State(engine): State<AppState>,
     Json(body): Json<DelegateRequest>,
@@ -326,10 +339,30 @@ pub async fn delegate_handler(
         .parse()
         .map_err(|e: CoreError| AppError(e))?;
 
+    let caller_agent_id = body
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
+
     let scope = if let Some(ref ids) = body.memory_ids {
-        let parsed: Result<Vec<Uuid>, _> = ids.iter().map(|s| Uuid::parse_str(s)).collect();
+        let parsed: std::result::Result<Vec<Uuid>, _> =
+            ids.iter().map(|s| Uuid::parse_str(s)).collect();
         match parsed {
-            Ok(uuids) => DelegationScope::ByMemoryId(uuids),
+            Ok(uuids) => {
+                // Verify caller has Delegate permission on each memory
+                for mid in &uuids {
+                    let has_perm = engine
+                        .storage
+                        .check_permission(*mid, &caller_agent_id, Permission::Delegate)
+                        .await?;
+                    if !has_perm {
+                        return Err(AppError(CoreError::PermissionDenied(format!(
+                            "agent '{}' lacks delegate permission on memory {}",
+                            caller_agent_id, mid
+                        ))));
+                    }
+                }
+                DelegationScope::ByMemoryId(uuids)
+            }
             Err(e) => {
                 return Err(AppError(CoreError::Validation(format!(
                     "invalid UUID in memory_ids: {e}"
@@ -349,7 +382,7 @@ pub async fn delegate_handler(
 
     let delegation = Delegation {
         id: Uuid::now_v7(),
-        delegator_id: engine.default_agent_id.clone(),
+        delegator_id: caller_agent_id,
         delegate_id: body.delegate_id.clone(),
         permission,
         scope,

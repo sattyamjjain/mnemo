@@ -33,7 +33,7 @@ mnemo --db-path my-agent.db
 ### With PostgreSQL backend
 
 ```bash
-mnemo --postgres-url "postgres://user:pass@localhost/mnemo"
+mnemo --postgres-url "postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost/mnemo"
 ```
 
 ### With REST API

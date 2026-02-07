@@ -181,6 +181,20 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
     .await
     .map_err(|e| Error::Storage(format!("create agent_profiles: {e}")))?;
 
+    // 8. sync_metadata
+    sqlx::query(
+        r#"
+CREATE TABLE IF NOT EXISTS sync_metadata (
+    key VARCHAR PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at VARCHAR NOT NULL
+)
+"#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| Error::Storage(format!("create sync_metadata: {e}")))?;
+
     // ---- Indexes ----
     let index_stmts: &[&str] = &[
         "CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id)",

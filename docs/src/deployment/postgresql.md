@@ -10,7 +10,7 @@ PostgreSQL mode enables distributed, multi-instance Mnemo deployments with pgvec
 docker run -d \
   --name mnemo-pg \
   -e POSTGRES_USER=mnemo \
-  -e POSTGRES_PASSWORD=mnemo \
+  -e POSTGRES_PASSWORD=changeme_use_strong_password \
   -e POSTGRES_DB=mnemo \
   -p 5432:5432 \
   pgvector/pgvector:pg16
@@ -19,7 +19,7 @@ docker run -d \
 ### 2. Start Mnemo with PostgreSQL
 
 ```bash
-mnemo --postgres-url "postgres://mnemo:mnemo@localhost/mnemo"
+mnemo --postgres-url "postgres://mnemo:$POSTGRES_PASSWORD@localhost/mnemo"
 ```
 
 Or build with the postgres feature:

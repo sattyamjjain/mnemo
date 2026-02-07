@@ -97,6 +97,7 @@ async fn get_memory_cached(engine: &MnemoEngine, id: Uuid) -> Result<Option<Memo
 pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<RecallResponse> {
     let limit = request.limit.unwrap_or(10).min(100);
     let agent_id = request.agent_id.clone().unwrap_or_else(|| engine.default_agent_id.clone());
+    super::validate_agent_id(&agent_id)?;
 
     // Determine strategy
     let strategy = request.strategy.as_deref().unwrap_or("auto");

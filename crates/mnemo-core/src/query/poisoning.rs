@@ -13,12 +13,35 @@ pub struct AnomalyCheckResult {
     pub reasons: Vec<String>,
 }
 
+/// Detect common prompt injection patterns in memory content.
+///
+/// These patterns attempt to override AI agent instructions when the
+/// memory is recalled and included in an LLM context.
+fn contains_prompt_injection_patterns(content: &str) -> bool {
+    let lower = content.to_lowercase();
+    let patterns = [
+        "ignore all previous instructions",
+        "ignore previous instructions",
+        "disregard all prior",
+        "disregard previous",
+        "override system prompt",
+        "you are now in",
+        "new instructions:",
+        "system: you are",
+        "<<sys>>",
+        "[system]",
+        "```system",
+    ];
+    patterns.iter().any(|p| lower.contains(p))
+}
+
 /// Check a newly inserted memory record for anomaly indicators.
 ///
 /// Scoring:
 /// - Importance deviation >0.4 from agent mean → +0.3
 /// - Content length >5x or <0.1x agent average → +0.3
 /// - High-frequency burst (>3x normal rate in last minute) → +0.4
+/// - Prompt injection patterns in content → +0.5
 /// - Total score >= 0.5 → anomalous
 pub async fn check_for_anomaly(
     engine: &MnemoEngine,
@@ -78,6 +101,12 @@ pub async fn check_for_anomaly(
         }
     }
     // If no profile exists yet, we can't detect anomalies — treat as normal
+
+    // Check for prompt injection patterns in content
+    if contains_prompt_injection_patterns(&record.content) {
+        score += 0.5;
+        reasons.push("content contains prompt injection patterns".to_string());
+    }
 
     Ok(AnomalyCheckResult {
         is_anomalous: score >= 0.5,

@@ -50,8 +50,37 @@ pub async fn handle_connection(
         stream.read_exact(&mut startup_buf).await?;
     }
 
-    // Phase 2: Send AuthenticationOk
-    // Type 'R' (Authentication), length 8, auth type 0 (OK/trust)
+    // Phase 2: Authentication
+    if let Some(ref expected_password) = config.password {
+        // Send AuthenticationCleartextPassword (type 3)
+        stream
+            .write_all(&[b'R', 0, 0, 0, 8, 0, 0, 0, 3])
+            .await?;
+        stream.flush().await?;
+
+        // Read password message (type 'p')
+        let pw_type = stream.read_u8().await?;
+        if pw_type != b'p' {
+            send_error(&mut stream, "expected password message").await?;
+            return Err("expected password message".into());
+        }
+        let pw_len = stream.read_i32().await? as usize;
+        if pw_len < 5 || pw_len > 10240 {
+            return Err("invalid password message length".into());
+        }
+        let mut pw_buf = vec![0u8; pw_len - 4];
+        stream.read_exact(&mut pw_buf).await?;
+        let client_password = String::from_utf8_lossy(&pw_buf)
+            .trim_end_matches('\0')
+            .to_string();
+
+        if client_password != *expected_password {
+            send_error(&mut stream, "password authentication failed").await?;
+            return Err("authentication failed".into());
+        }
+    }
+
+    // Send AuthenticationOk
     stream
         .write_all(&[b'R', 0, 0, 0, 8, 0, 0, 0, 0])
         .await?;

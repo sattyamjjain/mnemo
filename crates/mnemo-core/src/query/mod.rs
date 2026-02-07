@@ -17,11 +17,35 @@ use std::sync::Arc;
 use crate::cache::MemoryCache;
 use crate::embedding::EmbeddingProvider;
 use crate::encryption::ContentEncryption;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::index::VectorIndex;
 use crate::search::FullTextIndex;
 use crate::storage::StorageBackend;
 use crate::storage::cold::ColdStorage;
+
+const MAX_AGENT_ID_LEN: usize = 256;
+
+/// Validate that an agent_id contains only safe characters and is within length limits.
+pub fn validate_agent_id(agent_id: &str) -> Result<()> {
+    if agent_id.is_empty() {
+        return Err(Error::Validation("agent_id cannot be empty".into()));
+    }
+    if agent_id.len() > MAX_AGENT_ID_LEN {
+        return Err(Error::Validation(format!(
+            "agent_id exceeds max length of {MAX_AGENT_ID_LEN}"
+        )));
+    }
+    if !agent_id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(Error::Validation(
+            "agent_id must contain only alphanumeric characters, hyphens, underscores, or dots"
+                .into(),
+        ));
+    }
+    Ok(())
+}
 
 pub struct MnemoEngine {
     pub storage: Arc<dyn StorageBackend>,
