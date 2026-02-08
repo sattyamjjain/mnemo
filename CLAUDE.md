@@ -95,7 +95,7 @@ mnemo/
 │   ├── mnemo-rest/          # Axum 0.8 REST API (feature-gated)
 │   ├── mnemo-admin/         # Admin dashboard API handlers
 │   ├── mnemo-pgwire/        # PostgreSQL wire protocol (SQL-over-pgwire)
-│   └── mnemo-grpc/          # tonic 0.12 gRPC service (11 RPCs)
+│   └── mnemo-grpc/          # tonic 0.14 gRPC service (11 RPCs)
 ├── python/                  # PyO3 bindings + OpenAI Agents + CrewAI + Mem0 compat
 ├── sdks/
 │   ├── typescript/          # TypeScript REST client SDK
@@ -151,8 +151,9 @@ mnemo/
 <!-- AUTO-MANAGED: git-insights -->
 ## Git Insights
 
-- Single initial release commit — monorepo structure established from day one
-- CI enforces: `cargo fmt --check`, `cargo clippy --all-features`, `cargo test --all`, `cargo build --all`
+- Monorepo structure established from initial release
+- Recent: dependency update (tonic 0.14, pyo3 0.28, reqwest 0.13, rand 0.9) + security hardening (30 fixes)
+- CI enforces: `cargo fmt --check`, `cargo clippy --all-features`, `cargo test --all`, `cargo build --all`, `cargo audit`
 - Apache-2.0 license
 
 <!-- END AUTO-MANAGED -->

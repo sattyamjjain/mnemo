@@ -90,9 +90,11 @@ class MnemoAgentMemory:
             )
 
         self._server = MCPServerStdio(
+            params={
+                "command": self.command,
+                "args": self._build_args(),
+            },
             name="mnemo",
-            command=self.command,
-            args=self._build_args(),
         )
         return self._server
 

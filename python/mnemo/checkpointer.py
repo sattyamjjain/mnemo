@@ -124,3 +124,11 @@ class ASMDCheckpointer(BaseCheckpointSaver):
     ) -> None:
         """Store intermediate writes (no-op for now)."""
         pass
+
+    def delete_thread(self, config: dict) -> None:
+        """Delete all checkpoints and writes for the given thread."""
+        thread_id = config.get("configurable", {}).get("thread_id", "default")
+        try:
+            self.client.forget([thread_id])
+        except Exception:
+            pass
