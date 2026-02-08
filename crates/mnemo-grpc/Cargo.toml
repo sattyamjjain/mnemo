@@ -7,8 +7,9 @@ description = "gRPC API server for Mnemo"
 
 [dependencies]
 mnemo-core = { workspace = true }
-tonic = "0.12"
-prost = "0.13"
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
 tokio = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
@@ -16,4 +17,4 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-prost-build = "0.14"

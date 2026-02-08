@@ -42,7 +42,7 @@ usearch = "2.21"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Embedding
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # MCP
 rmcp = { version = "0.14", features = ["server", "transport-io"] }
@@ -71,7 +71,7 @@ tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # Python bindings
-pyo3 = { version = "0.24", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module"] }
 
 # HTTP/REST
 axum = "0.8"

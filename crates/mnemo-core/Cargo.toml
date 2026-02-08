@@ -21,13 +21,13 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tantivy = { workspace = true }
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.9"
 base64 = "0.22"
 subtle = "2.5"
 
 # Optional ONNX dependencies (feature-gated)
 ort = { version = "2.0.0-rc.11", optional = true }
-tokenizers = { version = "0.21", optional = true, default-features = false }
+tokenizers = { version = "0.22", optional = true, default-features = false }
 ndarray = { version = "0.16", optional = true }
 
 # Optional S3 dependencies (feature-gated)

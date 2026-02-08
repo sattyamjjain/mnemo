@@ -94,7 +94,7 @@ impl MnemoClient {
         thread_id: Option<String>,
         ttl_seconds: Option<u64>,
         related_to: Option<Vec<String>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let metadata_value = match metadata {
             Some(dict) => pythonize_dict(dict)?,
             None => None,
@@ -123,11 +123,11 @@ impl MnemoClient {
             .block_on(self.engine.remember(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("id", response.id.to_string())?;
             dict.set_item("content_hash", response.content_hash)?;
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
@@ -141,7 +141,7 @@ impl MnemoClient {
         importance: Option<f32>,
         tags: Option<Vec<String>>,
         metadata: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         self.remember(content, memory_type, scope, importance, tags, metadata, None, None, None)
     }
 
@@ -154,7 +154,7 @@ impl MnemoClient {
         min_importance: Option<f32>,
         tags: Option<Vec<String>>,
         strategy: Option<String>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let request = RecallRequest {
             query,
             agent_id: None,
@@ -178,9 +178,9 @@ impl MnemoClient {
             .block_on(self.engine.recall(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = PyDict::new(py);
-            let memories: Vec<PyObject> = response
+            let memories: Vec<Py<PyAny>> = response
                 .memories
                 .iter()
                 .map(|m| {
@@ -202,7 +202,7 @@ impl MnemoClient {
                 .collect();
             result.set_item("memories", memories)?;
             result.set_item("total", response.total)?;
-            Ok(result.into())
+            Ok(result.into_any().unbind())
         })
     }
 
@@ -215,12 +215,12 @@ impl MnemoClient {
         memory_type: Option<String>,
         min_importance: Option<f32>,
         tags: Option<Vec<String>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         self.recall(query, limit, memory_type, min_importance, tags, None)
     }
 
     #[pyo3(signature = (memory_ids, strategy=None))]
-    fn forget(&self, memory_ids: Vec<String>, strategy: Option<String>) -> PyResult<PyObject> {
+    fn forget(&self, memory_ids: Vec<String>, strategy: Option<String>) -> PyResult<Py<PyAny>> {
         let parsed_ids: Result<Vec<uuid::Uuid>, _> = memory_ids
             .iter()
             .map(|s| uuid::Uuid::parse_str(s))
@@ -245,7 +245,7 @@ impl MnemoClient {
             .block_on(self.engine.forget(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             let forgotten: Vec<String> = response.forgotten.iter().map(|id| id.to_string()).collect();
             dict.set_item("forgotten", forgotten)?;
@@ -257,13 +257,13 @@ impl MnemoClient {
                     .map(|e| format!("{}: {}", e.id, e.error))
                     .collect::<Vec<_>>(),
             )?;
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
     /// Mem0-compatible alias for forget
     #[pyo3(signature = (memory_ids, strategy=None))]
-    fn delete(&self, memory_ids: Vec<String>, strategy: Option<String>) -> PyResult<PyObject> {
+    fn delete(&self, memory_ids: Vec<String>, strategy: Option<String>) -> PyResult<Py<PyAny>> {
         self.forget(memory_ids, strategy)
     }
 
@@ -273,7 +273,7 @@ impl MnemoClient {
         memory_id: String,
         target_agent_id: String,
         permission: Option<String>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let mid = uuid::Uuid::parse_str(&memory_id).map_err(to_py_err)?;
 
         let request = ShareRequest {
@@ -290,13 +290,13 @@ impl MnemoClient {
             .block_on(self.engine.share(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("acl_id", response.acl_id.to_string())?;
             dict.set_item("memory_id", response.memory_id.to_string())?;
             dict.set_item("shared_with", &response.shared_with)?;
             dict.set_item("permission", response.permission.to_string())?;
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
@@ -308,7 +308,7 @@ impl MnemoClient {
         branch_name: Option<String>,
         label: Option<String>,
         metadata: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let snapshot_value = pythonize_dict(state_snapshot)?.unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
         let metadata_value = match metadata {
             Some(dict) => pythonize_dict(dict)?,
@@ -329,12 +329,12 @@ impl MnemoClient {
             .block_on(self.engine.checkpoint(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("checkpoint_id", response.id.to_string())?;
             dict.set_item("parent_id", response.parent_id.map(|id| id.to_string()))?;
             dict.set_item("branch_name", &response.branch_name)?;
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
@@ -345,7 +345,7 @@ impl MnemoClient {
         new_branch_name: String,
         source_checkpoint_id: Option<String>,
         source_branch: Option<String>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let request = BranchRequest {
             thread_id,
             agent_id: None,
@@ -359,12 +359,12 @@ impl MnemoClient {
             .block_on(self.engine.branch(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("checkpoint_id", response.checkpoint_id.to_string())?;
             dict.set_item("branch_name", &response.branch_name)?;
             dict.set_item("source_checkpoint_id", response.source_checkpoint_id.to_string())?;
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
@@ -376,7 +376,7 @@ impl MnemoClient {
         target_branch: Option<String>,
         strategy: Option<String>,
         cherry_pick_ids: Option<Vec<String>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         use mnemo_core::query::merge::MergeStrategy;
 
         let merge_strategy = strategy.as_deref().map(|s| match s {
@@ -405,12 +405,12 @@ impl MnemoClient {
             .block_on(self.engine.merge(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("checkpoint_id", response.checkpoint_id.to_string())?;
             dict.set_item("target_branch", &response.target_branch)?;
             dict.set_item("merged_memory_count", response.merged_memory_count)?;
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
@@ -420,7 +420,7 @@ impl MnemoClient {
         thread_id: String,
         checkpoint_id: Option<String>,
         branch_name: Option<String>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let request = ReplayRequest {
             thread_id,
             agent_id: None,
@@ -433,7 +433,7 @@ impl MnemoClient {
             .block_on(self.engine.replay(request))
             .map_err(to_py_err)?;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             let cp_dict = PyDict::new(py);
             cp_dict.set_item("id", response.checkpoint.id.to_string())?;
@@ -444,7 +444,7 @@ impl MnemoClient {
             dict.set_item("memory_count", response.memories.len())?;
             dict.set_item("event_count", response.events.len())?;
 
-            let memories: Vec<PyObject> = response.memories.iter().map(|m| {
+            let memories: Vec<Py<PyAny>> = response.memories.iter().map(|m| {
                 let d = PyDict::new(py);
                 d.set_item("id", m.id.to_string()).unwrap();
                 d.set_item("content", &m.content).unwrap();
@@ -453,7 +453,7 @@ impl MnemoClient {
             }).collect();
             dict.set_item("memories", memories)?;
 
-            Ok(dict.into())
+            Ok(dict.into_any().unbind())
         })
     }
 
