@@ -45,7 +45,7 @@ chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.13", features = ["json"] }
 
 # MCP
-rmcp = { version = "0.14", features = ["server", "transport-io"] }
+rmcp = { version = "0.15", features = ["server", "transport-io"] }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
