@@ -9,7 +9,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0"
+    "@modelcontextprotocol/sdk": "^1.29"
   },
   "devDependencies": {
     "typescript": "^5.0",
