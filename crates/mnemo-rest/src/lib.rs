@@ -36,6 +36,7 @@ pub fn router(engine: Arc<MnemoEngine>) -> Router {
         .route("/v1/replay", post(handlers::replay_handler))
         .route("/v1/verify", post(handlers::verify_handler))
         .route("/v1/delegate", post(handlers::delegate_handler))
+        .route("/v1/forget_subject", post(handlers::forget_subject_handler))
         .route("/v1/ingest/otlp", post(handlers::otlp_ingest_handler))
         .route("/v1/health", get(handlers::health_handler))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024)) // 2 MB max request body

@@ -322,6 +322,7 @@ fn checkpoint_restore_latency(c: &mut Criterion) {
                     agent_id: None,
                     checkpoint_id: None,
                     branch_name: Some("main".to_string()),
+                    as_of: None,
                 };
                 engine.replay(request).await.unwrap();
             });

@@ -15,7 +15,9 @@ use mnemo_core::model::event::{AgentEvent, EventType};
 use mnemo_core::model::memory::{MemoryType, Scope};
 use mnemo_core::query::branch::{BranchRequest, BranchResponse};
 use mnemo_core::query::checkpoint::{CheckpointRequest, CheckpointResponse};
-use mnemo_core::query::forget::{ForgetRequest, ForgetResponse, ForgetStrategy};
+use mnemo_core::query::forget::{
+    ForgetRequest, ForgetResponse, ForgetStrategy, ForgetSubjectRequest, ForgetSubjectResponse,
+};
 use mnemo_core::query::merge::{MergeRequest, MergeResponse};
 use mnemo_core::query::recall::{RecallRequest, RecallResponse};
 use mnemo_core::query::remember::{RememberRequest, RememberResponse};
@@ -266,9 +268,10 @@ pub async fn forget_handler(
             "decay" => ForgetStrategy::Decay,
             "consolidate" => ForgetStrategy::Consolidate,
             "archive" => ForgetStrategy::Archive,
+            "redact" => ForgetStrategy::Redact,
             other => {
                 return Err(AppError(CoreError::Validation(format!(
-                    "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive",
+                    "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive, redact",
                     other
                 ))));
             }
@@ -284,6 +287,40 @@ pub async fn forget_handler(
     };
 
     let response = engine.forget(request).await?;
+    Ok(Json(response))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForgetSubjectBody {
+    pub subject_id: String,
+    pub strategy: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+/// POST /v1/forget_subject — GDPR / DPDPA-aligned subject erasure.
+pub async fn forget_subject_handler(
+    State(engine): State<AppState>,
+    Json(body): Json<ForgetSubjectBody>,
+) -> Result<Json<ForgetSubjectResponse>, AppError> {
+    let strategy = match body.strategy.as_deref().unwrap_or("redact") {
+        "redact" => ForgetStrategy::Redact,
+        "hard_delete" => ForgetStrategy::HardDelete,
+        "soft_delete" => ForgetStrategy::SoftDelete,
+        other => {
+            return Err(AppError(CoreError::Validation(format!(
+                "invalid forget_subject strategy '{}': expected one of: redact, hard_delete, soft_delete",
+                other
+            ))));
+        }
+    };
+
+    let request = ForgetSubjectRequest {
+        subject_id: body.subject_id,
+        agent_id: body.agent_id,
+        strategy,
+    };
+
+    let response = engine.forget_subject(request).await?;
     Ok(Json(response))
 }
 

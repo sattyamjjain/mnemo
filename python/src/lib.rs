@@ -235,6 +235,7 @@ impl MnemoClient {
                 "decay" => ForgetStrategy::Decay,
                 "consolidate" => ForgetStrategy::Consolidate,
                 "archive" => ForgetStrategy::Archive,
+                "redact" => ForgetStrategy::Redact,
                 _ => ForgetStrategy::SoftDelete,
             }),
             criteria: None,
@@ -414,18 +415,20 @@ impl MnemoClient {
         })
     }
 
-    #[pyo3(signature = (thread_id, checkpoint_id=None, branch_name=None))]
+    #[pyo3(signature = (thread_id, checkpoint_id=None, branch_name=None, as_of=None))]
     fn replay(
         &self,
         thread_id: String,
         checkpoint_id: Option<String>,
         branch_name: Option<String>,
+        as_of: Option<String>,
     ) -> PyResult<Py<PyAny>> {
         let request = ReplayRequest {
             thread_id,
             agent_id: None,
             checkpoint_id: checkpoint_id.and_then(|s| uuid::Uuid::parse_str(&s).ok()),
             branch_name,
+            as_of,
         };
 
         let response = self

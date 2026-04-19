@@ -124,6 +124,21 @@ impl MnemoEngine {
         forget::execute(self, request).await
     }
 
+    /// Subject-scoped erasure for GDPR / DPDPA compliance.
+    /// See [`forget::forget_subject`] for strategy semantics.
+    pub async fn forget_subject(
+        &self,
+        request: forget::ForgetSubjectRequest,
+    ) -> Result<forget::ForgetSubjectResponse> {
+        forget::forget_subject(self, request).await
+    }
+
+    /// Hard-delete every memory whose `expires_at` is in the past and emit
+    /// one `MemoryExpired` audit event per deletion.
+    pub async fn run_ttl_sweep(&self) -> Result<lifecycle::TtlReport> {
+        lifecycle::run_ttl_sweep(self).await
+    }
+
     pub async fn share(&self, request: share::ShareRequest) -> Result<share::ShareResponse> {
         share::execute(self, request).await
     }

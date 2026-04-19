@@ -1,6 +1,7 @@
 pub mod branch;
 pub mod checkpoint;
 pub mod forget;
+pub mod forget_subject;
 pub mod merge;
 pub mod recall;
 pub mod remember;

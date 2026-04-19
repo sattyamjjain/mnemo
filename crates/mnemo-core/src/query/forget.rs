@@ -17,7 +17,14 @@ pub enum ForgetStrategy {
     Decay,
     Consolidate,
     Archive,
+    /// GDPR-aligned content erasure: replace the content with a redaction
+    /// marker while keeping the existing `content_hash` and `prev_hash`
+    /// intact so the audit trail (who wrote when) remains verifiable.
+    Redact,
 }
+
+/// Sentinel content written in place of redacted memories.
+pub const REDACTED_CONTENT: &str = "[REDACTED]";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForgetCriteria {
@@ -234,6 +241,40 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                     Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
                 }
             }
+            ForgetStrategy::Redact => {
+                // GDPR erasure: replace content, leave content_hash + prev_hash
+                // untouched so downstream chain verification still works.
+                match engine.storage.get_memory(*id).await {
+                    Ok(Some(mut record)) => {
+                        record.content = REDACTED_CONTENT.to_string();
+                        record.tags.retain(|t| !t.starts_with("subject:"));
+                        record.metadata = serde_json::json!({"redacted": true});
+                        record.updated_at = chrono::Utc::now().to_rfc3339();
+                        match engine.storage.update_memory(&record).await {
+                            Ok(()) => {
+                                if let Err(e) = engine.index.remove(*id) {
+                                    tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during redact");
+                                }
+                                if let Some(ref ft) = engine.full_text {
+                                    if let Err(e) = ft.remove(*id) {
+                                        tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index during redact");
+                                    }
+                                    if let Err(e) = ft.commit() {
+                                        tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index during redact");
+                                    }
+                                }
+                                if let Some(ref cache) = engine.cache {
+                                    cache.invalidate(*id);
+                                }
+                                forgotten.push(*id);
+                            }
+                            Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
+                        }
+                    }
+                    Ok(None) => errors.push(ForgetError { id: *id, error: "not found".to_string() }),
+                    Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
+                }
+            }
         }
     }
 
@@ -281,4 +322,168 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
     }
 
     Ok(ForgetResponse { forgotten, errors })
+}
+
+/// Tag convention used by :fn:`forget_subject` to locate memories owned by
+/// a given subject (e.g. end-user or data principal under GDPR/DPDPA).
+pub const SUBJECT_TAG_PREFIX: &str = "subject:";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForgetSubjectRequest {
+    /// Opaque identifier for the subject whose memories should be erased.
+    /// Memories are matched via tag `subject:<subject_id>`.
+    pub subject_id: String,
+    /// Optional agent scope; defaults to the engine default.
+    pub agent_id: Option<String>,
+    /// Erasure strategy. Only `Redact` and `HardDelete` are meaningful for
+    /// a subject-scoped operation; other strategies are accepted and passed
+    /// through to the standard forget pipeline.
+    pub strategy: ForgetStrategy,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForgetSubjectResponse {
+    pub subject_id: String,
+    pub strategy: ForgetStrategy,
+    pub matched: usize,
+    pub forgotten: Vec<Uuid>,
+    pub cascaded_events: usize,
+    pub errors: Vec<ForgetError>,
+}
+
+/// Erase every memory tagged with `subject:<subject_id>`, using the
+/// specified strategy.
+///
+/// * `Redact` preserves the existing `content_hash` and `prev_hash`
+///   so downstream chain verification still succeeds; only the content
+///   itself becomes the REDACTED marker.
+/// * `HardDelete` removes the memory row and cascades to emit a
+///   `MemoryDelete` audit event per record; no further cascade is
+///   performed against events referencing the memory id, those remain
+///   available for audit.
+pub async fn forget_subject(
+    engine: &MnemoEngine,
+    request: ForgetSubjectRequest,
+) -> Result<ForgetSubjectResponse> {
+    if request.subject_id.is_empty() {
+        return Err(Error::Validation("subject_id cannot be empty".to_string()));
+    }
+    let agent_id = request
+        .agent_id
+        .clone()
+        .unwrap_or_else(|| engine.default_agent_id.clone());
+    super::validate_agent_id(&agent_id)?;
+
+    let subject_tag = format!("{SUBJECT_TAG_PREFIX}{}", request.subject_id);
+    // The shared storage backends don't push the tag predicate into SQL yet,
+    // so we filter in Rust. This is O(n) over the agent's non-deleted memories,
+    // which is acceptable for GDPR-erasure workloads and keeps the contract
+    // consistent across DuckDB / PostgreSQL.
+    let filter = MemoryFilter {
+        agent_id: Some(agent_id.clone()),
+        include_deleted: false,
+        ..Default::default()
+    };
+    let all_records = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
+    let matched_records: Vec<_> = all_records
+        .into_iter()
+        .filter(|r| r.tags.iter().any(|t| t == &subject_tag))
+        .collect();
+    let matched = matched_records.len();
+    let ids: Vec<Uuid> = matched_records.iter().map(|r| r.id).collect();
+
+    if ids.is_empty() {
+        return Ok(ForgetSubjectResponse {
+            subject_id: request.subject_id,
+            strategy: request.strategy,
+            matched,
+            forgotten: Vec::new(),
+            cascaded_events: 0,
+            errors: Vec::new(),
+        });
+    }
+
+    // Audit events that reference these memories are intentionally preserved:
+    // removing them would break the per-agent hash chain and destroy the
+    // GDPR-aligned audit trail. Callers who need to erase event payloads
+    // containing PII should issue a targeted Redact against the relevant
+    // event rows (not yet exposed as a public API).
+    let cascaded_events: usize = 0;
+
+    // Re-use the standard forget pipeline for the actual deletion/redaction
+    // so audit-event semantics stay consistent with mnemo.forget.
+    let standard_req = ForgetRequest {
+        memory_ids: ids,
+        agent_id: Some(agent_id.clone()),
+        strategy: Some(request.strategy),
+        criteria: None,
+    };
+    let resp = execute(engine, standard_req).await?;
+
+    // For Redact, emit a MemoryRedact event per affected memory so auditors
+    // can distinguish redactions from ordinary deletes.
+    if request.strategy == ForgetStrategy::Redact {
+        let now = chrono::Utc::now().to_rfc3339();
+        for id in &resp.forgotten {
+            let content_hash = compute_content_hash(
+                &format!("redact:{id}:{}", request.subject_id),
+                &agent_id,
+                &now,
+            );
+            let prev_hash_raw = engine
+                .storage
+                .get_latest_event_hash(&agent_id, None)
+                .await
+                .ok()
+                .flatten();
+            let event_prev_hash = Some(crate::hash::compute_chain_hash(
+                &content_hash,
+                prev_hash_raw.as_deref(),
+            ));
+            let event = AgentEvent {
+                id: Uuid::now_v7(),
+                agent_id: agent_id.clone(),
+                thread_id: None,
+                run_id: None,
+                parent_event_id: None,
+                event_type: EventType::MemoryRedact,
+                payload: serde_json::json!({
+                    "memory_id": id.to_string(),
+                    "subject_id": request.subject_id,
+                }),
+                trace_id: None,
+                span_id: None,
+                model: None,
+                tokens_input: None,
+                tokens_output: None,
+                latency_ms: None,
+                cost_usd: None,
+                timestamp: now.clone(),
+                logical_clock: 0,
+                content_hash,
+                prev_hash: event_prev_hash,
+                embedding: None,
+            };
+            if let Err(e) = engine.storage.insert_event(&event).await {
+                tracing::error!(
+                    event_id = %event.id,
+                    error = %e,
+                    "failed to insert MemoryRedact event"
+                );
+            }
+        }
+    }
+
+    Ok(ForgetSubjectResponse {
+        subject_id: request.subject_id,
+        strategy: request.strategy,
+        matched,
+        forgotten: resp.forgotten,
+        cascaded_events,
+        errors: resp.errors,
+    })
 }

@@ -36,6 +36,9 @@ service MnemoService {
 
   /// Verify hash chain integrity.
   rpc Verify(VerifyRequest) returns (VerifyResponse);
+
+  /// GDPR / DPDPA-aligned subject erasure by `subject:<id>` tag.
+  rpc ForgetSubject(ForgetSubjectRequest) returns (ForgetSubjectResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +226,9 @@ message ReplayRequest {
   optional string agent_id = 2;
   optional string checkpoint_id = 3;
   optional string branch_name = 4;
+  /// RFC3339 timestamp. When set, synthesizes a virtual checkpoint from memory
+  /// and event state at that instant (overrides `checkpoint_id`).
+  optional string as_of = 5;
 }
 
 message ReplayResponse {
@@ -274,4 +280,23 @@ message VerifyResponse {
   uint32 verified_records = 3;
   optional string first_broken_at = 4;
   optional string error_message = 5;
+}
+
+// ---------------------------------------------------------------------------
+// ForgetSubject
+// ---------------------------------------------------------------------------
+
+message ForgetSubjectRequest {
+  string subject_id = 1;
+  optional string strategy = 2;    // "redact" (default), "hard_delete", "soft_delete"
+  optional string agent_id = 3;
+}
+
+message ForgetSubjectResponse {
+  string subject_id = 1;
+  string strategy = 2;
+  uint32 matched = 3;
+  repeated string forgotten = 4;
+  uint32 cascaded_events = 5;
+  repeated ForgetError errors = 6;
 }

@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::Result;
+use crate::hash::compute_content_hash;
+use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, SourceType};
 use crate::model::relation::Relation;
 use crate::query::MnemoEngine;
@@ -322,6 +324,142 @@ pub async fn run_consolidation(
         new_memories_created,
         originals_consolidated,
     })
+}
+
+/// Report from a single TTL sweep pass.
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtlReport {
+    pub swept_count: usize,
+    pub errors: Vec<TtlError>,
+}
+
+impl TtlReport {
+    pub fn new(swept_count: usize, errors: Vec<TtlError>) -> Self {
+        Self {
+            swept_count,
+            errors,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtlError {
+    pub memory_id: Uuid,
+    pub error: String,
+}
+
+/// Hard-delete every memory whose `expires_at` is in the past.
+///
+/// Each deletion emits an `EventType::MemoryExpired` audit event so the chain
+/// records which memories were purged and when. The function is idempotent
+/// under concurrent callers (storage deletes of an already-absent row surface
+/// as a storage error and are reported, not retried).
+pub async fn run_ttl_sweep(engine: &MnemoEngine) -> Result<TtlReport> {
+    let filter = MemoryFilter {
+        include_deleted: false,
+        ..Default::default()
+    };
+    let memories = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
+
+    let now = chrono::Utc::now();
+    let now_str = now.to_rfc3339();
+    let mut swept_count = 0;
+    let mut errors = Vec::new();
+
+    for record in memories {
+        let Some(ref expires_at) = record.expires_at else {
+            continue;
+        };
+        let Ok(exp) = chrono::DateTime::parse_from_rfc3339(expires_at) else {
+            continue;
+        };
+        if exp > now {
+            continue;
+        }
+
+        match engine.storage.hard_delete_memory(record.id).await {
+            Ok(()) => {
+                if let Err(e) = engine.index.remove(record.id) {
+                    tracing::warn!(memory_id = %record.id, error = %e, "ttl sweep: vector index remove failed");
+                }
+                if let Some(ref ft) = engine.full_text {
+                    if let Err(e) = ft.remove(record.id) {
+                        tracing::warn!(memory_id = %record.id, error = %e, "ttl sweep: full-text remove failed");
+                    }
+                    let _ = ft.commit();
+                }
+                if let Some(ref cache) = engine.cache {
+                    cache.invalidate(record.id);
+                }
+                emit_expiry_event(engine, &record, &now_str).await;
+                swept_count += 1;
+            }
+            Err(e) => errors.push(TtlError {
+                memory_id: record.id,
+                error: e.to_string(),
+            }),
+        }
+    }
+
+    Ok(TtlReport {
+        swept_count,
+        errors,
+    })
+}
+
+async fn emit_expiry_event(engine: &MnemoEngine, record: &MemoryRecord, now_str: &str) {
+    let event_content_hash = compute_content_hash(
+        &record.id.to_string(),
+        &record.agent_id,
+        now_str,
+    );
+    let prev_event_hash = match engine
+        .storage
+        .get_latest_event_hash(&record.agent_id, None)
+        .await
+    {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::warn!(error = %e, "ttl sweep: failed to read prev event hash, starting new chain segment");
+            None
+        }
+    };
+    let event_prev_hash = Some(crate::hash::compute_chain_hash(
+        &event_content_hash,
+        prev_event_hash.as_deref(),
+    ));
+
+    let event = AgentEvent {
+        id: Uuid::now_v7(),
+        agent_id: record.agent_id.clone(),
+        thread_id: None,
+        run_id: None,
+        parent_event_id: None,
+        event_type: EventType::MemoryExpired,
+        payload: serde_json::json!({
+            "memory_id": record.id.to_string(),
+            "expired_at": record.expires_at.clone(),
+        }),
+        trace_id: None,
+        span_id: None,
+        model: None,
+        tokens_input: None,
+        tokens_output: None,
+        latency_ms: None,
+        cost_usd: None,
+        timestamp: now_str.to_string(),
+        logical_clock: 0,
+        content_hash: event_content_hash,
+        prev_hash: event_prev_hash,
+        embedding: None,
+    };
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "ttl sweep: failed to insert MemoryExpired event");
+    }
 }
 
 #[cfg(test)]

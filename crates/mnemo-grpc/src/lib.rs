@@ -26,6 +26,7 @@ use mnemo_core::query::branch::BranchRequest as CoreBranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest as CoreCheckpointRequest;
 use mnemo_core::query::forget::{
     ForgetRequest as CoreForgetRequest, ForgetStrategy,
+    ForgetSubjectRequest as CoreForgetSubjectRequest,
 };
 use mnemo_core::query::merge::{MergeRequest as CoreMergeRequest, MergeStrategy};
 use mnemo_core::query::recall::RecallRequest as CoreRecallRequest;
@@ -58,6 +59,8 @@ use proto::{
     ScoredMemory as ProtoScoredMemory,
     ShareRequest as ProtoShareRequest, ShareResponse as ProtoShareResponse,
     VerifyRequest as ProtoVerifyRequest, VerifyResponse as ProtoVerifyResponse,
+    ForgetSubjectRequest as ProtoForgetSubjectRequest,
+    ForgetSubjectResponse as ProtoForgetSubjectResponse,
 };
 
 // ---------------------------------------------------------------------------
@@ -282,8 +285,9 @@ impl MnemoService for MnemoGrpcServer {
                     "decay" => ForgetStrategy::Decay,
                     "consolidate" => ForgetStrategy::Consolidate,
                     "archive" => ForgetStrategy::Archive,
+                    "redact" => ForgetStrategy::Redact,
                     _ => return Err(Status::invalid_argument(format!(
-                        "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive", s
+                        "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive, redact", s
                     ))),
                 };
                 Some(st)
@@ -536,6 +540,7 @@ impl MnemoService for MnemoGrpcServer {
             agent_id: req.agent_id,
             checkpoint_id,
             branch_name: req.branch_name,
+            as_of: req.as_of,
         };
         let result = self
             .engine
@@ -657,6 +662,67 @@ impl MnemoService for MnemoGrpcServer {
             verified_records: result.verified_records as u32,
             first_broken_at: result.first_broken_at.map(|id| id.to_string()),
             error_message: result.error_message,
+        }))
+    }
+
+    // -- ForgetSubject -----------------------------------------------------
+
+    async fn forget_subject(
+        &self,
+        request: Request<ProtoForgetSubjectRequest>,
+    ) -> Result<Response<ProtoForgetSubjectResponse>, Status> {
+        let req = request.into_inner();
+
+        let strategy = match req.strategy.as_deref().unwrap_or("redact") {
+            "redact" => ForgetStrategy::Redact,
+            "hard_delete" => ForgetStrategy::HardDelete,
+            "soft_delete" => ForgetStrategy::SoftDelete,
+            other => {
+                return Err(Status::invalid_argument(format!(
+                    "invalid forget_subject strategy '{}': expected one of: redact, hard_delete, soft_delete",
+                    other
+                )));
+            }
+        };
+
+        let core_req = CoreForgetSubjectRequest {
+            subject_id: req.subject_id,
+            agent_id: req.agent_id,
+            strategy,
+        };
+
+        let result = self
+            .engine
+            .forget_subject(core_req)
+            .await
+            .map_err(core_error_to_status)?;
+
+        let errors: Vec<ProtoForgetError> = result
+            .errors
+            .into_iter()
+            .map(|e| ProtoForgetError {
+                id: e.id.to_string(),
+                error: e.error,
+            })
+            .collect();
+
+        let strategy_str = match result.strategy {
+            ForgetStrategy::SoftDelete => "soft_delete",
+            ForgetStrategy::HardDelete => "hard_delete",
+            ForgetStrategy::Decay => "decay",
+            ForgetStrategy::Consolidate => "consolidate",
+            ForgetStrategy::Archive => "archive",
+            ForgetStrategy::Redact => "redact",
+        }
+        .to_string();
+
+        Ok(Response::new(ProtoForgetSubjectResponse {
+            subject_id: result.subject_id,
+            strategy: strategy_str,
+            matched: result.matched as u32,
+            forgotten: result.forgotten.iter().map(|id| id.to_string()).collect(),
+            cascaded_events: result.cascaded_events as u32,
+            errors,
         }))
     }
 }

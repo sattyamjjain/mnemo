@@ -63,6 +63,12 @@ struct Cli {
     /// AES-256-GCM encryption key (64-char hex string) for at-rest content encryption
     #[arg(long, env = "MNEMO_ENCRYPTION_KEY")]
     encryption_key: Option<String>,
+
+    /// Interval in seconds between TTL sweeps (0 = disabled). A sweep hard-deletes
+    /// every memory whose `expires_at` is in the past and emits MemoryExpired
+    /// audit events.
+    #[arg(long, default_value = "0", env = "MNEMO_TTL_SWEEP_INTERVAL")]
+    ttl_sweep_interval_seconds: u64,
 }
 
 #[tokio::main]
@@ -247,6 +253,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("Received shutdown signal");
         signal_shutdown.notify_one();
     });
+
+    // Start TTL sweeper that hard-deletes expired memories on a fixed cadence.
+    // Disabled when ttl_sweep_interval_seconds == 0.
+    if cli.ttl_sweep_interval_seconds > 0 {
+        let ttl_interval = cli.ttl_sweep_interval_seconds;
+        let ttl_engine = engine.clone();
+        let ttl_shutdown = shutdown_notify.clone();
+        tokio::spawn(async move {
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(ttl_interval));
+            // Skip the immediate first tick so startup isn't surprised by a sweep.
+            interval.tick().await;
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        match ttl_engine.run_ttl_sweep().await {
+                            Ok(report) if report.swept_count > 0 || !report.errors.is_empty() => {
+                                tracing::info!(
+                                    swept = report.swept_count,
+                                    errors = report.errors.len(),
+                                    "TTL sweep complete"
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(e) => tracing::warn!("TTL sweep failed: {e}"),
+                        }
+                    }
+                    _ = ttl_shutdown.notified() => return,
+                }
+            }
+        });
+        tracing::info!("TTL sweeper enabled (every {ttl_interval}s)");
+    }
 
     // Create and start MCP server
     let mut server = MnemoServer::new(engine);

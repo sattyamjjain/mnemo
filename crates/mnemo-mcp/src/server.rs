@@ -11,7 +11,7 @@ use rmcp::{
 use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
 use mnemo_core::query::branch::BranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest;
-use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy};
+use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy, ForgetSubjectRequest};
 use mnemo_core::query::merge::{MergeRequest, MergeStrategy};
 use mnemo_core::query::recall::{RecallRequest, TemporalRange};
 use mnemo_core::query::remember::RememberRequest;
@@ -22,6 +22,7 @@ use mnemo_core::query::MnemoEngine;
 use crate::tools::branch::BranchInput;
 use crate::tools::checkpoint::CheckpointInput;
 use crate::tools::forget::ForgetInput;
+use crate::tools::forget_subject::ForgetSubjectInput;
 use crate::tools::merge::MergeInput;
 use crate::tools::recall::RecallInput;
 use crate::tools::remember::RememberInput;
@@ -244,9 +245,10 @@ impl MnemoServer {
                 "decay" => Some(ForgetStrategy::Decay),
                 "consolidate" => Some(ForgetStrategy::Consolidate),
                 "archive" => Some(ForgetStrategy::Archive),
+                "redact" => Some(ForgetStrategy::Redact),
                 unknown => {
                     return Ok(CallToolResult::error(vec![Content::text(format!(
-                        "invalid strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive", unknown
+                        "invalid strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive, redact", unknown
                     ))]));
                 }
             },
@@ -284,6 +286,51 @@ impl MnemoServer {
                     "forgotten": response.forgotten.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
                     "errors": response.errors,
                     "status": "forgotten"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.forget_subject",
+        description = "GDPR / DPDPA-aligned subject erasure. Finds every memory tagged with `subject:<subject_id>` and either redacts the content (default, preserves the audit hash chain) or hard-deletes the rows. Use 'redact' when a verifiable audit trail must survive the erasure."
+    )]
+    async fn forget_subject(
+        &self,
+        Parameters(input): Parameters<ForgetSubjectInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let strategy = match input.strategy.as_deref().unwrap_or("redact") {
+            "redact" => ForgetStrategy::Redact,
+            "hard_delete" => ForgetStrategy::HardDelete,
+            "soft_delete" => ForgetStrategy::SoftDelete,
+            unknown => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid strategy '{}': expected one of: redact, hard_delete, soft_delete",
+                    unknown
+                ))]));
+            }
+        };
+
+        let request = ForgetSubjectRequest {
+            subject_id: input.subject_id,
+            agent_id: input.agent_id,
+            strategy,
+        };
+
+        match self.engine.forget_subject(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "subject_id": response.subject_id,
+                    "strategy": response.strategy,
+                    "matched": response.matched,
+                    "forgotten": response.forgotten.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    "cascaded_events": response.cascaded_events,
+                    "errors": response.errors,
                 });
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
@@ -486,6 +533,7 @@ impl MnemoServer {
         let mut request = ReplayRequest::new(input.thread_id);
         request.checkpoint_id = checkpoint_id;
         request.branch_name = input.branch_name;
+        request.as_of = input.as_of;
 
         match self.engine.replay(request).await {
             Ok(response) => {
