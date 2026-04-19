@@ -20,6 +20,8 @@ classifiers = [
 langgraph = ["langgraph-checkpoint>=0.2"]
 crewai = ["crewai>=0.40"]
 openai-agents = ["openai-agents>=0.1"]
+claude = ["claude-agent-sdk>=0.1", "watchdog>=4.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
