@@ -48,8 +48,13 @@ impl CheckpointResponse {
     }
 }
 
-pub async fn execute(engine: &MnemoEngine, request: CheckpointRequest) -> Result<CheckpointResponse> {
-    let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+pub async fn execute(
+    engine: &MnemoEngine,
+    request: CheckpointRequest,
+) -> Result<CheckpointResponse> {
+    let agent_id = request
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     let branch_name = request.branch_name.unwrap_or_else(|| "main".to_string());
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -94,7 +99,9 @@ pub async fn execute(engine: &MnemoEngine, request: CheckpointRequest) -> Result
         event_cursor,
         label: request.label,
         created_at: now.clone(),
-        metadata: request.metadata.unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+        metadata: request
+            .metadata
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
     };
 
     engine.storage.insert_checkpoint(&cp).await?;
@@ -107,7 +114,8 @@ pub async fn execute(engine: &MnemoEngine, request: CheckpointRequest) -> Result
         serde_json::json!({"checkpoint_id": id.to_string(), "branch": branch_name}),
         &id.to_string(),
         Some(request.thread_id),
-    ).await;
+    )
+    .await;
     if let Err(e) = engine.storage.insert_event(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }

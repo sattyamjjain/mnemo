@@ -3,14 +3,12 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::hash::{compute_chain_hash, compute_content_hash};
-#[allow(unused_imports)]
-use base64::Engine as _;
 use crate::model::event::{AgentEvent, EventType};
-use crate::model::memory::{
-    ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
-};
+use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType};
 use crate::model::relation::Relation;
 use crate::query::MnemoEngine;
+#[allow(unused_imports)]
+use base64::Engine as _;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RememberRequest {
@@ -79,7 +77,9 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
         ));
     }
 
-    let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+    let agent_id = request
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     super::validate_agent_id(&agent_id)?;
     let org_id = request.org_id.or_else(|| engine.default_org_id.clone());
     let now = chrono::Utc::now();
@@ -103,9 +103,9 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
     let prev_hash = Some(compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
 
     // Compute expires_at from ttl_seconds
-    let expires_at = request.ttl_seconds.map(|ttl| {
-        (now + chrono::Duration::seconds(ttl as i64)).to_rfc3339()
-    });
+    let expires_at = request
+        .ttl_seconds
+        .map(|ttl| (now + chrono::Duration::seconds(ttl as i64)).to_rfc3339());
 
     let mut record = MemoryRecord {
         id,
@@ -115,7 +115,9 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
         scope: request.scope.unwrap_or(Scope::Private),
         importance,
         tags: request.tags.unwrap_or_default(),
-        metadata: request.metadata.unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+        metadata: request
+            .metadata
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
         embedding: Some(embedding.clone()),
         content_hash: content_hash.clone(),
         prev_hash,
@@ -142,7 +144,8 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
     // Encrypt content if encryption is configured (after embedding, before storage)
     if let Some(ref enc) = engine.encryption {
         let encrypted = enc.encrypt(record.content.as_bytes())?;
-        record.content = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encrypted);
+        record.content =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encrypted);
     }
 
     // Store in database
@@ -191,14 +194,21 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
     }
 
     // Emit MemoryWrite event with hash chain linking (fire-and-forget)
-    let prev_event_hash = match engine.storage.get_latest_event_hash(&agent_id, record.thread_id.as_deref()).await {
+    let prev_event_hash = match engine
+        .storage
+        .get_latest_event_hash(&agent_id, record.thread_id.as_deref())
+        .await
+    {
         Ok(hash) => hash,
         Err(e) => {
             tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
             None
         }
     };
-    let event_prev_hash = Some(compute_chain_hash(&content_hash, prev_event_hash.as_deref()));
+    let event_prev_hash = Some(compute_chain_hash(
+        &content_hash,
+        prev_event_hash.as_deref(),
+    ));
     let mut event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: record.agent_id.clone(),

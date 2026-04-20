@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::hash::{verify_chain, ChainVerificationResult};
+use crate::hash::{ChainVerificationResult, verify_chain};
 use crate::model::checkpoint::Checkpoint;
 use crate::model::event::AgentEvent;
 use crate::model::memory::MemoryRecord;

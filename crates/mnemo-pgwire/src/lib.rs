@@ -23,8 +23,8 @@
 pub mod parser;
 pub mod server;
 
-use std::sync::Arc;
 use mnemo_core::query::MnemoEngine;
+use std::sync::Arc;
 
 /// Configuration for the pgwire server.
 #[derive(Debug, Clone)]

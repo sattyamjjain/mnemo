@@ -46,7 +46,9 @@ impl BranchResponse {
 }
 
 pub async fn execute(engine: &MnemoEngine, request: BranchRequest) -> Result<BranchResponse> {
-    let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+    let agent_id = request
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     let now = chrono::Utc::now().to_rfc3339();
 
     // Find source checkpoint
@@ -101,7 +103,8 @@ pub async fn execute(engine: &MnemoEngine, request: BranchRequest) -> Result<Bra
         }),
         &id.to_string(),
         Some(request.thread_id),
-    ).await;
+    )
+    .await;
     if let Err(e) = engine.storage.insert_event(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }

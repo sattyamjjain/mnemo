@@ -6,9 +6,10 @@ use pyo3::types::PyDict;
 
 use mnemo_core::embedding::openai::OpenAiEmbedding;
 use mnemo_core::embedding::{EmbeddingProvider, NoopEmbedding};
-use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::index::VectorIndex;
+use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::model::memory::{MemoryType, Scope};
+use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest;
 use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy};
@@ -17,7 +18,6 @@ use mnemo_core::query::recall::RecallRequest;
 use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
-use mnemo_core::query::MnemoEngine;
 use mnemo_core::storage::duckdb::DuckDbStorage;
 
 fn to_py_err(e: impl std::fmt::Display) -> PyErr {
@@ -142,7 +142,17 @@ impl MnemoClient {
         tags: Option<Vec<String>>,
         metadata: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        self.remember(content, memory_type, scope, importance, tags, metadata, None, None, None)
+        self.remember(
+            content,
+            memory_type,
+            scope,
+            importance,
+            tags,
+            metadata,
+            None,
+            None,
+            None,
+        )
     }
 
     #[pyo3(signature = (query, limit=None, memory_type=None, min_importance=None, tags=None, strategy=None, explain=None))]
@@ -259,7 +269,8 @@ impl MnemoClient {
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
-            let forgotten: Vec<String> = response.forgotten.iter().map(|id| id.to_string()).collect();
+            let forgotten: Vec<String> =
+                response.forgotten.iter().map(|id| id.to_string()).collect();
             dict.set_item("forgotten", forgotten)?;
             dict.set_item(
                 "errors",
@@ -321,7 +332,8 @@ impl MnemoClient {
         label: Option<String>,
         metadata: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let snapshot_value = pythonize_dict(state_snapshot)?.unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+        let snapshot_value = pythonize_dict(state_snapshot)?
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
         let metadata_value = match metadata {
             Some(dict) => pythonize_dict(dict)?,
             None => None,
@@ -375,7 +387,10 @@ impl MnemoClient {
             let dict = PyDict::new(py);
             dict.set_item("checkpoint_id", response.checkpoint_id.to_string())?;
             dict.set_item("branch_name", &response.branch_name)?;
-            dict.set_item("source_checkpoint_id", response.source_checkpoint_id.to_string())?;
+            dict.set_item(
+                "source_checkpoint_id",
+                response.source_checkpoint_id.to_string(),
+            )?;
             Ok(dict.into_any().unbind())
         })
     }
@@ -458,13 +473,18 @@ impl MnemoClient {
             dict.set_item("memory_count", response.memories.len())?;
             dict.set_item("event_count", response.events.len())?;
 
-            let memories: Vec<Py<PyAny>> = response.memories.iter().map(|m| {
-                let d = PyDict::new(py);
-                d.set_item("id", m.id.to_string()).unwrap();
-                d.set_item("content", &m.content).unwrap();
-                d.set_item("memory_type", m.memory_type.to_string()).unwrap();
-                d.into_any().unbind()
-            }).collect();
+            let memories: Vec<Py<PyAny>> = response
+                .memories
+                .iter()
+                .map(|m| {
+                    let d = PyDict::new(py);
+                    d.set_item("id", m.id.to_string()).unwrap();
+                    d.set_item("content", &m.content).unwrap();
+                    d.set_item("memory_type", m.memory_type.to_string())
+                        .unwrap();
+                    d.into_any().unbind()
+                })
+                .collect();
             dict.set_item("memories", memories)?;
 
             Ok(dict.into_any().unbind())
@@ -489,9 +509,7 @@ impl Drop for MnemoClient {
 fn pythonize_dict(dict: &Bound<'_, PyDict>) -> PyResult<Option<serde_json::Value>> {
     let py = dict.py();
     let json_mod = py.import("json")?;
-    let json_str: String = json_mod
-        .call_method1("dumps", (dict,))?
-        .extract()?;
+    let json_str: String = json_mod.call_method1("dumps", (dict,))?.extract()?;
     let value: serde_json::Value = serde_json::from_str(&json_str).map_err(to_py_err)?;
     Ok(Some(value))
 }

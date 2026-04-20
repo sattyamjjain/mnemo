@@ -56,7 +56,9 @@ impl MergeResponse {
 }
 
 pub async fn execute(engine: &MnemoEngine, request: MergeRequest) -> Result<MergeResponse> {
-    let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+    let agent_id = request
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     let target_branch = request.target_branch.unwrap_or_else(|| "main".to_string());
     let strategy = request.strategy.unwrap_or(MergeStrategy::FullMerge);
     let now = chrono::Utc::now().to_rfc3339();
@@ -115,7 +117,9 @@ pub async fn execute(engine: &MnemoEngine, request: MergeRequest) -> Result<Merg
     // Merge state snapshots (target takes precedence, source fields added)
     let merged_snapshot = if let Some(ref tcp) = target_cp {
         let mut base = tcp.state_snapshot.clone();
-        if let (Some(base_obj), Some(source_obj)) = (base.as_object_mut(), source_cp.state_snapshot.as_object()) {
+        if let (Some(base_obj), Some(source_obj)) =
+            (base.as_object_mut(), source_cp.state_snapshot.as_object())
+        {
             for (k, v) in source_obj {
                 if !base_obj.contains_key(k) {
                     base_obj.insert(k.clone(), v.clone());
@@ -164,7 +168,8 @@ pub async fn execute(engine: &MnemoEngine, request: MergeRequest) -> Result<Merg
         }),
         &id.to_string(),
         Some(request.thread_id),
-    ).await;
+    )
+    .await;
     if let Err(e) = engine.storage.insert_event(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }

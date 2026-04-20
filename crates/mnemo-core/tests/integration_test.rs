@@ -11,6 +11,7 @@ use mnemo_core::model::acl::Permission;
 use mnemo_core::model::delegation::{Delegation, DelegationScope};
 use mnemo_core::model::event::{AgentEvent, EventType};
 use mnemo_core::model::memory::{MemoryType, Scope};
+use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest;
 use mnemo_core::query::conflict::ResolutionStrategy;
@@ -23,7 +24,6 @@ use mnemo_core::query::recall::RecallRequest;
 use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
-use mnemo_core::query::MnemoEngine;
 use mnemo_core::storage::duckdb::DuckDbStorage;
 
 fn create_engine(agent_id: &str) -> Arc<MnemoEngine> {
@@ -93,7 +93,10 @@ async fn test_full_lifecycle() {
         .expect("recall should succeed");
 
     assert_eq!(recall_result.total, 1);
-    assert_eq!(recall_result.memories[0].content, "The user prefers dark mode");
+    assert_eq!(
+        recall_result.memories[0].content,
+        "The user prefers dark mode"
+    );
     assert_eq!(recall_result.memories[0].memory_type, MemoryType::Semantic);
 
     // === SHARE ===
@@ -401,11 +404,11 @@ async fn test_access_count_increments() {
                 org_id: None,
                 strategy: None,
                 temporal_range: None,
-            recency_half_life_hours: None,
-            hybrid_weights: None,
-            rrf_k: None,
-            as_of: None,
-            explain: None,
+                recency_half_life_hours: None,
+                hybrid_weights: None,
+                rrf_k: None,
+                as_of: None,
+                explain: None,
             })
             .await
             .unwrap();
@@ -715,10 +718,14 @@ async fn test_ttl_sets_expires_at() {
     assert!(record.expires_at.is_some());
 
     // Verify the expiry is roughly 1 hour from now
-    let expires_at = chrono::DateTime::parse_from_rfc3339(record.expires_at.as_ref().unwrap()).unwrap();
+    let expires_at =
+        chrono::DateTime::parse_from_rfc3339(record.expires_at.as_ref().unwrap()).unwrap();
     let now = chrono::Utc::now();
     let diff = (expires_at.timestamp() - now.timestamp()).abs();
-    assert!((3500..=3700).contains(&diff), "expires_at should be ~1 hour from now, got diff={diff}");
+    assert!(
+        (3500..=3700).contains(&diff),
+        "expires_at should be ~1 hour from now, got diff={diff}"
+    );
 }
 
 #[tokio::test]
@@ -763,7 +770,10 @@ async fn test_chain_linking_consecutive() {
     // First memory's prev_hash is derived from content_hash + None prev
     // Subsequent ones chain to the previous
     for record in &records {
-        assert!(record.prev_hash.is_some(), "all memories should have prev_hash for chain linking");
+        assert!(
+            record.prev_hash.is_some(),
+            "all memories should have prev_hash for chain linking"
+        );
     }
 
     // Verify chain integrity
@@ -1116,11 +1126,7 @@ async fn test_agent_profile_updated_on_remember() {
     }
 
     // Check agent profile was created/updated
-    let profile = engine
-        .storage
-        .get_agent_profile("agent-1")
-        .await
-        .unwrap();
+    let profile = engine.storage.get_agent_profile("agent-1").await.unwrap();
     assert!(profile.is_some());
     let profile = profile.unwrap();
     assert_eq!(profile.total_memories, 5);
@@ -1388,7 +1394,10 @@ async fn test_share_expiration() {
         .check_permission(mem.id, "agent-2", Permission::Read)
         .await
         .unwrap();
-    assert!(has_access, "agent-2 should have read access after share with expiration");
+    assert!(
+        has_access,
+        "agent-2 should have read access after share with expiration"
+    );
 }
 
 #[tokio::test]
@@ -1454,7 +1463,11 @@ async fn test_trace_causality() {
     assert_eq!(chain.depth, 1);
 
     // Root node should list child
-    let root_node = chain.nodes.iter().find(|n| n.event.id == parent_id).unwrap();
+    let root_node = chain
+        .nodes
+        .iter()
+        .find(|n| n.event.id == parent_id)
+        .unwrap();
     assert!(root_node.children.contains(&child_id));
 }
 
@@ -1507,8 +1520,14 @@ async fn test_conflict_detection() {
 
     // With noop embeddings, all vectors are identical → similarity = 1.0
     // Since content differs, this should be flagged as a conflict
-    let result = engine.detect_conflicts(Some("agent-1".to_string()), 0.9).await.unwrap();
-    assert!(!result.conflicts.is_empty(), "Should detect near-duplicate conflict");
+    let result = engine
+        .detect_conflicts(Some("agent-1".to_string()), 0.9)
+        .await
+        .unwrap();
+    assert!(
+        !result.conflicts.is_empty(),
+        "Should detect near-duplicate conflict"
+    );
     assert_eq!(result.conflicts[0].similarity, 1.0);
 }
 
@@ -1559,7 +1578,10 @@ async fn test_conflict_resolution_keep_newest() {
         .unwrap();
 
     // Detect conflicts
-    let conflicts = engine.detect_conflicts(Some("agent-1".to_string()), 0.9).await.unwrap();
+    let conflicts = engine
+        .detect_conflicts(Some("agent-1".to_string()), 0.9)
+        .await
+        .unwrap();
     assert!(!conflicts.conflicts.is_empty());
 
     // Resolve: keep newest
@@ -1602,11 +1624,7 @@ async fn test_event_embedding_stored() {
         .unwrap();
 
     // List events for this agent and verify they exist
-    let events = engine
-        .storage
-        .list_events("agent-1", 10, 0)
-        .await
-        .unwrap();
+    let events = engine.storage.list_events("agent-1", 10, 0).await.unwrap();
 
     assert!(!events.is_empty());
     // Events are currently stored with embedding: None (not computed for events by default)
@@ -1665,7 +1683,10 @@ async fn test_custom_decay_linear() {
         ..record.clone()
     };
     let old_eff = lifecycle::effective_importance(&old_record);
-    assert!(old_eff < eff, "Old linear decay {old_eff} should be < fresh {eff}");
+    assert!(
+        old_eff < eff,
+        "Old linear decay {old_eff} should be < fresh {eff}"
+    );
 
     // Step function: fresh → full importance
     let step_record = MemoryRecord {
@@ -1673,7 +1694,10 @@ async fn test_custom_decay_linear() {
         ..record.clone()
     };
     let step_eff = lifecycle::effective_importance(&step_record);
-    assert!(step_eff > 0.7, "Step function within threshold {step_eff} should be > 0.7");
+    assert!(
+        step_eff > 0.7,
+        "Step function within threshold {step_eff} should be > 0.7"
+    );
 
     // Step function: past threshold → 0 (+ access boost only)
     let old_step = MemoryRecord {
@@ -1682,7 +1706,10 @@ async fn test_custom_decay_linear() {
         ..record.clone()
     };
     let old_step_eff = lifecycle::effective_importance(&old_step);
-    assert!(old_step_eff < 0.1, "Step function past threshold {old_step_eff} should be < 0.1");
+    assert!(
+        old_step_eff < 0.1,
+        "Step function past threshold {old_step_eff} should be < 0.1"
+    );
 
     // Power law decay
     let power_record = MemoryRecord {
@@ -1690,7 +1717,10 @@ async fn test_custom_decay_linear() {
         ..record.clone()
     };
     let power_eff = lifecycle::effective_importance(&power_record);
-    assert!(power_eff > 0.7, "Fresh power law {power_eff} should be > 0.7");
+    assert!(
+        power_eff > 0.7,
+        "Fresh power law {power_eff} should be > 0.7"
+    );
 }
 
 #[tokio::test]
@@ -1915,7 +1945,12 @@ async fn test_sync_full_conflict_detection() {
 
     // Now update the remote copy (simulating a conflicting change)
     // Use storage directly to update
-    let remote_mem = remote.storage.get_memory(local_resp.id).await.unwrap().unwrap();
+    let remote_mem = remote
+        .storage
+        .get_memory(local_resp.id)
+        .await
+        .unwrap()
+        .unwrap();
     let mut updated = remote_mem.clone();
     updated.content = "Modified on remote side".to_string();
     updated.updated_at = chrono::Utc::now().to_rfc3339();
@@ -2057,7 +2092,10 @@ async fn test_permission_safe_ann() {
             "Permission leak: agent-2 memory appeared in agent-1 recall"
         );
     }
-    assert!(result.total <= 10, "Should return at most 10 agent-1 memories");
+    assert!(
+        result.total <= 10,
+        "Should return at most 10 agent-1 memories"
+    );
 }
 
 #[tokio::test]
@@ -2182,7 +2220,10 @@ async fn test_as_of_point_in_time() {
         .await
         .unwrap();
 
-    assert_eq!(result2.total, 2, "as_of t_after_both should see both A and B");
+    assert_eq!(
+        result2.total, 2,
+        "as_of t_after_both should see both A and B"
+    );
 
     // as_of t_after_delete: should see only B (A was deleted by then)
     let result3 = engine
@@ -2260,13 +2301,13 @@ async fn test_event_integrity_verification() {
         .unwrap();
 
     // Verify event chain integrity
-    let result = engine
-        .verify_event_integrity(None, None)
-        .await
-        .unwrap();
+    let result = engine.verify_event_integrity(None, None).await.unwrap();
 
     assert!(result.valid, "Event chain should be valid");
-    assert!(result.total_records >= 2, "Should have at least 2 events (remember + recall)");
+    assert!(
+        result.total_records >= 2,
+        "Should have at least 2 events (remember + recall)"
+    );
     assert_eq!(result.verified_records, result.total_records);
 }
 
@@ -2329,7 +2370,10 @@ async fn test_evidence_weighted_resolution() {
 
     // Resolve with evidence-weighted strategy
     engine
-        .resolve_conflict(&conflicts.conflicts[0], ResolutionStrategy::EvidenceWeighted)
+        .resolve_conflict(
+            &conflicts.conflicts[0],
+            ResolutionStrategy::EvidenceWeighted,
+        )
         .await
         .unwrap();
 
@@ -2337,7 +2381,10 @@ async fn test_evidence_weighted_resolution() {
     let a = engine.storage.get_memory(mem_a.id).await.unwrap().unwrap();
     let b = engine.storage.get_memory(mem_b.id).await.unwrap().unwrap();
     assert!(!a.is_deleted(), "Higher evidence memory should survive");
-    assert!(b.is_deleted(), "Lower evidence memory should be soft-deleted");
+    assert!(
+        b.is_deleted(),
+        "Lower evidence memory should be soft-deleted"
+    );
 
     // Winner should have conflict_resolution metadata
     let meta = a.metadata.as_object().unwrap();
@@ -2350,14 +2397,29 @@ fn test_source_reliability_ordering() {
     use mnemo_core::query::conflict::source_reliability;
 
     let scores = [
-        (SourceType::ToolOutput, source_reliability(SourceType::ToolOutput)),
+        (
+            SourceType::ToolOutput,
+            source_reliability(SourceType::ToolOutput),
+        ),
         (SourceType::Human, source_reliability(SourceType::Human)),
-        (SourceType::UserInput, source_reliability(SourceType::UserInput)),
+        (
+            SourceType::UserInput,
+            source_reliability(SourceType::UserInput),
+        ),
         (SourceType::System, source_reliability(SourceType::System)),
-        (SourceType::ModelResponse, source_reliability(SourceType::ModelResponse)),
+        (
+            SourceType::ModelResponse,
+            source_reliability(SourceType::ModelResponse),
+        ),
         (SourceType::Agent, source_reliability(SourceType::Agent)),
-        (SourceType::Consolidation, source_reliability(SourceType::Consolidation)),
-        (SourceType::Retrieval, source_reliability(SourceType::Retrieval)),
+        (
+            SourceType::Consolidation,
+            source_reliability(SourceType::Consolidation),
+        ),
+        (
+            SourceType::Retrieval,
+            source_reliability(SourceType::Retrieval),
+        ),
         (SourceType::Import, source_reliability(SourceType::Import)),
     ];
 
@@ -2365,10 +2427,16 @@ fn test_source_reliability_ordering() {
     assert!(scores[0].1 > scores[1].1, "ToolOutput should be > Human");
     assert_eq!(scores[1].1, scores[2].1, "Human should equal UserInput");
     assert!(scores[2].1 > scores[3].1, "UserInput should be > System");
-    assert!(scores[3].1 > scores[4].1, "System should be > ModelResponse");
+    assert!(
+        scores[3].1 > scores[4].1,
+        "System should be > ModelResponse"
+    );
     assert!(scores[4].1 > scores[5].1, "ModelResponse should be > Agent");
     assert!(scores[5].1 > scores[6].1, "Agent should be > Consolidation");
-    assert!(scores[6].1 > scores[7].1, "Consolidation should be > Retrieval");
+    assert!(
+        scores[6].1 > scores[7].1,
+        "Consolidation should be > Retrieval"
+    );
     assert!(scores[7].1 > scores[8].1, "Retrieval should be > Import");
 }
 
@@ -2420,7 +2488,11 @@ async fn test_ttl_sweep_deletes_expired_and_emits_events() {
         );
     }
 
-    let events = engine.storage.list_events("ttl-agent", 1000, 0).await.unwrap();
+    let events = engine
+        .storage
+        .list_events("ttl-agent", 1000, 0)
+        .await
+        .unwrap();
     let expired = events
         .iter()
         .filter(|e| e.event_type == EventType::MemoryExpired)
@@ -2518,10 +2590,19 @@ async fn test_forget_subject_redact_preserves_hash_chain() {
         );
     }
 
-    let u = engine.storage.get_memory(unrelated.id).await.unwrap().unwrap();
+    let u = engine
+        .storage
+        .get_memory(unrelated.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(u.content, "unrelated");
 
-    let events = engine.storage.list_events("redact-agent", 1000, 0).await.unwrap();
+    let events = engine
+        .storage
+        .list_events("redact-agent", 1000, 0)
+        .await
+        .unwrap();
     let redacts = events
         .iter()
         .filter(|e| e.event_type == EventType::MemoryRedact)
@@ -2541,14 +2622,8 @@ async fn test_recall_explain_populates_score_breakdown() {
     let embedding = Arc::new(mnemo_core::embedding::NoopEmbedding::new(128));
     let full_text = Arc::new(TantivyFullTextIndex::open_in_memory().unwrap());
     let engine = Arc::new(
-        MnemoEngine::new(
-            storage,
-            index,
-            embedding,
-            "explain-agent".to_string(),
-            None,
-        )
-        .with_full_text(full_text),
+        MnemoEngine::new(storage, index, embedding, "explain-agent".to_string(), None)
+            .with_full_text(full_text),
     );
 
     for content in ["alpha fact", "alpha variant", "unrelated fact"] {
@@ -2611,7 +2686,9 @@ async fn test_recall_explain_populates_score_breakdown() {
 /// created at or before T1 and excludes those created after.
 #[tokio::test]
 async fn test_replay_as_of_returns_historical_state() {
-    use mnemo_core::model::memory::{ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType};
+    use mnemo_core::model::memory::{
+        ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+    };
 
     let engine = create_engine("asof-agent");
 
@@ -2671,8 +2748,7 @@ async fn test_replay_as_of_returns_historical_state() {
         .await
         .unwrap();
 
-    let ids: std::collections::HashSet<_> =
-        response.memories.iter().map(|m| m.id).collect();
+    let ids: std::collections::HashSet<_> = response.memories.iter().map(|m| m.id).collect();
     assert!(
         ids.contains(&ids_by_label["t0"]),
         "T0 memory must be present at as_of=T1"
@@ -2686,10 +2762,12 @@ async fn test_replay_as_of_returns_historical_state() {
         "T2 memory must NOT appear in as_of=T1 snapshot"
     );
     assert_eq!(response.checkpoint.id, uuid::Uuid::nil());
-    assert!(response
-        .checkpoint
-        .label
-        .as_deref()
-        .unwrap_or("")
-        .contains("virtual"));
+    assert!(
+        response
+            .checkpoint
+            .label
+            .as_deref()
+            .unwrap_or("")
+            .contains("virtual")
+    );
 }

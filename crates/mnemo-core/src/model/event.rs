@@ -217,8 +217,14 @@ mod tests {
     #[test]
     fn test_event_type_display_fromstr() {
         assert_eq!(EventType::MemoryWrite.to_string(), "memory_write");
-        assert_eq!("memory_read".parse::<EventType>().unwrap(), EventType::MemoryRead);
-        assert_eq!("checkpoint".parse::<EventType>().unwrap(), EventType::Checkpoint);
+        assert_eq!(
+            "memory_read".parse::<EventType>().unwrap(),
+            EventType::MemoryRead
+        );
+        assert_eq!(
+            "checkpoint".parse::<EventType>().unwrap(),
+            EventType::Checkpoint
+        );
         assert_eq!("error".parse::<EventType>().unwrap(), EventType::Error);
         assert!("invalid".parse::<EventType>().is_err());
     }

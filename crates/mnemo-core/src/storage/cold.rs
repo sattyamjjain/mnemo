@@ -191,9 +191,7 @@ impl ColdStorage for InMemoryColdStorage {
 
         let ids: Vec<Uuid> = guard
             .iter()
-            .filter(|(_, entry)| {
-                agent_id.is_none_or(|aid| entry.agent_id == aid)
-            })
+            .filter(|(_, entry)| agent_id.is_none_or(|aid| entry.agent_id == aid))
             .map(|(id, _)| *id)
             .take(limit)
             .collect();
@@ -348,9 +346,7 @@ impl ColdStorage for S3ColdStorage {
             .iter()
             .filter_map(|obj| obj.key())
             .find(|k| k.ends_with(&target_suffix))
-            .ok_or_else(|| {
-                Error::NotFound(format!("archived memory {memory_id} not found in S3"))
-            })?
+            .ok_or_else(|| Error::NotFound(format!("archived memory {memory_id} not found in S3")))?
             .to_string();
 
         let get_resp = self
@@ -450,9 +446,7 @@ impl ColdStorage for S3ColdStorage {
             .iter()
             .filter_map(|obj| obj.key())
             .find(|k| k.ends_with(&target_suffix))
-            .ok_or_else(|| {
-                Error::NotFound(format!("archived memory {memory_id} not found in S3"))
-            })?
+            .ok_or_else(|| Error::NotFound(format!("archived memory {memory_id} not found in S3")))?
             .to_string();
 
         self.client
@@ -493,9 +487,7 @@ impl ColdStorage for S3ColdStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::memory::{
-        ConsolidationState, MemoryType, Scope, SourceType,
-    };
+    use crate::model::memory::{ConsolidationState, MemoryType, Scope, SourceType};
 
     fn sample_config() -> ColdStorageConfig {
         ColdStorageConfig {
@@ -550,10 +542,7 @@ mod tests {
         let result = storage.archive(&record).await.unwrap();
         assert_eq!(result.memory_id, id);
         assert!(result.size_bytes > 0);
-        assert_eq!(
-            result.s3_key,
-            format!("memories/agent-1/{id}.json")
-        );
+        assert_eq!(result.s3_key, format!("memories/agent-1/{id}.json"));
 
         // Restore and verify round-trip fidelity
         let restored = storage.restore(id).await.unwrap();

@@ -13,8 +13,8 @@ use tokio::net::TcpStream;
 
 use mnemo_core::query::MnemoEngine;
 
-use crate::parser::{self, ParsedStatement};
 use crate::PgWireConfig;
+use crate::parser::{self, ParsedStatement};
 
 /// Handle a single PostgreSQL wire protocol connection.
 pub async fn handle_connection(
@@ -57,9 +57,7 @@ pub async fn handle_connection(
     // Phase 2: Authentication
     if let Some(ref expected_password) = config.password {
         // Send AuthenticationCleartextPassword (type 3)
-        stream
-            .write_all(&[b'R', 0, 0, 0, 8, 0, 0, 0, 3])
-            .await?;
+        stream.write_all(&[b'R', 0, 0, 0, 8, 0, 0, 0, 3]).await?;
         stream.flush().await?;
 
         // Read password message (type 'p')
@@ -87,9 +85,7 @@ pub async fn handle_connection(
     }
 
     // Send AuthenticationOk
-    stream
-        .write_all(&[b'R', 0, 0, 0, 8, 0, 0, 0, 0])
-        .await?;
+    stream.write_all(&[b'R', 0, 0, 0, 8, 0, 0, 0, 0]).await?;
 
     // Send ParameterStatus messages
     send_parameter_status(&mut stream, "server_version", "16.0").await?;
@@ -236,13 +232,14 @@ async fn handle_query(
             let request = mnemo_core::query::remember::RememberRequest {
                 content: q.content,
                 agent_id: Some(agent_id),
-                memory_type: q
-                    .memory_type
-                    .as_deref()
-                    .and_then(parse_memory_type),
+                memory_type: q.memory_type.as_deref().and_then(parse_memory_type),
                 scope: None,
                 importance: q.importance,
-                tags: if q.tags.is_empty() { None } else { Some(q.tags) },
+                tags: if q.tags.is_empty() {
+                    None
+                } else {
+                    Some(q.tags)
+                },
                 metadata: None,
                 source_type: None,
                 source_id: None,
@@ -258,19 +255,16 @@ async fn handle_query(
 
             Ok(QueryResponse {
                 columns: vec!["id".to_string(), "content_hash".to_string()],
-                rows: vec![vec![
-                    response.id.to_string(),
-                    response.content_hash.clone(),
-                ]],
+                rows: vec![vec![response.id.to_string(), response.content_hash.clone()]],
                 command_tag: "INSERT 0 1".to_string(),
             })
         }
 
         ParsedStatement::Delete(q) => {
             if let Some(memory_id_str) = q.memory_id {
-                let memory_id: uuid::Uuid = memory_id_str.parse().map_err(|e| {
-                    format!("invalid UUID in DELETE WHERE id = '...': {e}")
-                })?;
+                let memory_id: uuid::Uuid = memory_id_str
+                    .parse()
+                    .map_err(|e| format!("invalid UUID in DELETE WHERE id = '...': {e}"))?;
 
                 let agent_id = q
                     .agent_id

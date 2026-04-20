@@ -5,12 +5,12 @@ use uuid::Uuid;
 
 use crate::error::Result;
 use crate::hash::compute_content_hash;
-#[allow(unused_imports)]
-use base64::Engine as _;
 use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{MemoryRecord, MemoryType, Scope};
 use crate::query::MnemoEngine;
 use crate::storage::MemoryFilter;
+#[allow(unused_imports)]
+use base64::Engine as _;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TemporalRange {
@@ -155,7 +155,10 @@ async fn get_memory_cached(engine: &MnemoEngine, id: Uuid) -> Result<Option<Memo
 
 pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<RecallResponse> {
     let limit = request.limit.unwrap_or(10).min(100);
-    let agent_id = request.agent_id.clone().unwrap_or_else(|| engine.default_agent_id.clone());
+    let agent_id = request
+        .agent_id
+        .clone()
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     super::validate_agent_id(&agent_id)?;
 
     // Determine strategy
@@ -193,7 +196,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
         "semantic" => {
             // Vector-only path with permission pre-filtering
-            let search_results = engine.index.filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            let search_results =
+                engine
+                    .index
+                    .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
             for (id, distance) in search_results {
                 if let Some(record) = get_memory_cached(engine, id).await?
                     && passes_filters(&record, &request, &agent_id, engine).await
@@ -205,7 +211,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
         "graph" => {
             // Seed from vector results with permission pre-filtering, then expand via graph relations
-            let search_results = engine.index.filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            let search_results =
+                engine
+                    .index
+                    .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
             let mut seeds: Vec<(Uuid, f32)> = Vec::new();
             for (id, distance) in &search_results {
                 if let Some(record) = get_memory_cached(engine, *id).await?
@@ -234,7 +243,11 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                     let from_rels = engine.storage.get_relations_from(id).await?;
                     let to_rels = engine.storage.get_relations_to(id).await?;
                     for rel in from_rels.iter().chain(to_rels.iter()) {
-                        let related_id = if rel.source_id == id { rel.target_id } else { rel.source_id };
+                        let related_id = if rel.source_id == id {
+                            rel.target_id
+                        } else {
+                            rel.source_id
+                        };
                         if seen.insert(related_id)
                             && let Some(record) = get_memory_cached(engine, related_id).await?
                             && passes_filters(&record, &request, &agent_id, engine).await
@@ -256,7 +269,11 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             let ranked_lists = vec![v_sorted, graph_ranked];
             let rrf_k = request.rrf_k.unwrap_or(60.0);
             let fused = if let Some(ref weights) = request.hybrid_weights {
-                crate::query::retrieval::weighted_reciprocal_rank_fusion(&ranked_lists, rrf_k, weights)
+                crate::query::retrieval::weighted_reciprocal_rank_fusion(
+                    &ranked_lists,
+                    rrf_k,
+                    weights,
+                )
             } else {
                 crate::query::retrieval::reciprocal_rank_fusion(&ranked_lists, rrf_k)
             };
@@ -291,7 +308,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
         _ => {
             // "auto" or "hybrid" — use hybrid if full_text available, else semantic
-            let vector_results = engine.index.filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            let vector_results =
+                engine
+                    .index
+                    .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
             let mut vector_ranked: Vec<(Uuid, f32)> = Vec::new();
             for (id, distance) in vector_results {
                 vector_ranked.push((id, 1.0 - distance));
@@ -305,7 +325,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 let mut recency_ranked: Vec<(Uuid, f32)> = Vec::new();
                 for &(id, _) in &vector_ranked {
                     if let Some(record) = get_memory_cached(engine, id).await? {
-                        let r_score = crate::query::retrieval::recency_score(&record.created_at, request.recency_half_life_hours.unwrap_or(168.0));
+                        let r_score = crate::query::retrieval::recency_score(
+                            &record.created_at,
+                            request.recency_half_life_hours.unwrap_or(168.0),
+                        );
                         recency_ranked.push((id, r_score));
                     }
                 }
@@ -314,7 +337,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                     if !recency_ranked.iter().any(|(rid, _)| *rid == id)
                         && let Some(record) = get_memory_cached(engine, id).await?
                     {
-                        let r_score = crate::query::retrieval::recency_score(&record.created_at, request.recency_half_life_hours.unwrap_or(168.0));
+                        let r_score = crate::query::retrieval::recency_score(
+                            &record.created_at,
+                            request.recency_half_life_hours.unwrap_or(168.0),
+                        );
                         recency_ranked.push((id, r_score));
                     }
                 }
@@ -324,12 +350,14 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 v_sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 let mut b_sorted = bm25_results;
                 b_sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                recency_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                recency_ranked
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 // Graph expansion signal: from top-10 vector results, multi-hop expansion
                 let max_hops = 2;
                 let mut graph_ranked: Vec<(Uuid, f32)> = Vec::new();
-                let top_seeds: Vec<Uuid> = vector_ranked.iter().take(10).map(|(id, _)| *id).collect();
+                let top_seeds: Vec<Uuid> =
+                    vector_ranked.iter().take(10).map(|(id, _)| *id).collect();
                 let mut graph_seen: HashSet<Uuid> = top_seeds.iter().copied().collect();
                 for &seed_id in &top_seeds {
                     graph_ranked.push((seed_id, 1.0));
@@ -369,17 +397,19 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                     frontier = next_frontier;
                     decay *= 0.5;
                 }
-                graph_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                graph_ranked
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 // Capture per-signal score maps before moving the ranked lists
                 // into the fusion call, so `explain=true` can surface each
                 // signal's contribution in the response.
                 let explain = request.explain.unwrap_or(false);
+                type SignalMap = std::collections::HashMap<Uuid, f32>;
                 let (vector_map, bm25_map, recency_map, graph_map): (
-                    std::collections::HashMap<Uuid, f32>,
-                    std::collections::HashMap<Uuid, f32>,
-                    std::collections::HashMap<Uuid, f32>,
-                    std::collections::HashMap<Uuid, f32>,
+                    SignalMap,
+                    SignalMap,
+                    SignalMap,
+                    SignalMap,
                 ) = if explain {
                     (
                         v_sorted.iter().copied().collect(),
@@ -394,7 +424,11 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 let ranked_lists = vec![v_sorted, b_sorted, recency_ranked, graph_ranked];
                 let rrf_k = request.rrf_k.unwrap_or(60.0);
                 let fused = if let Some(ref weights) = request.hybrid_weights {
-                    crate::query::retrieval::weighted_reciprocal_rank_fusion(&ranked_lists, rrf_k, weights)
+                    crate::query::retrieval::weighted_reciprocal_rank_fusion(
+                        &ranked_lists,
+                        rrf_k,
+                        weights,
+                    )
                 } else {
                     crate::query::retrieval::reciprocal_rank_fusion(&ranked_lists, rrf_k)
                 };
@@ -405,13 +439,16 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                     {
                         scored_memories.push((record, score));
                         if explain {
-                            breakdowns.insert(id, ScoreBreakdown {
-                                vector: vector_map.get(&id).copied().unwrap_or(0.0),
-                                bm25: bm25_map.get(&id).copied().unwrap_or(0.0),
-                                graph: graph_map.get(&id).copied().unwrap_or(0.0),
-                                recency: recency_map.get(&id).copied().unwrap_or(0.0),
-                                rrf_rank: rank as u32,
-                            });
+                            breakdowns.insert(
+                                id,
+                                ScoreBreakdown {
+                                    vector: vector_map.get(&id).copied().unwrap_or(0.0),
+                                    bm25: bm25_map.get(&id).copied().unwrap_or(0.0),
+                                    graph: graph_map.get(&id).copied().unwrap_or(0.0),
+                                    recency: recency_map.get(&id).copied().unwrap_or(0.0),
+                                    rrf_rank: rank as u32,
+                                },
+                            );
                         }
                     }
                 }
@@ -488,7 +525,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             None
         }
     };
-    let event_prev_hash = Some(crate::hash::compute_chain_hash(&event_content_hash, prev_event_hash.as_deref()));
+    let event_prev_hash = Some(crate::hash::compute_chain_hash(
+        &event_content_hash,
+        prev_event_hash.as_deref(),
+    ));
     let mut event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: agent_id.clone(),
@@ -610,8 +650,7 @@ async fn passes_filters(
         if let (Ok(as_of_dt), Ok(record_dt)) = (
             chrono::DateTime::parse_from_rfc3339(as_of),
             chrono::DateTime::parse_from_rfc3339(&record.created_at),
-        )
-            && record_dt > as_of_dt
+        ) && record_dt > as_of_dt
         {
             // Exclude memories created after as_of
             return false;

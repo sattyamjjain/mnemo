@@ -2,8 +2,8 @@ pub mod handlers;
 
 use std::sync::Arc;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 use mnemo_core::query::MnemoEngine;
 
 /// Construct the Axum router for the Mnemo admin dashboard.

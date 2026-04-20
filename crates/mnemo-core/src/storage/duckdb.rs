@@ -36,11 +36,9 @@ impl DuckDbStorage {
 }
 
 fn serialize_embedding(embedding: &Option<Vec<f32>>) -> Option<Vec<u8>> {
-    embedding.as_ref().map(|v| {
-        v.iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect()
-    })
+    embedding
+        .as_ref()
+        .map(|v| v.iter().flat_map(|f| f.to_le_bytes()).collect())
 }
 
 fn deserialize_embedding(blob: Option<Vec<u8>>) -> Option<Vec<f32>> {
@@ -232,7 +230,9 @@ impl StorageBackend for DuckDbStorage {
             duckdb::params![now, now, id.to_string()],
         )?;
         if affected == 0 {
-            return Err(Error::NotFound(format!("memory {id} not found or already deleted")));
+            return Err(Error::NotFound(format!(
+                "memory {id} not found or already deleted"
+            )));
         }
         Ok(())
     }
@@ -254,7 +254,12 @@ impl StorageBackend for DuckDbStorage {
         Ok(())
     }
 
-    async fn list_memories(&self, filter: &MemoryFilter, limit: usize, offset: usize) -> Result<Vec<MemoryRecord>> {
+    async fn list_memories(
+        &self,
+        filter: &MemoryFilter,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<MemoryRecord>> {
         let conn = self.conn.lock().await;
         let mut conditions = Vec::new();
         let mut params: Vec<Box<dyn duckdb::ToSql>> = Vec::new();
@@ -342,18 +347,20 @@ impl StorageBackend for DuckDbStorage {
         Ok(())
     }
 
-    async fn check_permission(&self, memory_id: Uuid, principal_id: &str, required: Permission) -> Result<bool> {
+    async fn check_permission(
+        &self,
+        memory_id: Uuid,
+        principal_id: &str,
+        required: Permission,
+    ) -> Result<bool> {
         // Do all DuckDB work in one block, then release the lock before delegation check
         let acl_result = {
             let conn = self.conn.lock().await;
 
             // Check if the principal is the owner (agent_id matches)
-            let mut stmt = conn.prepare(
-                "SELECT agent_id FROM memories WHERE id = ?",
-            )?;
-            let owner_result = stmt.query_row([memory_id.to_string()], |row| {
-                row.get::<_, String>(0)
-            });
+            let mut stmt = conn.prepare("SELECT agent_id FROM memories WHERE id = ?")?;
+            let owner_result =
+                stmt.query_row([memory_id.to_string()], |row| row.get::<_, String>(0));
             match owner_result {
                 Ok(owner) if owner == principal_id => return Ok(true),
                 Err(duckdb::Error::QueryReturnedNoRows) => {
@@ -381,10 +388,9 @@ impl StorageBackend for DuckDbStorage {
             let mut stmt = conn.prepare(
                 "SELECT permission FROM acls WHERE memory_id = ? AND principal_type = 'public' AND (expires_at IS NULL OR expires_at > ?)",
             )?;
-            let rows = stmt.query_map(
-                duckdb::params![memory_id.to_string(), now],
-                |row| row.get::<_, String>(0),
-            )?;
+            let rows = stmt.query_map(duckdb::params![memory_id.to_string(), now], |row| {
+                row.get::<_, String>(0)
+            })?;
 
             for row in rows {
                 perms.push(row.map_err(|e| Error::Storage(e.to_string()))?);
@@ -402,7 +408,10 @@ impl StorageBackend for DuckDbStorage {
         }
 
         // Check delegations (conn lock is released)
-        if self.check_delegation(principal_id, memory_id, required).await? {
+        if self
+            .check_delegation(principal_id, memory_id, required)
+            .await?
+        {
             return Ok(true);
         }
 
@@ -464,13 +473,19 @@ impl StorageBackend for DuckDbStorage {
         Ok(())
     }
 
-    async fn get_latest_memory_hash(&self, agent_id: &str, thread_id: Option<&str>) -> Result<Option<Vec<u8>>> {
+    async fn get_latest_memory_hash(
+        &self,
+        agent_id: &str,
+        thread_id: Option<&str>,
+    ) -> Result<Option<Vec<u8>>> {
         let conn = self.conn.lock().await;
         let (sql, result) = if let Some(tid) = thread_id {
             let mut stmt = conn.prepare(
                 "SELECT content_hash FROM memories WHERE agent_id = ? AND thread_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
             )?;
-            let r = stmt.query_row(duckdb::params![agent_id, tid], |row| row.get::<_, Vec<u8>>(0));
+            let r = stmt.query_row(duckdb::params![agent_id, tid], |row| {
+                row.get::<_, Vec<u8>>(0)
+            });
             ((), r)
         } else {
             let mut stmt = conn.prepare(
@@ -487,13 +502,19 @@ impl StorageBackend for DuckDbStorage {
         }
     }
 
-    async fn get_latest_event_hash(&self, agent_id: &str, thread_id: Option<&str>) -> Result<Option<Vec<u8>>> {
+    async fn get_latest_event_hash(
+        &self,
+        agent_id: &str,
+        thread_id: Option<&str>,
+    ) -> Result<Option<Vec<u8>>> {
         let conn = self.conn.lock().await;
         let result = if let Some(tid) = thread_id {
             let mut stmt = conn.prepare(
                 "SELECT content_hash FROM agent_events WHERE agent_id = ? AND thread_id = ? ORDER BY timestamp DESC LIMIT 1",
             )?;
-            stmt.query_row(duckdb::params![agent_id, tid], |row| row.get::<_, Vec<u8>>(0))
+            stmt.query_row(duckdb::params![agent_id, tid], |row| {
+                row.get::<_, Vec<u8>>(0)
+            })
         } else {
             let mut stmt = conn.prepare(
                 "SELECT content_hash FROM agent_events WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 1",
@@ -509,9 +530,7 @@ impl StorageBackend for DuckDbStorage {
 
     async fn get_sync_watermark(&self, key: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().await;
-        let mut stmt = conn.prepare(
-            "SELECT value FROM sync_metadata WHERE key = ?",
-        )?;
+        let mut stmt = conn.prepare("SELECT value FROM sync_metadata WHERE key = ?")?;
         let result = stmt.query_row(duckdb::params![key], |row| row.get::<_, String>(0));
         match result {
             Ok(value) => Ok(Some(value)),
@@ -586,7 +605,12 @@ impl StorageBackend for DuckDbStorage {
         Ok(())
     }
 
-    async fn list_events(&self, agent_id: &str, limit: usize, offset: usize) -> Result<Vec<AgentEvent>> {
+    async fn list_events(
+        &self,
+        agent_id: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<AgentEvent>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, agent_id, thread_id, run_id, parent_event_id, event_type, payload, trace_id, span_id, model, tokens_input, tokens_output, latency_ms, cost_usd, timestamp, logical_clock, content_hash, prev_hash, embedding FROM agent_events WHERE agent_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
@@ -607,10 +631,7 @@ impl StorageBackend for DuckDbStorage {
         let mut stmt = conn.prepare(
             "SELECT id, agent_id, thread_id, run_id, parent_event_id, event_type, payload, trace_id, span_id, model, tokens_input, tokens_output, latency_ms, cost_usd, timestamp, logical_clock, content_hash, prev_hash, embedding FROM agent_events WHERE thread_id = ? ORDER BY timestamp ASC LIMIT ?",
         )?;
-        let rows = stmt.query_map(
-            duckdb::params![thread_id, limit as i64],
-            row_to_event,
-        )?;
+        let rows = stmt.query_map(duckdb::params![thread_id, limit as i64], row_to_event)?;
         let mut results = Vec::new();
         for row in rows {
             results.push(row.map_err(|e| Error::Storage(e.to_string()))?);
@@ -631,7 +652,11 @@ impl StorageBackend for DuckDbStorage {
         }
     }
 
-    async fn list_child_events(&self, parent_event_id: Uuid, limit: usize) -> Result<Vec<AgentEvent>> {
+    async fn list_child_events(
+        &self,
+        parent_event_id: Uuid,
+        limit: usize,
+    ) -> Result<Vec<AgentEvent>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, agent_id, thread_id, run_id, parent_event_id, event_type, payload, trace_id, span_id, model, tokens_input, tokens_output, latency_ms, cost_usd, timestamp, logical_clock, content_hash, prev_hash, embedding FROM agent_events WHERE parent_event_id = ? ORDER BY timestamp ASC LIMIT ?",
@@ -647,16 +672,19 @@ impl StorageBackend for DuckDbStorage {
         Ok(results)
     }
 
-    async fn list_memories_by_agent_ordered(&self, agent_id: &str, thread_id: Option<&str>, limit: usize) -> Result<Vec<MemoryRecord>> {
+    async fn list_memories_by_agent_ordered(
+        &self,
+        agent_id: &str,
+        thread_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
         let conn = self.conn.lock().await;
         let (result,) = if let Some(tid) = thread_id {
             let mut stmt = conn.prepare(
                 "SELECT id, agent_id, content, memory_type, scope, importance, tags, metadata, embedding, content_hash, prev_hash, source_type, source_id, consolidation_state, access_count, org_id, thread_id, created_at, updated_at, last_accessed_at, expires_at, deleted_at, decay_rate, created_by, version, prev_version_id, quarantined, quarantine_reason, decay_function FROM memories WHERE agent_id = ? AND thread_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?",
             )?;
-            let rows = stmt.query_map(
-                duckdb::params![agent_id, tid, limit as i64],
-                row_to_memory,
-            )?;
+            let rows =
+                stmt.query_map(duckdb::params![agent_id, tid, limit as i64], row_to_memory)?;
             let mut results = Vec::new();
             for row in rows {
                 results.push(row.map_err(|e| Error::Storage(e.to_string()))?);
@@ -666,10 +694,7 @@ impl StorageBackend for DuckDbStorage {
             let mut stmt = conn.prepare(
                 "SELECT id, agent_id, content, memory_type, scope, importance, tags, metadata, embedding, content_hash, prev_hash, source_type, source_id, consolidation_state, access_count, org_id, thread_id, created_at, updated_at, last_accessed_at, expires_at, deleted_at, decay_rate, created_by, version, prev_version_id, quarantined, quarantine_reason, decay_function FROM memories WHERE agent_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?",
             )?;
-            let rows = stmt.query_map(
-                duckdb::params![agent_id, limit as i64],
-                row_to_memory,
-            )?;
+            let rows = stmt.query_map(duckdb::params![agent_id, limit as i64], row_to_memory)?;
             let mut results = Vec::new();
             for row in rows {
                 results.push(row.map_err(|e| Error::Storage(e.to_string()))?);
@@ -679,15 +704,16 @@ impl StorageBackend for DuckDbStorage {
         Ok(result)
     }
 
-    async fn list_memories_since(&self, updated_after: &str, limit: usize) -> Result<Vec<MemoryRecord>> {
+    async fn list_memories_since(
+        &self,
+        updated_after: &str,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, agent_id, content, memory_type, scope, importance, tags, metadata, embedding, content_hash, prev_hash, source_type, source_id, consolidation_state, access_count, org_id, thread_id, created_at, updated_at, last_accessed_at, expires_at, deleted_at, decay_rate, created_by, version, prev_version_id, quarantined, quarantine_reason, decay_function FROM memories WHERE updated_at > ? ORDER BY updated_at ASC LIMIT ?",
         )?;
-        let rows = stmt.query_map(
-            duckdb::params![updated_after, limit as i64],
-            row_to_memory,
-        )?;
+        let rows = stmt.query_map(duckdb::params![updated_after, limit as i64], row_to_memory)?;
         let mut results = Vec::new();
         for row in rows {
             results.push(row.map_err(|e| Error::Storage(e.to_string()))?);
@@ -720,7 +746,9 @@ impl StorageBackend for DuckDbStorage {
         let scope_value = match &d.scope {
             DelegationScope::AllMemories => serde_json::Value::Null,
             DelegationScope::ByTag(tags) => serde_json::json!(tags),
-            DelegationScope::ByMemoryId(ids) => serde_json::json!(ids.iter().map(|id| id.to_string()).collect::<Vec<_>>()),
+            DelegationScope::ByMemoryId(ids) => {
+                serde_json::json!(ids.iter().map(|id| id.to_string()).collect::<Vec<_>>())
+            }
         };
         let scope_value_json = serde_json::to_string(&scope_value)?;
 
@@ -766,12 +794,19 @@ impl StorageBackend for DuckDbStorage {
             duckdb::params![now, id.to_string()],
         )?;
         if affected == 0 {
-            return Err(Error::NotFound(format!("delegation {id} not found or already revoked")));
+            return Err(Error::NotFound(format!(
+                "delegation {id} not found or already revoked"
+            )));
         }
         Ok(())
     }
 
-    async fn check_delegation(&self, delegate_id: &str, memory_id: Uuid, required: Permission) -> Result<bool> {
+    async fn check_delegation(
+        &self,
+        delegate_id: &str,
+        memory_id: Uuid,
+        required: Permission,
+    ) -> Result<bool> {
         let delegations = self.list_delegations_for(delegate_id).await?;
         // Get the memory to check scope
         let memory = match self.get_memory(memory_id).await? {
@@ -852,9 +887,16 @@ impl StorageBackend for DuckDbStorage {
     async fn insert_checkpoint(&self, cp: &Checkpoint) -> Result<()> {
         let conn = self.conn.lock().await;
         let state_snapshot_json = serde_json::to_string(&cp.state_snapshot)?;
-        let state_diff_json = cp.state_diff.as_ref().map(serde_json::to_string).transpose()?;
+        let state_diff_json = cp
+            .state_diff
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         let memory_refs_json = serde_json::to_string(
-            &cp.memory_refs.iter().map(|id| id.to_string()).collect::<Vec<_>>()
+            &cp.memory_refs
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>(),
         )?;
         let metadata_json = serde_json::to_string(&cp.metadata)?;
 
@@ -891,7 +933,12 @@ impl StorageBackend for DuckDbStorage {
         }
     }
 
-    async fn list_checkpoints(&self, thread_id: &str, branch: Option<&str>, limit: usize) -> Result<Vec<Checkpoint>> {
+    async fn list_checkpoints(
+        &self,
+        thread_id: &str,
+        branch: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Checkpoint>> {
         let conn = self.conn.lock().await;
         let (sql, rows_result) = if let Some(branch_name) = branch {
             let mut stmt = conn.prepare(
@@ -910,10 +957,8 @@ impl StorageBackend for DuckDbStorage {
             let mut stmt = conn.prepare(
                 "SELECT id, thread_id, agent_id, parent_id, branch_name, state_snapshot, state_diff, memory_refs, event_cursor, label, created_at, metadata FROM checkpoints WHERE thread_id = ? ORDER BY created_at DESC LIMIT ?",
             )?;
-            let rows = stmt.query_map(
-                duckdb::params![thread_id, limit as i64],
-                row_to_checkpoint,
-            )?;
+            let rows =
+                stmt.query_map(duckdb::params![thread_id, limit as i64], row_to_checkpoint)?;
             let mut results = Vec::new();
             for row in rows {
                 results.push(row.map_err(|e| Error::Storage(e.to_string()))?);
@@ -924,15 +969,16 @@ impl StorageBackend for DuckDbStorage {
         rows_result
     }
 
-    async fn get_latest_checkpoint(&self, thread_id: &str, branch: &str) -> Result<Option<Checkpoint>> {
+    async fn get_latest_checkpoint(
+        &self,
+        thread_id: &str,
+        branch: &str,
+    ) -> Result<Option<Checkpoint>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, thread_id, agent_id, parent_id, branch_name, state_snapshot, state_diff, memory_refs, event_cursor, label, created_at, metadata FROM checkpoints WHERE thread_id = ? AND branch_name = ? ORDER BY created_at DESC LIMIT 1",
         )?;
-        let result = stmt.query_row(
-            duckdb::params![thread_id, branch],
-            row_to_checkpoint,
-        );
+        let result = stmt.query_row(duckdb::params![thread_id, branch], row_to_checkpoint);
         match result {
             Ok(cp) => Ok(Some(cp)),
             Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
@@ -951,14 +997,20 @@ fn row_to_event(row: &duckdb::Row<'_>) -> duckdb::Result<AgentEvent> {
     let embedding_blob: Option<Vec<u8>> = row.get(18).unwrap_or(None);
 
     Ok(AgentEvent {
-        id: Uuid::parse_str(&id_str)
-            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
+        id: Uuid::parse_str(&id_str).map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e))
+        })?,
         agent_id: row.get(1)?,
         thread_id: row.get(2)?,
         run_id: row.get(3)?,
         parent_event_id: parent_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
-        event_type: event_type_str.parse()
-            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(5, duckdb::types::Type::Text, e.to_string().into()))?,
+        event_type: event_type_str.parse().map_err(|e: Error| {
+            duckdb::Error::FromSqlConversionFailure(
+                5,
+                duckdb::types::Type::Text,
+                e.to_string().into(),
+            )
+        })?,
         payload: payload_json
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::Value::Null),
@@ -987,8 +1039,9 @@ fn row_to_checkpoint(row: &duckdb::Row<'_>) -> duckdb::Result<Checkpoint> {
     let metadata_json: Option<String> = row.get(11)?;
 
     Ok(Checkpoint {
-        id: Uuid::parse_str(&id_str)
-            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
+        id: Uuid::parse_str(&id_str).map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e))
+        })?,
         thread_id: row.get(1)?,
         agent_id: row.get(2)?,
         parent_id: parent_id_str.and_then(|s| Uuid::parse_str(&s).ok()),
@@ -999,7 +1052,11 @@ fn row_to_checkpoint(row: &duckdb::Row<'_>) -> duckdb::Result<Checkpoint> {
         state_diff: state_diff_json.and_then(|s| serde_json::from_str(&s).ok()),
         memory_refs: memory_refs_json
             .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-            .map(|v| v.into_iter().filter_map(|s| Uuid::parse_str(&s).ok()).collect())
+            .map(|v| {
+                v.into_iter()
+                    .filter_map(|s| Uuid::parse_str(&s).ok())
+                    .collect()
+            })
             .unwrap_or_default(),
         event_cursor: event_cursor_str.and_then(|s| Uuid::parse_str(&s).ok()),
         label: row.get(9)?,
@@ -1027,7 +1084,10 @@ fn row_to_delegation(row: &duckdb::Row<'_>) -> duckdb::Result<Delegation> {
             let ids: Vec<String> = scope_value_json
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default();
-            let uuids = ids.into_iter().filter_map(|s| Uuid::parse_str(&s).ok()).collect();
+            let uuids = ids
+                .into_iter()
+                .filter_map(|s| Uuid::parse_str(&s).ok())
+                .collect();
             DelegationScope::ByMemoryId(uuids)
         }
         _ => DelegationScope::AllMemories,
@@ -1036,12 +1096,18 @@ fn row_to_delegation(row: &duckdb::Row<'_>) -> duckdb::Result<Delegation> {
     let permission_str: String = row.get(3)?;
 
     Ok(Delegation {
-        id: Uuid::parse_str(&id_str)
-            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
+        id: Uuid::parse_str(&id_str).map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e))
+        })?,
         delegator_id: row.get(1)?,
         delegate_id: row.get(2)?,
-        permission: permission_str.parse()
-            .map_err(|e: Error| duckdb::Error::FromSqlConversionFailure(3, duckdb::types::Type::Text, e.to_string().into()))?,
+        permission: permission_str.parse().map_err(|e: Error| {
+            duckdb::Error::FromSqlConversionFailure(
+                3,
+                duckdb::types::Type::Text,
+                e.to_string().into(),
+            )
+        })?,
         scope,
         max_depth: row.get::<_, i32>(6)? as u32,
         current_depth: row.get::<_, i32>(7)? as u32,
@@ -1059,12 +1125,15 @@ fn row_to_relation(row: &duckdb::Row<'_>) -> duckdb::Result<Relation> {
     let metadata_json: Option<String> = row.get(5)?;
 
     Ok(Relation {
-        id: Uuid::parse_str(&id_str)
-            .map_err(|e| duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e)))?,
-        source_id: Uuid::parse_str(&source_str)
-            .map_err(|e| duckdb::Error::FromSqlConversionFailure(1, duckdb::types::Type::Text, Box::new(e)))?,
-        target_id: Uuid::parse_str(&target_str)
-            .map_err(|e| duckdb::Error::FromSqlConversionFailure(2, duckdb::types::Type::Text, Box::new(e)))?,
+        id: Uuid::parse_str(&id_str).map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(0, duckdb::types::Type::Text, Box::new(e))
+        })?,
+        source_id: Uuid::parse_str(&source_str).map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(1, duckdb::types::Type::Text, Box::new(e))
+        })?,
+        target_id: Uuid::parse_str(&target_str).map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(2, duckdb::types::Type::Text, Box::new(e))
+        })?,
         relation_type: row.get(3)?,
         weight: row.get(4)?,
         metadata: metadata_json
@@ -1163,7 +1232,10 @@ mod tests {
             include_deleted: true,
             ..Default::default()
         };
-        let list = storage.list_memories(&filter_with_deleted, 100, 0).await.unwrap();
+        let list = storage
+            .list_memories(&filter_with_deleted, 100, 0)
+            .await
+            .unwrap();
         assert_eq!(list.len(), 1);
     }
 
@@ -1242,10 +1314,20 @@ mod tests {
         storage.insert_memory(&record).await.unwrap();
 
         // Owner always has permission
-        assert!(storage.check_permission(record.id, "agent-1", Permission::Admin).await.unwrap());
+        assert!(
+            storage
+                .check_permission(record.id, "agent-1", Permission::Admin)
+                .await
+                .unwrap()
+        );
 
         // Non-owner has no permission by default
-        assert!(!storage.check_permission(record.id, "agent-2", Permission::Read).await.unwrap());
+        assert!(
+            !storage
+                .check_permission(record.id, "agent-2", Permission::Read)
+                .await
+                .unwrap()
+        );
 
         // Grant read to agent-2
         let acl = Acl {
@@ -1261,9 +1343,19 @@ mod tests {
         storage.insert_acl(&acl).await.unwrap();
 
         // Now agent-2 can read
-        assert!(storage.check_permission(record.id, "agent-2", Permission::Read).await.unwrap());
+        assert!(
+            storage
+                .check_permission(record.id, "agent-2", Permission::Read)
+                .await
+                .unwrap()
+        );
         // But not write
-        assert!(!storage.check_permission(record.id, "agent-2", Permission::Write).await.unwrap());
+        assert!(
+            !storage
+                .check_permission(record.id, "agent-2", Permission::Write)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -1450,26 +1542,46 @@ mod tests {
         storage.insert_checkpoint(&cp3).await.unwrap();
 
         // List all for thread
-        let all = storage.list_checkpoints("thread-1", None, 10).await.unwrap();
+        let all = storage
+            .list_checkpoints("thread-1", None, 10)
+            .await
+            .unwrap();
         assert_eq!(all.len(), 3);
 
         // List by branch
-        let main_cps = storage.list_checkpoints("thread-1", Some("main"), 10).await.unwrap();
+        let main_cps = storage
+            .list_checkpoints("thread-1", Some("main"), 10)
+            .await
+            .unwrap();
         assert_eq!(main_cps.len(), 2);
 
-        let exp_cps = storage.list_checkpoints("thread-1", Some("experiment"), 10).await.unwrap();
+        let exp_cps = storage
+            .list_checkpoints("thread-1", Some("experiment"), 10)
+            .await
+            .unwrap();
         assert_eq!(exp_cps.len(), 1);
 
         // Latest on main
-        let latest = storage.get_latest_checkpoint("thread-1", "main").await.unwrap().unwrap();
+        let latest = storage
+            .get_latest_checkpoint("thread-1", "main")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(latest.id, cp2.id);
 
         // Latest on experiment
-        let latest_exp = storage.get_latest_checkpoint("thread-1", "experiment").await.unwrap().unwrap();
+        let latest_exp = storage
+            .get_latest_checkpoint("thread-1", "experiment")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(latest_exp.id, cp3.id);
 
         // No checkpoints for nonexistent branch
-        let none = storage.get_latest_checkpoint("thread-1", "nonexistent").await.unwrap();
+        let none = storage
+            .get_latest_checkpoint("thread-1", "nonexistent")
+            .await
+            .unwrap();
         assert!(none.is_none());
     }
 }

@@ -42,7 +42,9 @@ impl DecayFunction {
 /// Compute effective importance using the specified or default decay curve.
 /// Default (Exponential): `base_importance * e^(-decay_rate * hours) + 0.05 * ln(1 + access_count)`
 pub fn effective_importance(record: &MemoryRecord) -> f32 {
-    let decay_fn = record.decay_function.as_deref()
+    let decay_fn = record
+        .decay_function
+        .as_deref()
         .and_then(DecayFunction::from_str_opt)
         .unwrap_or(DecayFunction::Exponential);
     effective_importance_with(record, &decay_fn)
@@ -54,12 +56,8 @@ pub fn effective_importance_with(record: &MemoryRecord, decay_fn: &DecayFunction
     let access_boost = 0.05 * (1.0 + record.access_count as f32).ln();
 
     let base = match decay_fn {
-        DecayFunction::Exponential => {
-            record.importance * (-decay_rate * hours).exp()
-        }
-        DecayFunction::Linear => {
-            record.importance * (1.0 - decay_rate * hours).max(0.0)
-        }
+        DecayFunction::Exponential => record.importance * (-decay_rate * hours).exp(),
+        DecayFunction::Linear => record.importance * (1.0 - decay_rate * hours).max(0.0),
         DecayFunction::StepFunction(threshold_hours) => {
             if hours < *threshold_hours {
                 record.importance
@@ -118,7 +116,10 @@ pub async fn run_decay_pass(
         include_deleted: false,
         ..Default::default()
     };
-    let memories = engine.storage.list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0).await?;
+    let memories = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
 
     let mut archived = 0;
     let mut forgotten = 0;
@@ -188,7 +189,10 @@ pub async fn run_consolidation(
         include_deleted: false,
         ..Default::default()
     };
-    let memories = engine.storage.list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0).await?;
+    let memories = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
 
     // Only consider memories that are Raw or Active
     let active: Vec<MemoryRecord> = memories
@@ -206,9 +210,10 @@ pub async fn run_consolidation(
         let mut found_cluster = false;
         for cluster in &mut clusters {
             // Check if this record shares any tag with any record in cluster
-            if cluster.iter().any(|c| {
-                c.tags.iter().any(|t| record.tags.contains(t))
-            }) {
+            if cluster
+                .iter()
+                .any(|c| c.tags.iter().any(|t| record.tags.contains(t)))
+            {
                 cluster.push(record);
                 found_cluster = true;
                 break;
@@ -231,8 +236,13 @@ pub async fn run_consolidation(
 
         // Create a consolidated semantic memory
         let combined_content: Vec<String> = cluster.iter().map(|m| m.content.clone()).collect();
-        let content = format!("[Consolidated from {} memories] {}", cluster.len(), combined_content.join(" | "));
-        let avg_importance = cluster.iter().map(|m| m.importance).sum::<f32>() / cluster.len() as f32;
+        let content = format!(
+            "[Consolidated from {} memories] {}",
+            cluster.len(),
+            combined_content.join(" | ")
+        );
+        let avg_importance =
+            cluster.iter().map(|m| m.importance).sum::<f32>() / cluster.len() as f32;
         let all_tags: Vec<String> = cluster
             .iter()
             .flat_map(|m| m.tags.iter().cloned())
@@ -252,7 +262,10 @@ pub async fn run_consolidation(
             .await
             .ok()
             .flatten();
-        let prev_hash = Some(crate::hash::compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
+        let prev_hash = Some(crate::hash::compute_chain_hash(
+            &content_hash,
+            prev_hash_raw.as_deref(),
+        ));
 
         let new_record = MemoryRecord {
             id: new_id,
@@ -412,11 +425,8 @@ pub async fn run_ttl_sweep(engine: &MnemoEngine) -> Result<TtlReport> {
 }
 
 async fn emit_expiry_event(engine: &MnemoEngine, record: &MemoryRecord, now_str: &str) {
-    let event_content_hash = compute_content_hash(
-        &record.id.to_string(),
-        &record.agent_id,
-        now_str,
-    );
+    let event_content_hash =
+        compute_content_hash(&record.id.to_string(), &record.agent_id, now_str);
     let prev_event_hash = match engine
         .storage
         .get_latest_event_hash(&record.agent_id, None)
@@ -505,7 +515,10 @@ mod tests {
 
         let eff = effective_importance(&record);
         // Fresh memory should be close to base importance
-        assert!(eff > 0.7, "effective importance {eff} should be > 0.7 for fresh memory");
+        assert!(
+            eff > 0.7,
+            "effective importance {eff} should be > 0.7 for fresh memory"
+        );
 
         // Old memory with high decay rate
         let old_date = (chrono::Utc::now() - chrono::Duration::hours(1000)).to_rfc3339();
@@ -516,7 +529,10 @@ mod tests {
             ..record.clone()
         };
         let old_eff = effective_importance(&old_record);
-        assert!(old_eff < eff, "old memory {old_eff} should have lower importance than fresh {eff}");
+        assert!(
+            old_eff < eff,
+            "old memory {old_eff} should have lower importance than fresh {eff}"
+        );
 
         // Access count boosts importance
         let accessed_record = MemoryRecord {
@@ -524,6 +540,9 @@ mod tests {
             ..old_record.clone()
         };
         let accessed_eff = effective_importance(&accessed_record);
-        assert!(accessed_eff > old_eff, "accessed memory {accessed_eff} should be higher than unaccessed {old_eff}");
+        assert!(
+            accessed_eff > old_eff,
+            "accessed memory {accessed_eff} should be higher than unaccessed {old_eff}"
+        );
     }
 }

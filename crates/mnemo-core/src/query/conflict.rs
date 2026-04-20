@@ -66,7 +66,8 @@ fn compute_evidence(record: &MemoryRecord, max_access: u64, similarity: f32) -> 
     let importance = record.importance;
     let sim_bonus = similarity;
 
-    let composite = src_rel * 0.3 + recency * 0.2 + usage * 0.2 + importance * 0.2 + sim_bonus * 0.1;
+    let composite =
+        src_rel * 0.3 + recency * 0.2 + usage * 0.2 + importance * 0.2 + sim_bonus * 0.1;
 
     ConflictEvidence {
         source_reliability: src_rel,
@@ -128,7 +129,9 @@ pub async fn detect_conflicts(
 
             // Verify the candidate belongs to the same agent
             if let Some(candidate) = engine.storage.get_memory(candidate_id).await?
-                && !(candidate.agent_id != agent_id || candidate.is_deleted() || candidate.quarantined)
+                && !(candidate.agent_id != agent_id
+                    || candidate.is_deleted()
+                    || candidate.quarantined)
                 && candidate.content != record.content
             {
                 conflicts.push(ConflictPair {
@@ -153,10 +156,20 @@ pub async fn resolve_conflict(
     conflict: &ConflictPair,
     strategy: ResolutionStrategy,
 ) -> Result<()> {
-    let mem_a = engine.storage.get_memory(conflict.memory_a).await?
-        .ok_or_else(|| crate::error::Error::NotFound(format!("memory {} not found", conflict.memory_a)))?;
-    let mem_b = engine.storage.get_memory(conflict.memory_b).await?
-        .ok_or_else(|| crate::error::Error::NotFound(format!("memory {} not found", conflict.memory_b)))?;
+    let mem_a = engine
+        .storage
+        .get_memory(conflict.memory_a)
+        .await?
+        .ok_or_else(|| {
+            crate::error::Error::NotFound(format!("memory {} not found", conflict.memory_a))
+        })?;
+    let mem_b = engine
+        .storage
+        .get_memory(conflict.memory_b)
+        .await?
+        .ok_or_else(|| {
+            crate::error::Error::NotFound(format!("memory {} not found", conflict.memory_b))
+        })?;
 
     match strategy {
         ResolutionStrategy::KeepNewest => {
@@ -187,7 +200,8 @@ pub async fn resolve_conflict(
 
             let now = chrono::Utc::now().to_rfc3339();
             let embedding = engine.embedding.embed(&combined_content).await?;
-            let content_hash = crate::hash::compute_content_hash(&combined_content, &mem_a.agent_id, &now);
+            let content_hash =
+                crate::hash::compute_content_hash(&combined_content, &mem_a.agent_id, &now);
 
             let prev_hash_raw = engine
                 .storage
@@ -195,7 +209,10 @@ pub async fn resolve_conflict(
                 .await
                 .ok()
                 .flatten();
-            let prev_hash = Some(crate::hash::compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
+            let prev_hash = Some(crate::hash::compute_chain_hash(
+                &content_hash,
+                prev_hash_raw.as_deref(),
+            ));
 
             let new_record = MemoryRecord {
                 id: Uuid::now_v7(),
@@ -261,7 +278,11 @@ pub async fn resolve_conflict(
 
             // Store resolution metadata in winner's metadata
             let mut winner_record = winner.clone();
-            let mut meta = winner_record.metadata.as_object().cloned().unwrap_or_default();
+            let mut meta = winner_record
+                .metadata
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
             meta.insert(
                 "conflict_resolution".to_string(),
                 serde_json::json!({

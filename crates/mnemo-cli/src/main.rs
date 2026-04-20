@@ -9,8 +9,8 @@ use tokio::sync::Notify;
 use mnemo_core::embedding::openai::OpenAiEmbedding;
 use mnemo_core::embedding::{EmbeddingProvider, NoopEmbedding};
 use mnemo_core::encryption::ContentEncryption;
-use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::index::VectorIndex;
+use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::search::FullTextIndex;
 use mnemo_core::search::tantivy_index::TantivyFullTextIndex;
@@ -29,7 +29,11 @@ struct Cli {
     openai_api_key: Option<String>,
 
     /// Embedding model name
-    #[arg(long, default_value = "text-embedding-3-small", env = "MNEMO_EMBEDDING_MODEL")]
+    #[arg(
+        long,
+        default_value = "text-embedding-3-small",
+        env = "MNEMO_EMBEDDING_MODEL"
+    )]
     embedding_model: String,
 
     /// Embedding dimensions
@@ -75,8 +79,7 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("mnemo=info".parse()?)
+            tracing_subscriber::EnvFilter::from_default_env().add_directive("mnemo=info".parse()?),
         )
         .with_writer(std::io::stderr)
         .init();
@@ -86,7 +89,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize embedding provider (ONNX > OpenAI > Noop)
     let embedding: Arc<dyn EmbeddingProvider> = if let Some(ref onnx_path) = cli.onnx_model_path {
         tracing::info!("Using ONNX local embeddings from {}", onnx_path);
-        Arc::new(mnemo_core::embedding::onnx::OnnxEmbedding::new(onnx_path, cli.dimensions)?)
+        Arc::new(mnemo_core::embedding::onnx::OnnxEmbedding::new(
+            onnx_path,
+            cli.dimensions,
+        )?)
     } else if let Some(api_key) = cli.openai_api_key {
         tracing::info!("Using OpenAI embeddings ({})", cli.embedding_model);
         Arc::new(OpenAiEmbedding::new(
@@ -95,7 +101,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli.dimensions,
         ))
     } else {
-        tracing::warn!("No OPENAI_API_KEY set, using noop embeddings (semantic search will not work)");
+        tracing::warn!(
+            "No OPENAI_API_KEY set, using noop embeddings (semantic search will not work)"
+        );
         Arc::new(NoopEmbedding::new(cli.dimensions))
     };
 
@@ -106,9 +114,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = if let Some(_pg_url) = &cli.postgres_url {
         #[cfg(feature = "postgres")]
         {
-            let pg_storage = Arc::new(
-                mnemo_postgres::PgStorage::connect(_pg_url, cli.dimensions).await?
-            );
+            let pg_storage =
+                Arc::new(mnemo_postgres::PgStorage::connect(_pg_url, cli.dimensions).await?);
             let pg_index = Arc::new(mnemo_postgres::PgVectorIndex::new());
             tracing::info!("Using PostgreSQL backend");
             let mut eng = MnemoEngine::new(
@@ -146,19 +153,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Initialize full-text index
         let ft_path = cli.db_path.with_extension("tantivy");
         let full_text = Arc::new(TantivyFullTextIndex::new(&ft_path)?);
-        tracing::info!("Full-text index ready at {:?} ({} docs)", ft_path, full_text.len());
+        tracing::info!(
+            "Full-text index ready at {:?} ({} docs)",
+            ft_path,
+            full_text.len()
+        );
 
         // Keep a clone of the actual index for shutdown save
         duckdb_index = Some(index.clone());
 
         let mut eng = MnemoEngine::new(
-                storage,
-                index.clone(),
-                embedding,
-                cli.agent_id.clone(),
-                cli.org_id.clone(),
-            )
-            .with_full_text(full_text.clone());
+            storage,
+            index.clone(),
+            embedding,
+            cli.agent_id.clone(),
+            cli.org_id.clone(),
+        )
+        .with_full_text(full_text.clone());
         if let Some(ref key_hex) = cli.encryption_key {
             let enc = ContentEncryption::from_hex(key_hex)?;
             eng = eng.with_encryption(Arc::new(enc));
@@ -221,16 +232,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Idle timeout reached ({timeout}s), shutting down for scale-to-zero"
                     );
                     // Checkpoint before exit so state can be restored on next start
-                    match watchdog_engine.checkpoint(
-                        mnemo_core::query::checkpoint::CheckpointRequest {
+                    match watchdog_engine
+                        .checkpoint(mnemo_core::query::checkpoint::CheckpointRequest {
                             thread_id: "__shutdown__".to_string(),
                             agent_id: None,
                             branch_name: Some("main".to_string()),
                             state_snapshot: serde_json::json!({"reason": "idle_timeout"}),
                             label: Some("auto-shutdown".to_string()),
                             metadata: None,
-                        }
-                    ).await {
+                        })
+                        .await
+                    {
                         Ok(resp) => tracing::info!("Shutdown checkpoint created: {}", resp.id),
                         Err(e) => tracing::warn!("Failed to create shutdown checkpoint: {e}"),
                     }
@@ -261,8 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ttl_engine = engine.clone();
         let ttl_shutdown = shutdown_notify.clone();
         tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(ttl_interval));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(ttl_interval));
             // Skip the immediate first tick so startup isn't surprised by a sweep.
             interval.tick().await;
             loop {

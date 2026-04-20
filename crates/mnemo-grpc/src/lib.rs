@@ -22,6 +22,7 @@ use uuid::Uuid;
 use mnemo_core::model::acl::Permission;
 use mnemo_core::model::delegation::{Delegation, DelegationScope};
 use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
+use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest as CoreBranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest as CoreCheckpointRequest;
 use mnemo_core::query::forget::{
@@ -33,7 +34,6 @@ use mnemo_core::query::recall::RecallRequest as CoreRecallRequest;
 use mnemo_core::query::remember::RememberRequest as CoreRememberRequest;
 use mnemo_core::query::replay::ReplayRequest as CoreReplayRequest;
 use mnemo_core::query::share::ShareRequest as CoreShareRequest;
-use mnemo_core::query::MnemoEngine;
 
 // ---------------------------------------------------------------------------
 // Generated protobuf code
@@ -49,18 +49,15 @@ use proto::{
     CheckpointRequest as ProtoCheckpointRequest, CheckpointResponse as ProtoCheckpointResponse,
     DelegateRequest as ProtoDelegateRequest, DelegateResponse as ProtoDelegateResponse,
     ForgetError as ProtoForgetError, ForgetRequest as ProtoForgetRequest,
-    ForgetResponse as ProtoForgetResponse, HealthRequest, HealthResponse,
+    ForgetResponse as ProtoForgetResponse, ForgetSubjectRequest as ProtoForgetSubjectRequest,
+    ForgetSubjectResponse as ProtoForgetSubjectResponse, HealthRequest, HealthResponse,
     MergeRequest as ProtoMergeRequest, MergeResponse as ProtoMergeResponse,
     RecallRequest as ProtoRecallRequest, RecallResponse as ProtoRecallResponse,
-    RememberRequest as ProtoRememberRequest,
-    RememberResponse as ProtoRememberResponse,
-    ReplayMemory as ProtoReplayMemory,
-    ReplayRequest as ProtoReplayRequest, ReplayResponse as ProtoReplayResponse,
-    ScoredMemory as ProtoScoredMemory,
+    RememberRequest as ProtoRememberRequest, RememberResponse as ProtoRememberResponse,
+    ReplayMemory as ProtoReplayMemory, ReplayRequest as ProtoReplayRequest,
+    ReplayResponse as ProtoReplayResponse, ScoredMemory as ProtoScoredMemory,
     ShareRequest as ProtoShareRequest, ShareResponse as ProtoShareResponse,
     VerifyRequest as ProtoVerifyRequest, VerifyResponse as ProtoVerifyResponse,
-    ForgetSubjectRequest as ProtoForgetSubjectRequest,
-    ForgetSubjectResponse as ProtoForgetSubjectResponse,
 };
 
 // ---------------------------------------------------------------------------
@@ -93,9 +90,12 @@ impl MnemoService for MnemoGrpcServer {
         let memory_type = match req.memory_type {
             Some(ref s) => match s.parse::<MemoryType>() {
                 Ok(mt) => Some(mt),
-                Err(_) => return Err(Status::invalid_argument(format!(
-                    "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working", s
-                ))),
+                Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working",
+                        s
+                    )));
+                }
             },
             None => None,
         };
@@ -103,9 +103,12 @@ impl MnemoService for MnemoGrpcServer {
         let scope = match req.scope {
             Some(ref s) => match s.parse::<Scope>() {
                 Ok(sc) => Some(sc),
-                Err(_) => return Err(Status::invalid_argument(format!(
-                    "invalid scope '{}': expected one of: private, shared, public, global", s
-                ))),
+                Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid scope '{}': expected one of: private, shared, public, global",
+                        s
+                    )));
+                }
             },
             None => None,
         };
@@ -113,9 +116,12 @@ impl MnemoService for MnemoGrpcServer {
         let source_type = match req.source_type {
             Some(ref s) => match s.parse::<SourceType>() {
                 Ok(st) => Some(st),
-                Err(_) => return Err(Status::invalid_argument(format!(
-                    "invalid source_type '{}': expected one of: agent, human, system, user_input, tool_output, model_response, retrieval, consolidation, import", s
-                ))),
+                Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid source_type '{}': expected one of: agent, human, system, user_input, tool_output, model_response, retrieval, consolidation, import",
+                        s
+                    )));
+                }
             },
             None => None,
         };
@@ -123,9 +129,12 @@ impl MnemoService for MnemoGrpcServer {
         let metadata: Option<serde_json::Value> = match req.metadata {
             Some(ref s) => match serde_json::from_str(s) {
                 Ok(v) => Some(v),
-                Err(e) => return Err(Status::invalid_argument(format!(
-                    "invalid metadata JSON: {}", e
-                ))),
+                Err(e) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid metadata JSON: {}",
+                        e
+                    )));
+                }
             },
             None => None,
         };
@@ -183,9 +192,12 @@ impl MnemoService for MnemoGrpcServer {
         let memory_type = match req.memory_type {
             Some(ref s) => match s.parse::<MemoryType>() {
                 Ok(mt) => Some(mt),
-                Err(_) => return Err(Status::invalid_argument(format!(
-                    "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working", s
-                ))),
+                Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working",
+                        s
+                    )));
+                }
             },
             None => None,
         };
@@ -193,9 +205,12 @@ impl MnemoService for MnemoGrpcServer {
         let scope = match req.scope {
             Some(ref s) => match s.parse::<Scope>() {
                 Ok(sc) => Some(sc),
-                Err(_) => return Err(Status::invalid_argument(format!(
-                    "invalid scope '{}': expected one of: private, shared, public, global", s
-                ))),
+                Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid scope '{}': expected one of: private, shared, public, global",
+                        s
+                    )));
+                }
             },
             None => None,
         };
@@ -294,9 +309,12 @@ impl MnemoService for MnemoGrpcServer {
                     "consolidate" => ForgetStrategy::Consolidate,
                     "archive" => ForgetStrategy::Archive,
                     "redact" => ForgetStrategy::Redact,
-                    _ => return Err(Status::invalid_argument(format!(
-                        "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive, redact", s
-                    ))),
+                    _ => {
+                        return Err(Status::invalid_argument(format!(
+                            "invalid forget strategy '{}': expected one of: soft_delete, hard_delete, decay, consolidate, archive, redact",
+                            s
+                        )));
+                    }
                 };
                 Some(st)
             }
@@ -354,9 +372,12 @@ impl MnemoService for MnemoGrpcServer {
         let permission = match req.permission {
             Some(ref s) => match s.parse::<Permission>() {
                 Ok(p) => Some(p),
-                Err(_) => return Err(Status::invalid_argument(format!(
-                    "invalid permission '{}': expected one of: read, write, delete, share, delegate, admin", s
-                ))),
+                Err(_) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid permission '{}': expected one of: read, write, delete, share, delegate, admin",
+                        s
+                    )));
+                }
             },
             None => None,
         };
@@ -398,15 +419,16 @@ impl MnemoService for MnemoGrpcServer {
     ) -> Result<Response<ProtoCheckpointResponse>, Status> {
         let req = request.into_inner();
         let state_snapshot: serde_json::Value = serde_json::from_str(&req.state_snapshot)
-            .map_err(|e| {
-                Status::invalid_argument(format!("invalid JSON state_snapshot: {e}"))
-            })?;
+            .map_err(|e| Status::invalid_argument(format!("invalid JSON state_snapshot: {e}")))?;
         let metadata: Option<serde_json::Value> = match req.metadata {
             Some(ref s) => match serde_json::from_str(s) {
                 Ok(v) => Some(v),
-                Err(e) => return Err(Status::invalid_argument(format!(
-                    "invalid metadata JSON: {}", e
-                ))),
+                Err(e) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid metadata JSON: {}",
+                        e
+                    )));
+                }
             },
             None => None,
         };
@@ -442,9 +464,12 @@ impl MnemoService for MnemoGrpcServer {
         let source_checkpoint_id = match req.source_checkpoint_id {
             Some(ref s) => match Uuid::parse_str(s) {
                 Ok(id) => Some(id),
-                Err(e) => return Err(Status::invalid_argument(format!(
-                    "invalid source_checkpoint_id '{}': {}", s, e
-                ))),
+                Err(e) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid source_checkpoint_id '{}': {}",
+                        s, e
+                    )));
+                }
             },
             None => None,
         };
@@ -482,9 +507,12 @@ impl MnemoService for MnemoGrpcServer {
                     "full_merge" => MergeStrategy::FullMerge,
                     "cherry_pick" => MergeStrategy::CherryPick,
                     "squash" => MergeStrategy::Squash,
-                    _ => return Err(Status::invalid_argument(format!(
-                        "invalid merge strategy '{}': expected one of: full_merge, cherry_pick, squash", s
-                    ))),
+                    _ => {
+                        return Err(Status::invalid_argument(format!(
+                            "invalid merge strategy '{}': expected one of: full_merge, cherry_pick, squash",
+                            s
+                        )));
+                    }
                 };
                 Some(st)
             }
@@ -498,11 +526,7 @@ impl MnemoService for MnemoGrpcServer {
                 .iter()
                 .map(|s| Uuid::parse_str(s))
                 .collect();
-            Some(
-                ids.map_err(|e| {
-                    Status::invalid_argument(format!("invalid UUID: {e}"))
-                })?,
-            )
+            Some(ids.map_err(|e| Status::invalid_argument(format!("invalid UUID: {e}")))?)
         };
 
         let core_req = CoreMergeRequest {
@@ -536,9 +560,12 @@ impl MnemoService for MnemoGrpcServer {
         let checkpoint_id = match req.checkpoint_id {
             Some(ref s) => match Uuid::parse_str(s) {
                 Ok(id) => Some(id),
-                Err(e) => return Err(Status::invalid_argument(format!(
-                    "invalid checkpoint_id '{}': {}", s, e
-                ))),
+                Err(e) => {
+                    return Err(Status::invalid_argument(format!(
+                        "invalid checkpoint_id '{}': {}",
+                        s, e
+                    )));
+                }
             },
             None => None,
         };
@@ -556,8 +583,8 @@ impl MnemoService for MnemoGrpcServer {
             .await
             .map_err(core_error_to_status)?;
 
-        let checkpoint_json = serde_json::to_string(&result.checkpoint)
-            .unwrap_or_else(|_| "{}".to_string());
+        let checkpoint_json =
+            serde_json::to_string(&result.checkpoint).unwrap_or_else(|_| "{}".to_string());
         let memories: Vec<ProtoReplayMemory> = result
             .memories
             .iter()
@@ -600,18 +627,15 @@ impl MnemoService for MnemoGrpcServer {
         let permission: Permission = req
             .permission
             .parse()
-            .map_err(|e: mnemo_core::error::Error| {
-                Status::invalid_argument(e.to_string())
-            })?;
+            .map_err(|e: mnemo_core::error::Error| Status::invalid_argument(e.to_string()))?;
 
         let scope = if !req.memory_ids.is_empty() {
             let ids: Vec<Uuid> = req
                 .memory_ids
                 .iter()
                 .map(|s| {
-                    Uuid::parse_str(s).map_err(|e| {
-                        Status::invalid_argument(format!("invalid UUID: {e}"))
-                    })
+                    Uuid::parse_str(s)
+                        .map_err(|e| Status::invalid_argument(format!("invalid UUID: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             DelegationScope::ByMemoryId(ids)
@@ -622,9 +646,9 @@ impl MnemoService for MnemoGrpcServer {
         };
 
         let now = chrono::Utc::now();
-        let expires_at = req.expires_in_hours.map(|h| {
-            (now + chrono::Duration::seconds((h * 3600.0) as i64)).to_rfc3339()
-        });
+        let expires_at = req
+            .expires_in_hours
+            .map(|h| (now + chrono::Duration::seconds((h * 3600.0) as i64)).to_rfc3339());
 
         let delegation = Delegation {
             id: Uuid::now_v7(),
@@ -798,8 +822,7 @@ mod tests {
         ));
         assert_eq!(perm.code(), tonic::Code::PermissionDenied);
 
-        let not_found =
-            core_error_to_status(mnemo_core::error::Error::NotFound("missing".into()));
+        let not_found = core_error_to_status(mnemo_core::error::Error::NotFound("missing".into()));
         assert_eq!(not_found.code(), tonic::Code::NotFound);
     }
 }

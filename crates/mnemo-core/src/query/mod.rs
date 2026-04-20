@@ -1,8 +1,8 @@
 pub mod branch;
 pub mod causality;
 pub mod checkpoint;
-pub mod event_builder;
 pub mod conflict;
+pub mod event_builder;
 pub mod forget;
 pub mod lifecycle;
 pub mod merge;
@@ -112,7 +112,10 @@ impl MnemoEngine {
         self
     }
 
-    pub async fn remember(&self, request: remember::RememberRequest) -> Result<remember::RememberResponse> {
+    pub async fn remember(
+        &self,
+        request: remember::RememberRequest,
+    ) -> Result<remember::RememberResponse> {
         remember::execute(self, request).await
     }
 
@@ -143,7 +146,10 @@ impl MnemoEngine {
         share::execute(self, request).await
     }
 
-    pub async fn checkpoint(&self, request: checkpoint::CheckpointRequest) -> Result<checkpoint::CheckpointResponse> {
+    pub async fn checkpoint(
+        &self,
+        request: checkpoint::CheckpointRequest,
+    ) -> Result<checkpoint::CheckpointResponse> {
         checkpoint::execute(self, request).await
     }
 
@@ -196,7 +202,14 @@ impl MnemoEngine {
         event_id: uuid::Uuid,
         max_depth: usize,
     ) -> Result<causality::CausalChain> {
-        causality::trace_causality(self, event_id, max_depth, causality::TraceDirection::Down, None).await
+        causality::trace_causality(
+            self,
+            event_id,
+            max_depth,
+            causality::TraceDirection::Down,
+            None,
+        )
+        .await
     }
 
     pub async fn trace_causality_with_options(

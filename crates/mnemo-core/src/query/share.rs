@@ -41,7 +41,9 @@ pub struct ShareResponse {
 }
 
 pub async fn execute(engine: &MnemoEngine, request: ShareRequest) -> Result<ShareResponse> {
-    let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+    let agent_id = request
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     let permission = request.permission.unwrap_or(Permission::Read);
 
     // Verify the requester owns or has admin access to the memory
@@ -110,7 +112,8 @@ pub async fn execute(engine: &MnemoEngine, request: ShareRequest) -> Result<Shar
         }),
         &request.memory_id.to_string(),
         None,
-    ).await;
+    )
+    .await;
     if engine.embed_events
         && let Ok(emb) = engine.embedding.embed(&event.payload.to_string()).await
     {

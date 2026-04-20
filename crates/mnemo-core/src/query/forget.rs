@@ -73,7 +73,9 @@ pub struct ForgetError {
 }
 
 pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<ForgetResponse> {
-    let agent_id = request.agent_id.unwrap_or_else(|| engine.default_agent_id.clone());
+    let agent_id = request
+        .agent_id
+        .unwrap_or_else(|| engine.default_agent_id.clone());
     let strategy = request.strategy.unwrap_or(ForgetStrategy::SoftDelete);
 
     // If criteria is specified and memory_ids is empty, find matching memories
@@ -95,7 +97,9 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                     if let Some(max_age) = criteria.max_age_hours
                         && let Ok(created) = chrono::DateTime::parse_from_rfc3339(&m.created_at)
                     {
-                        let age_hours = (now - created.with_timezone(&chrono::Utc)).num_seconds() as f64 / 3600.0;
+                        let age_hours = (now - created.with_timezone(&chrono::Utc)).num_seconds()
+                            as f64
+                            / 3600.0;
                         if age_hours < max_age {
                             return false;
                         }
@@ -110,7 +114,9 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                 .map(|m| m.id)
                 .collect()
         } else {
-            return Err(Error::Validation("memory_ids or criteria must be provided".to_string()));
+            return Err(Error::Validation(
+                "memory_ids or criteria must be provided".to_string(),
+            ));
         }
     } else {
         request.memory_ids.clone()
@@ -128,7 +134,11 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
 
     for id in &memory_ids {
         // Check permission
-        match engine.storage.check_permission(*id, &agent_id, Permission::Write).await {
+        match engine
+            .storage
+            .check_permission(*id, &agent_id, Permission::Write)
+            .await
+        {
             Ok(true) => {}
             Ok(false) => {
                 errors.push(ForgetError {
@@ -148,67 +158,77 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
 
         // Execute strategy
         match strategy {
-            ForgetStrategy::SoftDelete => {
-                match engine.storage.soft_delete_memory(*id).await {
-                    Ok(()) => {
-                        if let Err(e) = engine.index.remove(*id) {
-                            tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during soft delete");
-                        }
-                        if let Some(ref ft) = engine.full_text {
-                            if let Err(e) = ft.remove(*id) {
-                                tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index");
-                            }
-                            if let Err(e) = ft.commit() {
-                                tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index");
-                            }
-                        }
-                        forgotten.push(*id);
+            ForgetStrategy::SoftDelete => match engine.storage.soft_delete_memory(*id).await {
+                Ok(()) => {
+                    if let Err(e) = engine.index.remove(*id) {
+                        tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during soft delete");
                     }
-                    Err(e) => {
-                        errors.push(ForgetError { id: *id, error: e.to_string() });
+                    if let Some(ref ft) = engine.full_text {
+                        if let Err(e) = ft.remove(*id) {
+                            tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index");
+                        }
+                        if let Err(e) = ft.commit() {
+                            tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index");
+                        }
+                    }
+                    forgotten.push(*id);
+                }
+                Err(e) => {
+                    errors.push(ForgetError {
+                        id: *id,
+                        error: e.to_string(),
+                    });
+                }
+            },
+            ForgetStrategy::HardDelete => match engine.storage.hard_delete_memory(*id).await {
+                Ok(()) => {
+                    if let Err(e) = engine.index.remove(*id) {
+                        tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during hard delete");
+                    }
+                    if let Some(ref ft) = engine.full_text {
+                        if let Err(e) = ft.remove(*id) {
+                            tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index");
+                        }
+                        if let Err(e) = ft.commit() {
+                            tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index");
+                        }
+                    }
+                    forgotten.push(*id);
+                }
+                Err(e) => {
+                    errors.push(ForgetError {
+                        id: *id,
+                        error: e.to_string(),
+                    });
+                }
+            },
+            ForgetStrategy::Decay => match engine.storage.get_memory(*id).await {
+                Ok(Some(mut record)) => {
+                    let decay_rate = record.decay_rate.unwrap_or(0.1);
+                    record.importance = (record.importance - decay_rate).max(0.0);
+                    record.updated_at = chrono::Utc::now().to_rfc3339();
+                    match engine.storage.update_memory(&record).await {
+                        Ok(()) => forgotten.push(*id),
+                        Err(e) => errors.push(ForgetError {
+                            id: *id,
+                            error: e.to_string(),
+                        }),
                     }
                 }
-            }
-            ForgetStrategy::HardDelete => {
-                match engine.storage.hard_delete_memory(*id).await {
-                    Ok(()) => {
-                        if let Err(e) = engine.index.remove(*id) {
-                            tracing::error!(memory_id = %id, error = %e, "failed to remove from vector index during hard delete");
-                        }
-                        if let Some(ref ft) = engine.full_text {
-                            if let Err(e) = ft.remove(*id) {
-                                tracing::error!(memory_id = %id, error = %e, "failed to remove from full-text index");
-                            }
-                            if let Err(e) = ft.commit() {
-                                tracing::error!(memory_id = %id, error = %e, "failed to commit full-text index");
-                            }
-                        }
-                        forgotten.push(*id);
-                    }
-                    Err(e) => {
-                        errors.push(ForgetError { id: *id, error: e.to_string() });
-                    }
-                }
-            }
-            ForgetStrategy::Decay => {
-                match engine.storage.get_memory(*id).await {
-                    Ok(Some(mut record)) => {
-                        let decay_rate = record.decay_rate.unwrap_or(0.1);
-                        record.importance = (record.importance - decay_rate).max(0.0);
-                        record.updated_at = chrono::Utc::now().to_rfc3339();
-                        match engine.storage.update_memory(&record).await {
-                            Ok(()) => forgotten.push(*id),
-                            Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
-                        }
-                    }
-                    Ok(None) => errors.push(ForgetError { id: *id, error: "not found".to_string() }),
-                    Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
-                }
-            }
+                Ok(None) => errors.push(ForgetError {
+                    id: *id,
+                    error: "not found".to_string(),
+                }),
+                Err(e) => errors.push(ForgetError {
+                    id: *id,
+                    error: e.to_string(),
+                }),
+            },
             ForgetStrategy::Archive => {
                 match engine.storage.get_memory(*id).await {
                     Ok(Some(mut record)) => {
-                        record.consolidation_state = crate::model::memory::ConsolidationState::Archived;
+                        record.consolidation_state =
+                            crate::model::memory::ConsolidationState::Archived;
                         record.updated_at = chrono::Utc::now().to_rfc3339();
                         match engine.storage.update_memory(&record).await {
                             Ok(()) => {
@@ -220,27 +240,44 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                                 }
                                 forgotten.push(*id);
                             }
-                            Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
+                            Err(e) => errors.push(ForgetError {
+                                id: *id,
+                                error: e.to_string(),
+                            }),
                         }
                     }
-                    Ok(None) => errors.push(ForgetError { id: *id, error: "not found".to_string() }),
-                    Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
+                    Ok(None) => errors.push(ForgetError {
+                        id: *id,
+                        error: "not found".to_string(),
+                    }),
+                    Err(e) => errors.push(ForgetError {
+                        id: *id,
+                        error: e.to_string(),
+                    }),
                 }
             }
-            ForgetStrategy::Consolidate => {
-                match engine.storage.get_memory(*id).await {
-                    Ok(Some(mut record)) => {
-                        record.consolidation_state = crate::model::memory::ConsolidationState::Consolidated;
-                        record.updated_at = chrono::Utc::now().to_rfc3339();
-                        match engine.storage.update_memory(&record).await {
-                            Ok(()) => forgotten.push(*id),
-                            Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
-                        }
+            ForgetStrategy::Consolidate => match engine.storage.get_memory(*id).await {
+                Ok(Some(mut record)) => {
+                    record.consolidation_state =
+                        crate::model::memory::ConsolidationState::Consolidated;
+                    record.updated_at = chrono::Utc::now().to_rfc3339();
+                    match engine.storage.update_memory(&record).await {
+                        Ok(()) => forgotten.push(*id),
+                        Err(e) => errors.push(ForgetError {
+                            id: *id,
+                            error: e.to_string(),
+                        }),
                     }
-                    Ok(None) => errors.push(ForgetError { id: *id, error: "not found".to_string() }),
-                    Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
                 }
-            }
+                Ok(None) => errors.push(ForgetError {
+                    id: *id,
+                    error: "not found".to_string(),
+                }),
+                Err(e) => errors.push(ForgetError {
+                    id: *id,
+                    error: e.to_string(),
+                }),
+            },
             ForgetStrategy::Redact => {
                 // GDPR erasure: replace content, leave content_hash + prev_hash
                 // untouched so downstream chain verification still works.
@@ -268,11 +305,20 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                                 }
                                 forgotten.push(*id);
                             }
-                            Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
+                            Err(e) => errors.push(ForgetError {
+                                id: *id,
+                                error: e.to_string(),
+                            }),
                         }
                     }
-                    Ok(None) => errors.push(ForgetError { id: *id, error: "not found".to_string() }),
-                    Err(e) => errors.push(ForgetError { id: *id, error: e.to_string() }),
+                    Ok(None) => errors.push(ForgetError {
+                        id: *id,
+                        error: "not found".to_string(),
+                    }),
+                    Err(e) => errors.push(ForgetError {
+                        id: *id,
+                        error: e.to_string(),
+                    }),
                 }
             }
         }
@@ -289,7 +335,10 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
                 None
             }
         };
-        let event_prev_hash = Some(crate::hash::compute_chain_hash(&event_content_hash, prev_event_hash.as_deref()));
+        let event_prev_hash = Some(crate::hash::compute_chain_hash(
+            &event_content_hash,
+            prev_event_hash.as_deref(),
+        ));
         let event = AgentEvent {
             id: Uuid::now_v7(),
             agent_id: agent_id.clone(),

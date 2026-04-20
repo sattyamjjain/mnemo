@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -13,6 +13,7 @@ use mnemo_core::model::acl::Permission;
 use mnemo_core::model::delegation::{Delegation, DelegationScope};
 use mnemo_core::model::event::{AgentEvent, EventType};
 use mnemo_core::model::memory::{MemoryType, Scope};
+use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::{BranchRequest, BranchResponse};
 use mnemo_core::query::checkpoint::{CheckpointRequest, CheckpointResponse};
 use mnemo_core::query::forget::{
@@ -23,7 +24,6 @@ use mnemo_core::query::recall::{RecallRequest, RecallResponse};
 use mnemo_core::query::remember::{RememberRequest, RememberResponse};
 use mnemo_core::query::replay::{ReplayRequest, ReplayResponse};
 use mnemo_core::query::share::{ShareRequest, ShareResponse};
-use mnemo_core::query::MnemoEngine;
 
 type AppState = Arc<MnemoEngine>;
 
@@ -151,10 +151,11 @@ pub async fn recall_handler(
         None => None,
     };
 
-    let tags = params
-        .tags
-        .as_deref()
-        .map(|t| t.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>());
+    let tags = params.tags.as_deref().map(|t| {
+        t.split(',')
+            .map(|s| s.trim().to_string())
+            .collect::<Vec<_>>()
+    });
 
     let memory_types = match params.memory_types.as_deref() {
         Some(s) => {
@@ -463,9 +464,9 @@ pub async fn delegate_handler(
     };
 
     let now = chrono::Utc::now();
-    let expires_at = body.expires_in_hours.map(|h| {
-        (now + chrono::Duration::seconds((h * 3600.0) as i64)).to_rfc3339()
-    });
+    let expires_at = body
+        .expires_in_hours
+        .map(|h| (now + chrono::Duration::seconds((h * 3600.0) as i64)).to_rfc3339());
 
     let delegation = Delegation {
         id: Uuid::now_v7(),
@@ -538,22 +539,18 @@ fn extract_genai_fields(span: &serde_json::Value) -> GenAiFields {
                         .map(|s| s.to_string());
                 }
                 "gen_ai.usage.input_tokens" => {
-                    tokens_input = value
-                        .and_then(|v| v.get("intValue"))
-                        .and_then(|v| {
-                            v.as_str()
-                                .and_then(|s| s.parse::<i64>().ok())
-                                .or_else(|| v.as_i64())
-                        });
+                    tokens_input = value.and_then(|v| v.get("intValue")).and_then(|v| {
+                        v.as_str()
+                            .and_then(|s| s.parse::<i64>().ok())
+                            .or_else(|| v.as_i64())
+                    });
                 }
                 "gen_ai.usage.output_tokens" => {
-                    tokens_output = value
-                        .and_then(|v| v.get("intValue"))
-                        .and_then(|v| {
-                            v.as_str()
-                                .and_then(|s| s.parse::<i64>().ok())
-                                .or_else(|| v.as_i64())
-                        });
+                    tokens_output = value.and_then(|v| v.get("intValue")).and_then(|v| {
+                        v.as_str()
+                            .and_then(|s| s.parse::<i64>().ok())
+                            .or_else(|| v.as_i64())
+                    });
                 }
                 "gen_ai.usage.cost" => {
                     cost_usd = value
@@ -572,8 +569,11 @@ fn extract_genai_fields(span: &serde_json::Value) -> GenAiFields {
     }
 
     // If no operation_name from attributes, fall back to span name.
-    let op = operation_name
-        .or_else(|| span.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()));
+    let op = operation_name.or_else(|| {
+        span.get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    });
 
     // Map operation name to EventType.
     let event_type = match op.as_deref() {

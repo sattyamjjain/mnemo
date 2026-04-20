@@ -2,9 +2,9 @@ pub mod handlers;
 
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
-use axum::Router;
 use mnemo_core::query::MnemoEngine;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 

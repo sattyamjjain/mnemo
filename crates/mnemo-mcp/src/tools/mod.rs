@@ -1,5 +1,6 @@
 pub mod branch;
 pub mod checkpoint;
+pub mod delegate;
 pub mod forget;
 pub mod forget_subject;
 pub mod merge;
@@ -7,5 +8,4 @@ pub mod recall;
 pub mod remember;
 pub mod replay;
 pub mod share;
-pub mod delegate;
 pub mod verify;
