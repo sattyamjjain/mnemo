@@ -143,3 +143,10 @@ try:
     __all__.append("MnemoSessionStore")
 except ImportError:
     pass
+
+try:
+    from mnemo.openai_sessions_ga import MnemoSnapshotStore, SnapshotRef
+
+    __all__.extend(["MnemoSnapshotStore", "SnapshotRef"])
+except ImportError:
+    pass
