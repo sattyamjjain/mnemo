@@ -1,0 +1,28 @@
+[package]
+name = "mnemo-compliance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "DPDPA consent-manager and EU AI Act audit-log primitives for Mnemo."
+
+[dependencies]
+mnemo-core = { workspace = true }
+
+# Async + serde
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = "1.0"
+
+# HTTP client for HttpConsentManager — defer TLS stack choice to workspace-wide reqwest.
+reqwest = { workspace = true }
+
+# Detached signatures for NdjsonSigned export
+ed25519-dalek = { version = "2.1" }
+rand = "0.9"
+sha2 = "0.10"
+hex = "0.4"
