@@ -203,11 +203,15 @@ async fn test_multiple_memories_with_filtering() {
         .await
         .unwrap();
 
+    // Uses Episodic rather than Procedural so the Task 8 importance floor
+    // (0.8 on Procedural) does not bump this record above the min_importance
+    // filter below — the test's intent is "low-importance record gets
+    // filtered out", which the tier behaviour would otherwise break.
     let _m3 = engine
         .remember(RememberRequest {
             content: "Morning standup at 9:30 AM".to_string(),
             agent_id: None,
-            memory_type: Some(MemoryType::Procedural),
+            memory_type: Some(MemoryType::Episodic),
             scope: None,
             importance: Some(0.5),
             tags: Some(vec!["schedule".to_string()]),

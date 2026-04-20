@@ -206,20 +206,19 @@ pub fn verify_ndjson_signed(
             continue;
         }
         let obj: HashMap<String, serde_json::Value> = serde_json::from_slice(line)?;
-        let index = obj
-            .get("i")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| ComplianceError::ChainBroken {
-                index: idx,
-                reason: "missing index".into(),
-            })? as usize;
-        let prev = obj
-            .get("prev")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ComplianceError::ChainBroken {
+        let index =
+            obj.get("i")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| ComplianceError::ChainBroken {
+                    index: idx,
+                    reason: "missing index".into(),
+                })? as usize;
+        let prev = obj.get("prev").and_then(|v| v.as_str()).ok_or_else(|| {
+            ComplianceError::ChainBroken {
                 index,
                 reason: "missing prev".into(),
-            })?;
+            }
+        })?;
         if prev != prev_hash_hex {
             return Err(ComplianceError::ChainBroken {
                 index,
@@ -236,13 +235,12 @@ pub fn verify_ndjson_signed(
         hasher.update(prev.as_bytes());
         hasher.update(event_json.as_bytes());
         let digest = hasher.finalize();
-        let sig_hex = obj
-            .get("sig")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ComplianceError::ChainBroken {
+        let sig_hex = obj.get("sig").and_then(|v| v.as_str()).ok_or_else(|| {
+            ComplianceError::ChainBroken {
                 index,
                 reason: "missing signature".into(),
-            })?;
+            }
+        })?;
         let sig_bytes = hex::decode(sig_hex).map_err(|e| ComplianceError::ChainBroken {
             index,
             reason: format!("bad sig hex: {e}"),

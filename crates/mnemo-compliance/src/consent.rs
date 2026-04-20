@@ -50,10 +50,7 @@ impl ConsentState {
 /// Pluggable backend for looking up consent for a subject.
 #[async_trait]
 pub trait ConsentSource: Send + Sync {
-    async fn fetch_consent(
-        &self,
-        subject_id: &str,
-    ) -> Result<ConsentState, ComplianceError>;
+    async fn fetch_consent(&self, subject_id: &str) -> Result<ConsentState, ComplianceError>;
 }
 
 /// Generic HTTP consent-manager binding.
@@ -84,10 +81,7 @@ impl HttpConsentManager {
 
 #[async_trait]
 impl ConsentSource for HttpConsentManager {
-    async fn fetch_consent(
-        &self,
-        subject_id: &str,
-    ) -> Result<ConsentState, ComplianceError> {
+    async fn fetch_consent(&self, subject_id: &str) -> Result<ConsentState, ComplianceError> {
         let url = format!("{}/consent/{}", self.base_url, subject_id);
         let mut req = self.client.get(&url);
         if let Some(ref token) = self.bearer_token {
@@ -141,10 +135,7 @@ impl Default for StaticConsentSource {
 
 #[async_trait]
 impl ConsentSource for StaticConsentSource {
-    async fn fetch_consent(
-        &self,
-        subject_id: &str,
-    ) -> Result<ConsentState, ComplianceError> {
+    async fn fetch_consent(&self, subject_id: &str) -> Result<ConsentState, ComplianceError> {
         self.entries
             .get(subject_id)
             .cloned()

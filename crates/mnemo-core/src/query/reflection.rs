@@ -62,10 +62,7 @@ pub struct ReflectionReport {
 }
 
 /// Run a full reflection pass for `agent_id`.
-pub async fn run_reflection_pass(
-    engine: &MnemoEngine,
-    agent_id: &str,
-) -> Result<ReflectionReport> {
+pub async fn run_reflection_pass(engine: &MnemoEngine, agent_id: &str) -> Result<ReflectionReport> {
     let filter = MemoryFilter {
         agent_id: Some(agent_id.to_string()),
         include_deleted: false,
@@ -90,11 +87,8 @@ pub async fn run_reflection_pass(
             let prev_hash = record.content_hash.clone();
             record.content = new_content;
             record.updated_at = chrono::Utc::now().to_rfc3339();
-            record.content_hash = compute_content_hash(
-                &record.content,
-                &record.agent_id,
-                &record.updated_at,
-            );
+            record.content_hash =
+                compute_content_hash(&record.content, &record.agent_id, &record.updated_at);
             // Re-embed on content change. Embedding failure is non-fatal —
             // the cached embedding still beats a skipped reflection.
             if let Ok(emb) = engine.embedding.embed(&record.content).await {
@@ -135,17 +129,17 @@ pub async fn run_reflection_pass(
                 == false
         {
             let prev_hash = record.content_hash.clone();
-            record.content_hash = compute_content_hash(
-                &record.content,
-                &record.agent_id,
-                &record.updated_at,
-            );
+            record.content_hash =
+                compute_content_hash(&record.content, &record.agent_id, &record.updated_at);
             if let Ok(emb) = engine.embedding.embed(&record.content).await {
                 record.embedding = Some(emb.clone());
                 let _ = engine.index.add(record.id, &emb);
             }
             if let Some(obj) = record.metadata.as_object_mut() {
-                obj.insert("dreamed_processed".to_string(), serde_json::Value::Bool(true));
+                obj.insert(
+                    "dreamed_processed".to_string(),
+                    serde_json::Value::Bool(true),
+                );
             }
             engine.storage.update_memory(record).await?;
             emit_rewrite_event(
@@ -207,8 +201,7 @@ pub async fn run_reflection_pass(
         let Ok(created) = chrono::DateTime::parse_from_rfc3339(&record.created_at) else {
             continue;
         };
-        let age_hours =
-            (now - created.with_timezone(&chrono::Utc)).num_seconds() as f64 / 3600.0;
+        let age_hours = (now - created.with_timezone(&chrono::Utc)).num_seconds() as f64 / 3600.0;
         if age_hours < DEFAULT_ARCHIVE_AGE_HOURS {
             continue;
         }
@@ -329,11 +322,10 @@ async fn consolidate_duplicates(
 
             // Newer side wins. Ties break toward `records[i]` so the scan is
             // deterministic.
-            let (keeper_idx, victim_idx) =
-                match records[i].created_at.cmp(&records[j].created_at) {
-                    std::cmp::Ordering::Less => (j, i),
-                    _ => (i, j),
-                };
+            let (keeper_idx, victim_idx) = match records[i].created_at.cmp(&records[j].created_at) {
+                std::cmp::Ordering::Less => (j, i),
+                _ => (i, j),
+            };
 
             // Union of tags; sum of access_count.
             let mut keeper = records[keeper_idx].clone();
@@ -382,11 +374,8 @@ async fn emit_rewrite_event(
     new_hash: &[u8],
 ) {
     let now = chrono::Utc::now().to_rfc3339();
-    let content_hash = compute_content_hash(
-        &format!("rewrite:{memory_id}:{reason}"),
-        agent_id,
-        &now,
-    );
+    let content_hash =
+        compute_content_hash(&format!("rewrite:{memory_id}:{reason}"), agent_id, &now);
     let prev_event_hash = engine
         .storage
         .get_latest_event_hash(agent_id, None)

@@ -6,10 +6,7 @@ pub enum ComplianceError {
     /// The configured [`ConsentSource`](crate::ConsentSource) says the
     /// subject has not granted the scope this write requires.
     #[error("consent denied for subject '{subject_id}' on scope '{scope}'")]
-    ConsentDenied {
-        subject_id: String,
-        scope: String,
-    },
+    ConsentDenied { subject_id: String, scope: String },
 
     /// The consent manager returned a malformed or expired payload.
     #[error("invalid consent state from source: {0}")]
