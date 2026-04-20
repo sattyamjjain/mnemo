@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::Result;
+use crate::hash::compute_content_hash;
+use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, SourceType};
 use crate::model::relation::Relation;
 use crate::query::MnemoEngine;
@@ -40,7 +42,9 @@ impl DecayFunction {
 /// Compute effective importance using the specified or default decay curve.
 /// Default (Exponential): `base_importance * e^(-decay_rate * hours) + 0.05 * ln(1 + access_count)`
 pub fn effective_importance(record: &MemoryRecord) -> f32 {
-    let decay_fn = record.decay_function.as_deref()
+    let decay_fn = record
+        .decay_function
+        .as_deref()
         .and_then(DecayFunction::from_str_opt)
         .unwrap_or(DecayFunction::Exponential);
     effective_importance_with(record, &decay_fn)
@@ -52,12 +56,8 @@ pub fn effective_importance_with(record: &MemoryRecord, decay_fn: &DecayFunction
     let access_boost = 0.05 * (1.0 + record.access_count as f32).ln();
 
     let base = match decay_fn {
-        DecayFunction::Exponential => {
-            record.importance * (-decay_rate * hours).exp()
-        }
-        DecayFunction::Linear => {
-            record.importance * (1.0 - decay_rate * hours).max(0.0)
-        }
+        DecayFunction::Exponential => record.importance * (-decay_rate * hours).exp(),
+        DecayFunction::Linear => record.importance * (1.0 - decay_rate * hours).max(0.0),
         DecayFunction::StepFunction(threshold_hours) => {
             if hours < *threshold_hours {
                 record.importance
@@ -116,7 +116,10 @@ pub async fn run_decay_pass(
         include_deleted: false,
         ..Default::default()
     };
-    let memories = engine.storage.list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0).await?;
+    let memories = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
 
     let mut archived = 0;
     let mut forgotten = 0;
@@ -186,7 +189,10 @@ pub async fn run_consolidation(
         include_deleted: false,
         ..Default::default()
     };
-    let memories = engine.storage.list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0).await?;
+    let memories = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
 
     // Only consider memories that are Raw or Active
     let active: Vec<MemoryRecord> = memories
@@ -204,9 +210,10 @@ pub async fn run_consolidation(
         let mut found_cluster = false;
         for cluster in &mut clusters {
             // Check if this record shares any tag with any record in cluster
-            if cluster.iter().any(|c| {
-                c.tags.iter().any(|t| record.tags.contains(t))
-            }) {
+            if cluster
+                .iter()
+                .any(|c| c.tags.iter().any(|t| record.tags.contains(t)))
+            {
                 cluster.push(record);
                 found_cluster = true;
                 break;
@@ -229,8 +236,13 @@ pub async fn run_consolidation(
 
         // Create a consolidated semantic memory
         let combined_content: Vec<String> = cluster.iter().map(|m| m.content.clone()).collect();
-        let content = format!("[Consolidated from {} memories] {}", cluster.len(), combined_content.join(" | "));
-        let avg_importance = cluster.iter().map(|m| m.importance).sum::<f32>() / cluster.len() as f32;
+        let content = format!(
+            "[Consolidated from {} memories] {}",
+            cluster.len(),
+            combined_content.join(" | ")
+        );
+        let avg_importance =
+            cluster.iter().map(|m| m.importance).sum::<f32>() / cluster.len() as f32;
         let all_tags: Vec<String> = cluster
             .iter()
             .flat_map(|m| m.tags.iter().cloned())
@@ -250,7 +262,10 @@ pub async fn run_consolidation(
             .await
             .ok()
             .flatten();
-        let prev_hash = Some(crate::hash::compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
+        let prev_hash = Some(crate::hash::compute_chain_hash(
+            &content_hash,
+            prev_hash_raw.as_deref(),
+        ));
 
         let new_record = MemoryRecord {
             id: new_id,
@@ -324,6 +339,139 @@ pub async fn run_consolidation(
     })
 }
 
+/// Report from a single TTL sweep pass.
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtlReport {
+    pub swept_count: usize,
+    pub errors: Vec<TtlError>,
+}
+
+impl TtlReport {
+    pub fn new(swept_count: usize, errors: Vec<TtlError>) -> Self {
+        Self {
+            swept_count,
+            errors,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtlError {
+    pub memory_id: Uuid,
+    pub error: String,
+}
+
+/// Hard-delete every memory whose `expires_at` is in the past.
+///
+/// Each deletion emits an `EventType::MemoryExpired` audit event so the chain
+/// records which memories were purged and when. The function is idempotent
+/// under concurrent callers (storage deletes of an already-absent row surface
+/// as a storage error and are reported, not retried).
+pub async fn run_ttl_sweep(engine: &MnemoEngine) -> Result<TtlReport> {
+    let filter = MemoryFilter {
+        include_deleted: false,
+        ..Default::default()
+    };
+    let memories = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
+
+    let now = chrono::Utc::now();
+    let now_str = now.to_rfc3339();
+    let mut swept_count = 0;
+    let mut errors = Vec::new();
+
+    for record in memories {
+        let Some(ref expires_at) = record.expires_at else {
+            continue;
+        };
+        let Ok(exp) = chrono::DateTime::parse_from_rfc3339(expires_at) else {
+            continue;
+        };
+        if exp > now {
+            continue;
+        }
+
+        match engine.storage.hard_delete_memory(record.id).await {
+            Ok(()) => {
+                if let Err(e) = engine.index.remove(record.id) {
+                    tracing::warn!(memory_id = %record.id, error = %e, "ttl sweep: vector index remove failed");
+                }
+                if let Some(ref ft) = engine.full_text {
+                    if let Err(e) = ft.remove(record.id) {
+                        tracing::warn!(memory_id = %record.id, error = %e, "ttl sweep: full-text remove failed");
+                    }
+                    let _ = ft.commit();
+                }
+                if let Some(ref cache) = engine.cache {
+                    cache.invalidate(record.id);
+                }
+                emit_expiry_event(engine, &record, &now_str).await;
+                swept_count += 1;
+            }
+            Err(e) => errors.push(TtlError {
+                memory_id: record.id,
+                error: e.to_string(),
+            }),
+        }
+    }
+
+    Ok(TtlReport {
+        swept_count,
+        errors,
+    })
+}
+
+async fn emit_expiry_event(engine: &MnemoEngine, record: &MemoryRecord, now_str: &str) {
+    let event_content_hash =
+        compute_content_hash(&record.id.to_string(), &record.agent_id, now_str);
+    let prev_event_hash = match engine
+        .storage
+        .get_latest_event_hash(&record.agent_id, None)
+        .await
+    {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::warn!(error = %e, "ttl sweep: failed to read prev event hash, starting new chain segment");
+            None
+        }
+    };
+    let event_prev_hash = Some(crate::hash::compute_chain_hash(
+        &event_content_hash,
+        prev_event_hash.as_deref(),
+    ));
+
+    let event = AgentEvent {
+        id: Uuid::now_v7(),
+        agent_id: record.agent_id.clone(),
+        thread_id: None,
+        run_id: None,
+        parent_event_id: None,
+        event_type: EventType::MemoryExpired,
+        payload: serde_json::json!({
+            "memory_id": record.id.to_string(),
+            "expired_at": record.expires_at.clone(),
+        }),
+        trace_id: None,
+        span_id: None,
+        model: None,
+        tokens_input: None,
+        tokens_output: None,
+        latency_ms: None,
+        cost_usd: None,
+        timestamp: now_str.to_string(),
+        logical_clock: 0,
+        content_hash: event_content_hash,
+        prev_hash: event_prev_hash,
+        embedding: None,
+    };
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "ttl sweep: failed to insert MemoryExpired event");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,7 +515,10 @@ mod tests {
 
         let eff = effective_importance(&record);
         // Fresh memory should be close to base importance
-        assert!(eff > 0.7, "effective importance {eff} should be > 0.7 for fresh memory");
+        assert!(
+            eff > 0.7,
+            "effective importance {eff} should be > 0.7 for fresh memory"
+        );
 
         // Old memory with high decay rate
         let old_date = (chrono::Utc::now() - chrono::Duration::hours(1000)).to_rfc3339();
@@ -378,7 +529,10 @@ mod tests {
             ..record.clone()
         };
         let old_eff = effective_importance(&old_record);
-        assert!(old_eff < eff, "old memory {old_eff} should have lower importance than fresh {eff}");
+        assert!(
+            old_eff < eff,
+            "old memory {old_eff} should have lower importance than fresh {eff}"
+        );
 
         // Access count boosts importance
         let accessed_record = MemoryRecord {
@@ -386,6 +540,9 @@ mod tests {
             ..old_record.clone()
         };
         let accessed_eff = effective_importance(&accessed_record);
-        assert!(accessed_eff > old_eff, "accessed memory {accessed_eff} should be higher than unaccessed {old_eff}");
+        assert!(
+            accessed_eff > old_eff,
+            "accessed memory {accessed_eff} should be higher than unaccessed {old_eff}"
+        );
     }
 }

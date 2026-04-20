@@ -152,9 +152,7 @@ const MEMORY_COLUMNS: &str = r#"
 "#;
 
 fn row_to_event(row: &sqlx::postgres::PgRow) -> std::result::Result<AgentEvent, sqlx::Error> {
-    let payload: serde_json::Value = row
-        .try_get("payload")
-        .unwrap_or(serde_json::Value::Null);
+    let payload: serde_json::Value = row.try_get("payload").unwrap_or(serde_json::Value::Null);
     let embedding_blob: Option<Vec<u8>> = row.try_get("embedding").unwrap_or(None);
 
     Ok(AgentEvent {
@@ -199,9 +197,7 @@ fn row_to_relation(row: &sqlx::postgres::PgRow) -> std::result::Result<Relation,
     })
 }
 
-fn row_to_checkpoint(
-    row: &sqlx::postgres::PgRow,
-) -> std::result::Result<Checkpoint, sqlx::Error> {
+fn row_to_checkpoint(row: &sqlx::postgres::PgRow) -> std::result::Result<Checkpoint, sqlx::Error> {
     let state_snapshot: serde_json::Value = row
         .try_get("state_snapshot")
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
@@ -234,9 +230,7 @@ fn row_to_checkpoint(
     })
 }
 
-fn row_to_delegation(
-    row: &sqlx::postgres::PgRow,
-) -> std::result::Result<Delegation, sqlx::Error> {
+fn row_to_delegation(row: &sqlx::postgres::PgRow) -> std::result::Result<Delegation, sqlx::Error> {
     let scope_type: String = row.get("scope_type");
     let scope_value: Option<serde_json::Value> = row.try_get("scope_value").unwrap_or(None);
 
@@ -289,10 +283,8 @@ impl StorageBackend for PgStorage {
     // -----------------------------------------------------------------------
 
     async fn insert_memory(&self, record: &MemoryRecord) -> Result<()> {
-        let embedding_param: Option<Vector> = record
-            .embedding
-            .as_ref()
-            .map(|v| Vector::from(v.clone()));
+        let embedding_param: Option<Vector> =
+            record.embedding.as_ref().map(|v| Vector::from(v.clone()));
 
         let tags_slice: &[String] = &record.tags;
 
@@ -317,38 +309,38 @@ INSERT INTO memories (
 )
 "#,
         )
-            .bind(record.id)
-            .bind(&record.agent_id)
-            .bind(&record.content)
-            .bind(record.memory_type.to_string())
-            .bind(record.scope.to_string())
-            .bind(record.importance)
-            .bind(tags_slice)
-            .bind(&record.metadata)
-            .bind(&embedding_param)
-            .bind(&record.content_hash)
-            .bind(&record.prev_hash)
-            .bind(record.source_type.to_string())
-            .bind(&record.source_id)
-            .bind(record.consolidation_state.to_string())
-            .bind(record.access_count as i64)
-            .bind(&record.org_id)
-            .bind(&record.thread_id)
-            .bind(&record.created_at)
-            .bind(&record.updated_at)
-            .bind(&record.last_accessed_at)
-            .bind(&record.expires_at)
-            .bind(&record.deleted_at)
-            .bind(record.decay_rate)
-            .bind(&record.created_by)
-            .bind(record.version as i32)
-            .bind(record.prev_version_id)
-            .bind(record.quarantined)
-            .bind(&record.quarantine_reason)
-            .bind(&record.decay_function)
-            .execute(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
+        .bind(record.id)
+        .bind(&record.agent_id)
+        .bind(&record.content)
+        .bind(record.memory_type.to_string())
+        .bind(record.scope.to_string())
+        .bind(record.importance)
+        .bind(tags_slice)
+        .bind(&record.metadata)
+        .bind(&embedding_param)
+        .bind(&record.content_hash)
+        .bind(&record.prev_hash)
+        .bind(record.source_type.to_string())
+        .bind(&record.source_id)
+        .bind(record.consolidation_state.to_string())
+        .bind(record.access_count as i64)
+        .bind(&record.org_id)
+        .bind(&record.thread_id)
+        .bind(&record.created_at)
+        .bind(&record.updated_at)
+        .bind(&record.last_accessed_at)
+        .bind(&record.expires_at)
+        .bind(&record.deleted_at)
+        .bind(record.decay_rate)
+        .bind(&record.created_by)
+        .bind(record.version as i32)
+        .bind(record.prev_version_id)
+        .bind(record.quarantined)
+        .bind(&record.quarantine_reason)
+        .bind(&record.decay_function)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
 
         Ok(())
     }
@@ -368,10 +360,8 @@ INSERT INTO memories (
     }
 
     async fn update_memory(&self, record: &MemoryRecord) -> Result<()> {
-        let embedding_param: Option<Vector> = record
-            .embedding
-            .as_ref()
-            .map(|v| Vector::from(v.clone()));
+        let embedding_param: Option<Vector> =
+            record.embedding.as_ref().map(|v| Vector::from(v.clone()));
 
         let tags_slice: &[String] = &record.tags;
 
@@ -391,37 +381,37 @@ UPDATE memories SET
 WHERE id = $28
 "#,
         )
-            .bind(&record.agent_id)
-            .bind(&record.content)
-            .bind(record.memory_type.to_string())
-            .bind(record.scope.to_string())
-            .bind(record.importance)
-            .bind(tags_slice)
-            .bind(&record.metadata)
-            .bind(&embedding_param)
-            .bind(&record.content_hash)
-            .bind(&record.prev_hash)
-            .bind(record.source_type.to_string())
-            .bind(&record.source_id)
-            .bind(record.consolidation_state.to_string())
-            .bind(record.access_count as i64)
-            .bind(&record.org_id)
-            .bind(&record.thread_id)
-            .bind(&record.updated_at)
-            .bind(&record.last_accessed_at)
-            .bind(&record.expires_at)
-            .bind(&record.deleted_at)
-            .bind(record.decay_rate)
-            .bind(&record.created_by)
-            .bind(record.version as i32)
-            .bind(record.prev_version_id)
-            .bind(record.quarantined)
-            .bind(&record.quarantine_reason)
-            .bind(&record.decay_function)
-            .bind(record.id)
-            .execute(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
+        .bind(&record.agent_id)
+        .bind(&record.content)
+        .bind(record.memory_type.to_string())
+        .bind(record.scope.to_string())
+        .bind(record.importance)
+        .bind(tags_slice)
+        .bind(&record.metadata)
+        .bind(&embedding_param)
+        .bind(&record.content_hash)
+        .bind(&record.prev_hash)
+        .bind(record.source_type.to_string())
+        .bind(&record.source_id)
+        .bind(record.consolidation_state.to_string())
+        .bind(record.access_count as i64)
+        .bind(&record.org_id)
+        .bind(&record.thread_id)
+        .bind(&record.updated_at)
+        .bind(&record.last_accessed_at)
+        .bind(&record.expires_at)
+        .bind(&record.deleted_at)
+        .bind(record.decay_rate)
+        .bind(&record.created_by)
+        .bind(record.version as i32)
+        .bind(record.prev_version_id)
+        .bind(record.quarantined)
+        .bind(&record.quarantine_reason)
+        .bind(&record.decay_function)
+        .bind(record.id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
 
         if result.rows_affected() == 0 {
             return Err(Error::NotFound(format!("memory {} not found", record.id)));
@@ -824,11 +814,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
     // Permission-safe ANN
     // -----------------------------------------------------------------------
 
-    async fn list_accessible_memory_ids(
-        &self,
-        agent_id: &str,
-        limit: usize,
-    ) -> Result<Vec<Uuid>> {
+    async fn list_accessible_memory_ids(&self, agent_id: &str, limit: usize) -> Result<Vec<Uuid>> {
         let now = chrono::Utc::now().to_rfc3339();
         let rows = sqlx::query(
             r#"
@@ -937,11 +923,7 @@ LIMIT $2 OFFSET $3
         Ok(results)
     }
 
-    async fn get_events_by_thread(
-        &self,
-        thread_id: &str,
-        limit: usize,
-    ) -> Result<Vec<AgentEvent>> {
+    async fn get_events_by_thread(&self, thread_id: &str, limit: usize) -> Result<Vec<AgentEvent>> {
         let rows = sqlx::query(
             r#"
 SELECT id, agent_id, thread_id, run_id, parent_event_id, event_type,

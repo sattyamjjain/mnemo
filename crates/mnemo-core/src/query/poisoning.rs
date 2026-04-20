@@ -47,10 +47,7 @@ pub async fn check_for_anomaly(
     engine: &MnemoEngine,
     record: &MemoryRecord,
 ) -> Result<AnomalyCheckResult> {
-    let profile = engine
-        .storage
-        .get_agent_profile(&record.agent_id)
-        .await?;
+    let profile = engine.storage.get_agent_profile(&record.agent_id).await?;
 
     let mut score: f32 = 0.0;
     let mut reasons = Vec::new();
@@ -116,11 +113,7 @@ pub async fn check_for_anomaly(
 }
 
 /// Mark a memory as quarantined with a reason.
-pub async fn quarantine_memory(
-    engine: &MnemoEngine,
-    id: Uuid,
-    reason: &str,
-) -> Result<()> {
+pub async fn quarantine_memory(engine: &MnemoEngine, id: Uuid, reason: &str) -> Result<()> {
     if let Some(mut record) = engine.storage.get_memory(id).await? {
         record.quarantined = true;
         record.quarantine_reason = Some(reason.to_string());
@@ -131,15 +124,9 @@ pub async fn quarantine_memory(
 }
 
 /// Update the agent profile with statistics from the new memory.
-pub async fn update_agent_profile(
-    engine: &MnemoEngine,
-    record: &MemoryRecord,
-) -> Result<()> {
+pub async fn update_agent_profile(engine: &MnemoEngine, record: &MemoryRecord) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
-    let existing = engine
-        .storage
-        .get_agent_profile(&record.agent_id)
-        .await?;
+    let existing = engine.storage.get_agent_profile(&record.agent_id).await?;
 
     let profile = match existing {
         Some(mut p) => {

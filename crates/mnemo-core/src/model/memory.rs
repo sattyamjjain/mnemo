@@ -383,24 +383,54 @@ mod tests {
 
     #[test]
     fn test_enum_fromstr() {
-        assert_eq!("episodic".parse::<MemoryType>().unwrap(), MemoryType::Episodic);
-        assert_eq!("working".parse::<MemoryType>().unwrap(), MemoryType::Working);
+        assert_eq!(
+            "episodic".parse::<MemoryType>().unwrap(),
+            MemoryType::Episodic
+        );
+        assert_eq!(
+            "working".parse::<MemoryType>().unwrap(),
+            MemoryType::Working
+        );
         assert_eq!("shared".parse::<Scope>().unwrap(), Scope::Shared);
         assert_eq!("human".parse::<SourceType>().unwrap(), SourceType::Human);
-        assert_eq!("active".parse::<ConsolidationState>().unwrap(), ConsolidationState::Active);
-        assert_eq!("pending".parse::<ConsolidationState>().unwrap(), ConsolidationState::Pending);
-        assert_eq!("forgotten".parse::<ConsolidationState>().unwrap(), ConsolidationState::Forgotten);
+        assert_eq!(
+            "active".parse::<ConsolidationState>().unwrap(),
+            ConsolidationState::Active
+        );
+        assert_eq!(
+            "pending".parse::<ConsolidationState>().unwrap(),
+            ConsolidationState::Pending
+        );
+        assert_eq!(
+            "forgotten".parse::<ConsolidationState>().unwrap(),
+            ConsolidationState::Forgotten
+        );
         assert!("invalid".parse::<MemoryType>().is_err());
     }
 
     #[test]
     fn test_extended_enums_parse() {
         // New SourceType variants
-        assert_eq!("user_input".parse::<SourceType>().unwrap(), SourceType::UserInput);
-        assert_eq!("tool_output".parse::<SourceType>().unwrap(), SourceType::ToolOutput);
-        assert_eq!("model_response".parse::<SourceType>().unwrap(), SourceType::ModelResponse);
-        assert_eq!("retrieval".parse::<SourceType>().unwrap(), SourceType::Retrieval);
-        assert_eq!("consolidation".parse::<SourceType>().unwrap(), SourceType::Consolidation);
+        assert_eq!(
+            "user_input".parse::<SourceType>().unwrap(),
+            SourceType::UserInput
+        );
+        assert_eq!(
+            "tool_output".parse::<SourceType>().unwrap(),
+            SourceType::ToolOutput
+        );
+        assert_eq!(
+            "model_response".parse::<SourceType>().unwrap(),
+            SourceType::ModelResponse
+        );
+        assert_eq!(
+            "retrieval".parse::<SourceType>().unwrap(),
+            SourceType::Retrieval
+        );
+        assert_eq!(
+            "consolidation".parse::<SourceType>().unwrap(),
+            SourceType::Consolidation
+        );
         assert_eq!("import".parse::<SourceType>().unwrap(), SourceType::Import);
 
         // New Scope variant

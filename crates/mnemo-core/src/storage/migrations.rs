@@ -199,7 +199,10 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
         let _ = conn.execute(alter_sql, []);
     }
     // Create parent_event_id index if missing
-    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_events_parent ON agent_events(parent_event_id)", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_parent ON agent_events(parent_event_id)",
+        [],
+    );
     // Sprint 8: sync watermarks table
     conn.execute_batch(CREATE_SYNC_METADATA_TABLE)?;
     Ok(())

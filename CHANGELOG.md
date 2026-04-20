@@ -2,6 +2,80 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.2.0] - 2026-04-20
+
+### Highlights
+
+Claude Opus 4.7 + OpenAI Agents SDK first-class support, GDPR-safe subject
+erasure, time-travel replay, and retrieval provenance.
+
+### Added
+
+- **Claude Agent SDK adapter** (`mnemo.claude_agent_sdk.MnemoClaudeMemory`).
+  Exposes the full Mnemo MCP tool surface to `ClaudeAgentOptions.mcp_servers`
+  and optionally materializes recalled memories into Markdown files with YAML
+  frontmatter. A `watchdog` observer mirrors file edits, deletes, and
+  frontmatter changes back into Mnemo so Opus 4.7's Auto Memory workflow and
+  the persistent database stay in sync.
+- **OpenAI Agents SDK `Session` store** (`mnemo.openai_sessions.MnemoSessionStore`).
+  Implements the `get_items`/`add_items`/`pop_item`/`clear_session` protocol
+  introduced in the 2026-04-15 release, storing each turn as a
+  session-tagged episodic memory with a monotonic index so conversations
+  survive process restarts.
+- **TTL sweeper** (`engine.run_ttl_sweep`). Hard-deletes every memory whose
+  `expires_at` is in the past and emits a `MemoryExpired` audit event per
+  deletion, with correct hash chain linkage. The `mnemo` CLI gains
+  `--ttl-sweep-interval` / `MNEMO_TTL_SWEEP_INTERVAL` that drives the sweeper
+  as a background tokio task.
+- **GDPR / DPDPA-aligned subject erasure** (`engine.forget_subject`). Finds
+  memories tagged `subject:<id>` and either redacts the content (default,
+  preserves the hash chain for audit) or hard-deletes them. Exposed via
+  MCP (`mnemo.forget_subject`), REST (`POST /v1/forget_subject`), and gRPC
+  (`ForgetSubject`). A new `ForgetStrategy::Redact` variant is also
+  accepted wherever the standard `mnemo.forget` strategy parsing runs.
+- **Point-in-time replay** (`ReplayRequest.as_of`). When set, the engine
+  synthesizes a virtual checkpoint from the memories and events that
+  existed at that timestamp and returns the reconstructed state. Exposed
+  via MCP, gRPC (`ReplayRequest.as_of`), REST, and a new `as_of` kwarg on
+  the PyO3 `replay` method.
+- **Ranking-signal provenance on recall** (`RecallRequest.explain`). When
+  `true`, each `ScoredMemory` carries a `ScoreBreakdown` reporting the
+  per-signal contributions (vector, BM25, graph, recency) and the final
+  RRF rank. Wired through MCP, REST (`?explain=true`), gRPC (`ScoreBreakdown`
+  message + `ScoredMemory.score_breakdown`), and the PyO3 `recall(..., explain=True)`
+  kwarg.
+- `EventType::MemoryExpired` and `EventType::MemoryRedact` variants with
+  snake_case `Display`/`FromStr` support, so the audit trail can
+  distinguish natural expiration and subject redaction from ordinary
+  deletes.
+- Examples: `examples/claude_agent_sdk_example.py`,
+  `examples/openai_agents_snapshot_example.py`.
+
+### Changed
+
+- `RecallRequest` gains `explain: Option<bool>`.
+- `ReplayRequest` gains `as_of: Option<String>`.
+- `ForgetStrategy` gains a `Redact` variant.
+- `ScoredMemory` gains `score_breakdown: Option<ScoreBreakdown>` (skipped
+  during serialization when absent — existing JSON consumers unaffected).
+- Python `mnemo/__init__.py` now tolerates a missing native `_mnemo`
+  extension at import time so adapter modules can be imported before
+  `maturin develop` runs.
+
+### Tests
+
+All 36 integration tests, 70 mnemo-core unit tests, and the MCP / pgwire /
+REST / admin / gRPC suites pass. Four new tests cover TTL sweep semantics,
+GDPR-safe redaction (hash chain preservation), point-in-time replay, and
+score-breakdown provenance. The Python adapters ship with 21 tests
+(pure-Python + integration-gated) that run under `pytest python/tests/`.
+
+### Deferred to 0.2.0-rc2 / 0.3.0
+
+- `mnemo.reflect` Auto Dream equivalent (reflection-pass consolidation).
+- rmcp 0.14 → 1.3 upgrade (PR #27) and MCP resource exposure — the API
+  migration warrants a dedicated release.
+
 ## [0.1.0] - 2026-02-07
 
 ### Initial Release

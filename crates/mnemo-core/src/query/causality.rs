@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::collections::{HashSet, VecDeque};
+use uuid::Uuid;
 
 use crate::error::Result;
 use crate::model::event::{AgentEvent, EventType};
@@ -175,7 +175,11 @@ mod tests {
     #[test]
     fn test_trace_direction_serde() {
         // Verify all variants serialize and round-trip correctly.
-        let directions = vec![TraceDirection::Up, TraceDirection::Down, TraceDirection::Both];
+        let directions = vec![
+            TraceDirection::Up,
+            TraceDirection::Down,
+            TraceDirection::Both,
+        ];
         for dir in &directions {
             let json = serde_json::to_string(dir).unwrap();
             let deserialized: TraceDirection = serde_json::from_str(&json).unwrap();
@@ -183,9 +187,18 @@ mod tests {
         }
 
         // Verify the snake_case rename: "up", "down", "both".
-        assert_eq!(serde_json::to_string(&TraceDirection::Up).unwrap(), "\"up\"");
-        assert_eq!(serde_json::to_string(&TraceDirection::Down).unwrap(), "\"down\"");
-        assert_eq!(serde_json::to_string(&TraceDirection::Both).unwrap(), "\"both\"");
+        assert_eq!(
+            serde_json::to_string(&TraceDirection::Up).unwrap(),
+            "\"up\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TraceDirection::Down).unwrap(),
+            "\"down\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TraceDirection::Both).unwrap(),
+            "\"both\""
+        );
 
         // Verify deserialization from snake_case strings.
         assert_eq!(
@@ -232,9 +245,21 @@ mod tests {
         let checkpoint_event = make_event(EventType::Checkpoint);
 
         let all_nodes = [
-            CausalNode { event: write_event.clone(), children: vec![], depth: 0 },
-            CausalNode { event: read_event.clone(), children: vec![], depth: 1 },
-            CausalNode { event: checkpoint_event.clone(), children: vec![], depth: 2 },
+            CausalNode {
+                event: write_event.clone(),
+                children: vec![],
+                depth: 0,
+            },
+            CausalNode {
+                event: read_event.clone(),
+                children: vec![],
+                depth: 1,
+            },
+            CausalNode {
+                event: checkpoint_event.clone(),
+                children: vec![],
+                depth: 2,
+            },
         ];
 
         // Simulate filtering for MemoryWrite only.

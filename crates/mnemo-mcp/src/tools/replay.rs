@@ -9,4 +9,7 @@ pub struct ReplayInput {
     pub checkpoint_id: Option<String>,
     /// The branch name. Defaults to "main".
     pub branch_name: Option<String>,
+    /// RFC3339 timestamp. When set, synthesizes a virtual checkpoint from the
+    /// memories and events that existed at that instant. Overrides `checkpoint_id`.
+    pub as_of: Option<String>,
 }

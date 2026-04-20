@@ -121,6 +121,7 @@ async fn test_engine_recall_via_server_engine() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();

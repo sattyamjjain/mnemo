@@ -22,8 +22,7 @@ impl UsearchIndex {
             quantization: usearch::ScalarKind::F32,
             ..Default::default()
         };
-        let index = usearch::Index::new(&opts)
-            .map_err(|e| Error::Index(e.to_string()))?;
+        let index = usearch::Index::new(&opts).map_err(|e| Error::Index(e.to_string()))?;
         index
             .reserve(10_000)
             .map_err(|e| Error::Index(e.to_string()))?;
@@ -41,14 +40,26 @@ impl UsearchIndex {
         let mut next = self.next_key.write().unwrap_or_else(|e| e.into_inner());
         let key = *next;
         *next += 1;
-        self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner()).insert(id, key);
-        self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner()).insert(key, id);
+        self.uuid_to_key
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, key);
+        self.key_to_uuid
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, id);
         key
     }
 
     fn rollback_key(&self, id: Uuid, key: u64) {
-        self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner()).remove(&id);
-        self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner()).remove(&key);
+        self.uuid_to_key
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+        self.key_to_uuid
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&key);
     }
 }
 
@@ -63,7 +74,12 @@ impl VectorIndex for UsearchIndex {
         }
 
         // If this UUID already exists, remove it first
-        if self.uuid_to_key.read().unwrap_or_else(|e| e.into_inner()).contains_key(&id) {
+        if self
+            .uuid_to_key
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&id)
+        {
             self.remove(id)?;
         }
 
@@ -96,12 +112,16 @@ impl VectorIndex for UsearchIndex {
         };
 
         let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-        index
-            .remove(key)
-            .map_err(|e| Error::Index(e.to_string()))?;
+        index.remove(key).map_err(|e| Error::Index(e.to_string()))?;
 
-        self.uuid_to_key.write().unwrap_or_else(|e| e.into_inner()).remove(&id);
-        self.key_to_uuid.write().unwrap_or_else(|e| e.into_inner()).remove(&key);
+        self.uuid_to_key
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+        self.key_to_uuid
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&key);
         Ok(())
     }
 
@@ -148,7 +168,8 @@ impl VectorIndex for UsearchIndex {
     }
 
     fn save(&self, path: &Path) -> Result<()> {
-        let path_str = path.to_str()
+        let path_str = path
+            .to_str()
             .ok_or_else(|| Error::Index("non-UTF-8 index path".to_string()))?;
         let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         index
@@ -163,15 +184,14 @@ impl VectorIndex for UsearchIndex {
             "uuid_to_key": uuid_to_key.iter().map(|(k, v)| (k.to_string(), v)).collect::<HashMap<String, &u64>>(),
             "next_key": next_key,
         });
-        let json_str = serde_json::to_string(&data)
-            .map_err(|e| Error::Index(e.to_string()))?;
-        std::fs::write(&mappings_path, json_str)
-            .map_err(|e| Error::Index(e.to_string()))?;
+        let json_str = serde_json::to_string(&data).map_err(|e| Error::Index(e.to_string()))?;
+        std::fs::write(&mappings_path, json_str).map_err(|e| Error::Index(e.to_string()))?;
         Ok(())
     }
 
     fn load(&self, path: &Path) -> Result<()> {
-        let path_str = path.to_str()
+        let path_str = path
+            .to_str()
             .ok_or_else(|| Error::Index("non-UTF-8 index path".to_string()))?;
         let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         index
@@ -181,8 +201,8 @@ impl VectorIndex for UsearchIndex {
         // Load mappings
         let mappings_path = path.with_extension("mappings.json");
         if mappings_path.exists() {
-            let data = std::fs::read_to_string(&mappings_path)
-                .map_err(|e| Error::Index(e.to_string()))?;
+            let data =
+                std::fs::read_to_string(&mappings_path).map_err(|e| Error::Index(e.to_string()))?;
             let parsed: serde_json::Value =
                 serde_json::from_str(&data).map_err(|e| Error::Index(e.to_string()))?;
 
@@ -195,10 +215,11 @@ impl VectorIndex for UsearchIndex {
 
             if let Some(map) = parsed["uuid_to_key"].as_object() {
                 for (uuid_str, key_val) in map {
-                    let uuid = Uuid::parse_str(uuid_str)
-                        .map_err(|e| Error::Index(e.to_string()))?;
-                    let key = key_val.as_u64()
-                        .ok_or_else(|| Error::Index(format!("invalid key value for UUID {uuid_str}")))?;
+                    let uuid =
+                        Uuid::parse_str(uuid_str).map_err(|e| Error::Index(e.to_string()))?;
+                    let key = key_val.as_u64().ok_or_else(|| {
+                        Error::Index(format!("invalid key value for UUID {uuid_str}"))
+                    })?;
                     uuid_to_key.insert(uuid, key);
                     key_to_uuid.insert(key, uuid);
                 }
@@ -287,8 +308,7 @@ mod tests {
         }
 
         // Filter out all even-indexed IDs
-        let excluded: std::collections::HashSet<Uuid> =
-            ids.iter().step_by(2).copied().collect();
+        let excluded: std::collections::HashSet<Uuid> = ids.iter().step_by(2).copied().collect();
         let query = random_vector(128, 0);
         let results = index
             .filtered_search(&query, 10, &|id| !excluded.contains(&id))

@@ -12,10 +12,19 @@ Example::
     memories = client.recall("user preferences")
 """
 
-from mnemo._mnemo import MnemoClient
-
-__all__ = ["MnemoClient"]
 __version__ = "0.2.0"
+__all__: list[str] = []
+
+# The native PyO3 extension is optional at import time — users who only need
+# the framework adapter surfaces (e.g. config builders, file bridges) can
+# import submodules without having run `maturin develop`. Any adapter that
+# actually requires MnemoClient will raise when it tries to instantiate it.
+try:
+    from mnemo._mnemo import MnemoClient  # type: ignore[attr-defined]
+
+    __all__.append("MnemoClient")
+except ImportError:
+    MnemoClient = None  # type: ignore[assignment]
 
 # Shared MCP configuration (always available)
 from mnemo.mcp_config import MnemoMCPConfig
@@ -118,5 +127,19 @@ try:
     from mnemo.camel_memory import create_mnemo_camel_tools
 
     __all__.append("create_mnemo_camel_tools")
+except ImportError:
+    pass
+
+try:
+    from mnemo.claude_agent_sdk import MnemoClaudeMemory
+
+    __all__.append("MnemoClaudeMemory")
+except ImportError:
+    pass
+
+try:
+    from mnemo.openai_sessions import MnemoSessionStore
+
+    __all__.append("MnemoSessionStore")
 except ImportError:
     pass

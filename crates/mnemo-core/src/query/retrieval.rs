@@ -24,10 +24,7 @@ pub fn weighted_reciprocal_rank_fusion(
 /// Reciprocal Rank Fusion: combines multiple ranked lists into a single fused ranking.
 /// Each item's score = sum over all lists of 1/(k + rank_in_list).
 /// Items not present in a list are not penalized.
-pub fn reciprocal_rank_fusion(
-    ranked_lists: &[Vec<(Uuid, f32)>],
-    k: f32,
-) -> Vec<(Uuid, f32)> {
+pub fn reciprocal_rank_fusion(ranked_lists: &[Vec<(Uuid, f32)>], k: f32) -> Vec<(Uuid, f32)> {
     weighted_reciprocal_rank_fusion(ranked_lists, k, &[])
 }
 
@@ -104,7 +101,8 @@ mod tests {
         let list2 = vec![(id2, 0.95), (id1, 0.85)];
 
         // With weight [2.0, 1.0], list1 should have more influence
-        let fused = weighted_reciprocal_rank_fusion(&[list1.clone(), list2.clone()], 60.0, &[2.0, 1.0]);
+        let fused =
+            weighted_reciprocal_rank_fusion(&[list1.clone(), list2.clone()], 60.0, &[2.0, 1.0]);
         assert_eq!(fused.len(), 2);
         // id1 is rank 0 in list1 (weight 2.0) and rank 1 in list2 (weight 1.0)
         // id1 score = 2.0/(60+1) + 1.0/(60+2) = ~0.0328 + ~0.0161 = ~0.0489

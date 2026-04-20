@@ -117,11 +117,7 @@ mod tests {
     #[ignore] // Requires OPENAI_API_KEY
     async fn test_openai_embedding() {
         let api_key = std::env::var("OPENAI_API_KEY").unwrap();
-        let provider = OpenAiEmbedding::new(
-            api_key,
-            "text-embedding-3-small".to_string(),
-            1536,
-        );
+        let provider = OpenAiEmbedding::new(api_key, "text-embedding-3-small".to_string(), 1536);
         let result = provider.embed("hello world").await.unwrap();
         assert_eq!(result.len(), 1536);
     }

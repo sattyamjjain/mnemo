@@ -3,9 +3,9 @@ use std::sync::Mutex;
 
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
-use tantivy::schema::{Schema, STORED, STRING, TEXT};
-use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 use tantivy::schema::Value;
+use tantivy::schema::{STORED, STRING, Schema, TEXT};
+use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 
 use crate::error::{Error, Result};
 use crate::search::FullTextIndex;
@@ -88,7 +88,10 @@ impl TantivyFullTextIndex {
 
 impl FullTextIndex for TantivyFullTextIndex {
     fn add(&self, id: Uuid, content: &str) -> Result<()> {
-        let writer = self.writer.lock().map_err(|e| Error::Index(e.to_string()))?;
+        let writer = self
+            .writer
+            .lock()
+            .map_err(|e| Error::Index(e.to_string()))?;
 
         // Remove existing doc with this ID first
         let id_term = tantivy::Term::from_field_text(self.id_field, &id.to_string());
@@ -97,12 +100,17 @@ impl FullTextIndex for TantivyFullTextIndex {
         let mut doc = TantivyDocument::default();
         doc.add_text(self.id_field, id.to_string());
         doc.add_text(self.content_field, content);
-        writer.add_document(doc).map_err(|e| Error::Index(e.to_string()))?;
+        writer
+            .add_document(doc)
+            .map_err(|e| Error::Index(e.to_string()))?;
         Ok(())
     }
 
     fn remove(&self, id: Uuid) -> Result<()> {
-        let writer = self.writer.lock().map_err(|e| Error::Index(e.to_string()))?;
+        let writer = self
+            .writer
+            .lock()
+            .map_err(|e| Error::Index(e.to_string()))?;
         let id_term = tantivy::Term::from_field_text(self.id_field, &id.to_string());
         writer.delete_term(id_term);
         Ok(())
@@ -135,9 +143,14 @@ impl FullTextIndex for TantivyFullTextIndex {
     }
 
     fn commit(&self) -> Result<()> {
-        let mut writer = self.writer.lock().map_err(|e| Error::Index(e.to_string()))?;
+        let mut writer = self
+            .writer
+            .lock()
+            .map_err(|e| Error::Index(e.to_string()))?;
         writer.commit().map_err(|e| Error::Index(e.to_string()))?;
-        self.reader.reload().map_err(|e| Error::Index(e.to_string()))?;
+        self.reader
+            .reload()
+            .map_err(|e| Error::Index(e.to_string()))?;
         Ok(())
     }
 
@@ -163,8 +176,12 @@ mod tests {
         let id2 = Uuid::now_v7();
         let id3 = Uuid::now_v7();
 
-        index.add(id1, "The user prefers dark mode for all applications").unwrap();
-        index.add(id2, "Rust programming language is fast and safe").unwrap();
+        index
+            .add(id1, "The user prefers dark mode for all applications")
+            .unwrap();
+        index
+            .add(id2, "Rust programming language is fast and safe")
+            .unwrap();
         index.add(id3, "Python is great for data science").unwrap();
         index.commit().unwrap();
 

@@ -5,11 +5,11 @@
 
 use crate::error::{Error, Result};
 
+use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, KeyInit, OsRng},
 };
-use aes_gcm::aead::rand_core::RngCore;
 
 /// AES-256-GCM encryption provider for at-rest memory content.
 pub struct ContentEncryption {
@@ -24,8 +24,8 @@ impl ContentEncryption {
 
     /// Create from a hex-encoded key string (64 hex chars = 32 bytes).
     pub fn from_hex(hex_key: &str) -> Result<Self> {
-        let bytes = hex::decode(hex_key)
-            .map_err(|e| Error::Validation(format!("invalid hex key: {e}")))?;
+        let bytes =
+            hex::decode(hex_key).map_err(|e| Error::Validation(format!("invalid hex key: {e}")))?;
         if bytes.len() != 32 {
             return Err(Error::Validation(format!(
                 "key must be 32 bytes, got {}",

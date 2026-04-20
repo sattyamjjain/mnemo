@@ -82,12 +82,18 @@ impl MemoryCache {
 
     /// Invalidate (remove) a cached record.
     pub fn invalidate(&self, id: Uuid) {
-        self.entries.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
     }
 
     /// Clear all cached entries.
     pub fn clear(&self) {
-        self.entries.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Number of entries currently in cache.
@@ -97,7 +103,10 @@ impl MemoryCache {
 
     /// Whether the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 }
 

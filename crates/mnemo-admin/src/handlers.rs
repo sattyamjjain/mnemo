@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -201,7 +201,9 @@ pub async fn memories_handler(
         .iter()
         .map(|m| {
             let preview = if m.content.len() > 100 {
-                let end = m.content.char_indices()
+                let end = m
+                    .content
+                    .char_indices()
                     .take_while(|(i, _)| *i <= 100)
                     .last()
                     .map(|(i, c)| i + c.len_utf8())

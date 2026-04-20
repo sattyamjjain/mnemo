@@ -306,9 +306,8 @@ mod tests {
 
     #[test]
     fn test_parse_insert() {
-        let stmt = parse_sql(
-            "INSERT INTO memories (content, importance) VALUES ('test memory', 0.8)",
-        );
+        let stmt =
+            parse_sql("INSERT INTO memories (content, importance) VALUES ('test memory', 0.8)");
         match stmt {
             ParsedStatement::Insert(q) => {
                 assert_eq!(q.content, "test memory");

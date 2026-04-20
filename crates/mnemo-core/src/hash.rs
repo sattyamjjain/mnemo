@@ -53,7 +53,8 @@ pub fn verify_chain(records: &[MemoryRecord]) -> ChainVerificationResult {
 
     for (i, record) in records.iter().enumerate() {
         // Verify content hash (constant-time comparison)
-        let expected_hash = compute_content_hash(&record.content, &record.agent_id, &record.created_at);
+        let expected_hash =
+            compute_content_hash(&record.content, &record.agent_id, &record.created_at);
         if !hashes_equal(&expected_hash, &record.content_hash) {
             return ChainVerificationResult {
                 valid: false,
@@ -67,7 +68,8 @@ pub fn verify_chain(records: &[MemoryRecord]) -> ChainVerificationResult {
         // Verify chain linking (prev_hash)
         if i > 0 {
             let prev_record = &records[i - 1];
-            let expected_chain = compute_chain_hash(&record.content_hash, Some(&prev_record.content_hash));
+            let expected_chain =
+                compute_chain_hash(&record.content_hash, Some(&prev_record.content_hash));
             if let Some(ref prev_hash) = record.prev_hash
                 && !hashes_equal(prev_hash, &expected_chain)
             {
@@ -127,7 +129,8 @@ pub fn verify_event_chain(events: &[AgentEvent]) -> ChainVerificationResult {
         // Verify chain linking (prev_hash)
         if i > 0 {
             let prev_event = &events[i - 1];
-            let expected_chain = compute_chain_hash(&event.content_hash, Some(&prev_event.content_hash));
+            let expected_chain =
+                compute_chain_hash(&event.content_hash, Some(&prev_event.content_hash));
             if let Some(ref prev_hash) = event.prev_hash
                 && !hashes_equal(prev_hash, &expected_chain)
             {
@@ -207,7 +210,10 @@ mod tests {
                 Some(compute_chain_hash(&content_hash, None))
             } else {
                 let prev_record = &records[i - 1];
-                Some(compute_chain_hash(&content_hash, Some(&prev_record.content_hash)))
+                Some(compute_chain_hash(
+                    &content_hash,
+                    Some(&prev_record.content_hash),
+                ))
             };
 
             records.push(MemoryRecord {
@@ -265,7 +271,10 @@ mod tests {
                 Some(compute_chain_hash(&content_hash, None))
             } else {
                 let prev_record = &records[i - 1];
-                Some(compute_chain_hash(&content_hash, Some(&prev_record.content_hash)))
+                Some(compute_chain_hash(
+                    &content_hash,
+                    Some(&prev_record.content_hash),
+                ))
             };
 
             records.push(MemoryRecord {
@@ -307,6 +316,11 @@ mod tests {
         let result = verify_chain(&records);
         assert!(!result.valid);
         assert_eq!(result.first_broken_at, Some(records[1].id));
-        assert!(result.error_message.unwrap().contains("content hash mismatch"));
+        assert!(
+            result
+                .error_message
+                .unwrap()
+                .contains("content hash mismatch")
+        );
     }
 }

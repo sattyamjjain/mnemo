@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::sync::Arc;
 
 use mnemo_core::embedding::NoopEmbedding;
@@ -13,13 +13,7 @@ fn make_engine() -> MnemoEngine {
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(3).unwrap());
     let embedding = Arc::new(NoopEmbedding::new(3));
-    MnemoEngine::new(
-        storage,
-        index,
-        embedding,
-        "bench-agent".to_string(),
-        None,
-    )
+    MnemoEngine::new(storage, index, embedding, "bench-agent".to_string(), None)
 }
 
 fn remember_throughput(c: &mut Criterion) {
@@ -60,7 +54,10 @@ fn recall_latency(c: &mut Criterion) {
     rt.block_on(async {
         for i in 0..100 {
             let request = RememberRequest {
-                content: format!("Memory number {} about various topics for recall testing", i),
+                content: format!(
+                    "Memory number {} about various topics for recall testing",
+                    i
+                ),
                 agent_id: None,
                 memory_type: None,
                 scope: None,
@@ -99,6 +96,7 @@ fn recall_latency(c: &mut Criterion) {
                     hybrid_weights: None,
                     rrf_k: None,
                     as_of: None,
+                    explain: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -152,14 +150,8 @@ fn hybrid_recall_latency(c: &mut Criterion) {
     let index = Arc::new(UsearchIndex::new(3).unwrap());
     let embedding = Arc::new(NoopEmbedding::new(3));
     let ft = Arc::new(TantivyFullTextIndex::open_in_memory().unwrap());
-    let engine = MnemoEngine::new(
-        storage,
-        index,
-        embedding,
-        "bench-agent".to_string(),
-        None,
-    )
-    .with_full_text(ft);
+    let engine = MnemoEngine::new(storage, index, embedding, "bench-agent".to_string(), None)
+        .with_full_text(ft);
 
     rt.block_on(async {
         for i in 0..500 {
@@ -206,6 +198,7 @@ fn hybrid_recall_latency(c: &mut Criterion) {
                     hybrid_weights: None,
                     rrf_k: None,
                     as_of: None,
+                    explain: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -266,6 +259,7 @@ fn graph_traversal_latency(c: &mut Criterion) {
                     hybrid_weights: None,
                     rrf_k: None,
                     as_of: None,
+                    explain: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -322,6 +316,7 @@ fn checkpoint_restore_latency(c: &mut Criterion) {
                     agent_id: None,
                     checkpoint_id: None,
                     branch_name: Some("main".to_string()),
+                    as_of: None,
                 };
                 engine.replay(request).await.unwrap();
             });
@@ -340,9 +335,7 @@ fn concurrent_agents_throughput(c: &mut Criterion) {
                     let agent_id = format!("agent-{agent_idx}");
                     for mem_idx in 0..10 {
                         let request = RememberRequest {
-                            content: format!(
-                                "Concurrent memory {mem_idx} from agent {agent_idx}"
-                            ),
+                            content: format!("Concurrent memory {mem_idx} from agent {agent_idx}"),
                             agent_id: Some(agent_id.clone()),
                             memory_type: None,
                             scope: None,

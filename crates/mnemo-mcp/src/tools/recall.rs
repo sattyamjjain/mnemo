@@ -39,4 +39,8 @@ pub struct RecallInput {
     pub rrf_k: Option<f32>,
     /// Point-in-time query: show memory state as it existed at this timestamp (RFC 3339). Excludes memories created after this time and memories already deleted by this time.
     pub as_of: Option<String>,
+    /// When true, each returned memory includes a `score_breakdown` object
+    /// with the per-signal contributions (vector, bm25, graph, recency) and
+    /// the final RRF rank.
+    pub explain: Option<bool>,
 }

@@ -1,8 +1,8 @@
 pub mod branch;
 pub mod causality;
 pub mod checkpoint;
-pub mod event_builder;
 pub mod conflict;
+pub mod event_builder;
 pub mod forget;
 pub mod lifecycle;
 pub mod merge;
@@ -112,7 +112,10 @@ impl MnemoEngine {
         self
     }
 
-    pub async fn remember(&self, request: remember::RememberRequest) -> Result<remember::RememberResponse> {
+    pub async fn remember(
+        &self,
+        request: remember::RememberRequest,
+    ) -> Result<remember::RememberResponse> {
         remember::execute(self, request).await
     }
 
@@ -124,11 +127,29 @@ impl MnemoEngine {
         forget::execute(self, request).await
     }
 
+    /// Subject-scoped erasure for GDPR / DPDPA compliance.
+    /// See [`forget::forget_subject`] for strategy semantics.
+    pub async fn forget_subject(
+        &self,
+        request: forget::ForgetSubjectRequest,
+    ) -> Result<forget::ForgetSubjectResponse> {
+        forget::forget_subject(self, request).await
+    }
+
+    /// Hard-delete every memory whose `expires_at` is in the past and emit
+    /// one `MemoryExpired` audit event per deletion.
+    pub async fn run_ttl_sweep(&self) -> Result<lifecycle::TtlReport> {
+        lifecycle::run_ttl_sweep(self).await
+    }
+
     pub async fn share(&self, request: share::ShareRequest) -> Result<share::ShareResponse> {
         share::execute(self, request).await
     }
 
-    pub async fn checkpoint(&self, request: checkpoint::CheckpointRequest) -> Result<checkpoint::CheckpointResponse> {
+    pub async fn checkpoint(
+        &self,
+        request: checkpoint::CheckpointRequest,
+    ) -> Result<checkpoint::CheckpointResponse> {
         checkpoint::execute(self, request).await
     }
 
@@ -181,7 +202,14 @@ impl MnemoEngine {
         event_id: uuid::Uuid,
         max_depth: usize,
     ) -> Result<causality::CausalChain> {
-        causality::trace_causality(self, event_id, max_depth, causality::TraceDirection::Down, None).await
+        causality::trace_causality(
+            self,
+            event_id,
+            max_depth,
+            causality::TraceDirection::Down,
+            None,
+        )
+        .await
     }
 
     pub async fn trace_causality_with_options(
