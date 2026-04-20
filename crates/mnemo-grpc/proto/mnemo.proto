@@ -85,6 +85,16 @@ message RecallRequest {
   repeated float hybrid_weights = 10;
   optional float rrf_k = 11;
   optional string as_of = 12;
+  /// When true, each ScoredMemory carries a score_breakdown.
+  optional bool explain = 13;
+}
+
+message ScoreBreakdown {
+  float vector = 1;
+  float bm25 = 2;
+  float graph = 3;
+  float recency = 4;
+  uint32 rrf_rank = 5;
 }
 
 message RecallResponse {
@@ -105,6 +115,7 @@ message ScoredMemory {
   string metadata = 10;                 // JSON-encoded string
   uint64 access_count = 11;
   string updated_at = 12;
+  optional ScoreBreakdown score_breakdown = 13;
 }
 
 // ---------------------------------------------------------------------------

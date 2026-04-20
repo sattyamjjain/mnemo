@@ -87,6 +87,7 @@ async fn test_full_lifecycle() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .expect("recall should succeed");
@@ -144,6 +145,7 @@ async fn test_full_lifecycle() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .expect("recall should succeed");
@@ -237,6 +239,7 @@ async fn test_multiple_memories_with_filtering() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -260,6 +263,7 @@ async fn test_multiple_memories_with_filtering() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -283,6 +287,7 @@ async fn test_multiple_memories_with_filtering() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -307,6 +312,7 @@ async fn test_multiple_memories_with_filtering() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -399,6 +405,7 @@ async fn test_access_count_increments() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
             })
             .await
             .unwrap();
@@ -835,6 +842,7 @@ async fn test_exact_recall_strategy() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -1070,6 +1078,7 @@ async fn test_quarantined_excluded_from_recall() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -1188,6 +1197,7 @@ async fn test_recall_scope_filter() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -1213,6 +1223,7 @@ async fn test_recall_scope_filter() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -1271,6 +1282,7 @@ async fn test_recall_multi_type_filter() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -1747,6 +1759,7 @@ async fn test_hybrid_with_graph_signal() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -1833,6 +1846,7 @@ async fn test_sync_push_pull() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -2031,6 +2045,7 @@ async fn test_permission_safe_ann() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -2136,6 +2151,7 @@ async fn test_as_of_point_in_time() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: Some(t_between.clone()),
+            explain: None,
         })
         .await
         .unwrap();
@@ -2161,6 +2177,7 @@ async fn test_as_of_point_in_time() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: Some(t_after_both.clone()),
+            explain: None,
         })
         .await
         .unwrap();
@@ -2185,6 +2202,7 @@ async fn test_as_of_point_in_time() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: Some(t_after_delete.clone()),
+            explain: None,
         })
         .await
         .unwrap();
@@ -2236,6 +2254,7 @@ async fn test_event_integrity_verification() {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         })
         .await
         .unwrap();
@@ -2508,6 +2527,84 @@ async fn test_forget_subject_redact_preserves_hash_chain() {
         .filter(|e| e.event_type == EventType::MemoryRedact)
         .count();
     assert_eq!(redacts, 2);
+}
+
+/// `recall(explain=true)` surfaces the per-signal contributions that drove
+/// the final RRF fusion. The hybrid path is only active when the engine has a
+/// full-text index attached, so the test wires Tantivy in explicitly.
+#[tokio::test]
+async fn test_recall_explain_populates_score_breakdown() {
+    use mnemo_core::search::tantivy_index::TantivyFullTextIndex;
+
+    let storage = Arc::new(mnemo_core::storage::duckdb::DuckDbStorage::open_in_memory().unwrap());
+    let index = Arc::new(mnemo_core::index::usearch::UsearchIndex::new(128).unwrap());
+    let embedding = Arc::new(mnemo_core::embedding::NoopEmbedding::new(128));
+    let full_text = Arc::new(TantivyFullTextIndex::open_in_memory().unwrap());
+    let engine = Arc::new(
+        MnemoEngine::new(
+            storage,
+            index,
+            embedding,
+            "explain-agent".to_string(),
+            None,
+        )
+        .with_full_text(full_text),
+    );
+
+    for content in ["alpha fact", "alpha variant", "unrelated fact"] {
+        engine
+            .remember(RememberRequest {
+                content: content.to_string(),
+                agent_id: None,
+                memory_type: None,
+                scope: None,
+                importance: Some(0.5),
+                tags: None,
+                metadata: None,
+                source_type: None,
+                source_id: None,
+                org_id: None,
+                thread_id: None,
+                ttl_seconds: None,
+                related_to: None,
+                decay_rate: None,
+                created_by: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    let mut request = RecallRequest::new("alpha".to_string());
+    request.limit = Some(10);
+    request.strategy = Some("hybrid".to_string());
+    request.explain = Some(true);
+
+    let response = engine.recall(request).await.unwrap();
+    assert!(
+        !response.memories.is_empty(),
+        "hybrid recall must return results"
+    );
+
+    let explained = response
+        .memories
+        .iter()
+        .filter(|m| m.score_breakdown.is_some())
+        .count();
+    assert!(
+        explained > 0,
+        "expected at least one result with score_breakdown populated"
+    );
+
+    let mut plain = RecallRequest::new("alpha".to_string());
+    plain.strategy = Some("hybrid".to_string());
+    let plain_resp = engine.recall(plain).await.unwrap();
+    assert!(
+        plain_resp
+            .memories
+            .iter()
+            .all(|m| m.score_breakdown.is_none()),
+        "score_breakdown must be absent when explain is not set"
+    );
 }
 
 /// `replay(as_of=T1)` synthesizes a virtual checkpoint that includes memories

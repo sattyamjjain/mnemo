@@ -145,7 +145,7 @@ impl MnemoClient {
         self.remember(content, memory_type, scope, importance, tags, metadata, None, None, None)
     }
 
-    #[pyo3(signature = (query, limit=None, memory_type=None, min_importance=None, tags=None, strategy=None))]
+    #[pyo3(signature = (query, limit=None, memory_type=None, min_importance=None, tags=None, strategy=None, explain=None))]
     fn recall(
         &self,
         query: String,
@@ -154,6 +154,7 @@ impl MnemoClient {
         min_importance: Option<f32>,
         tags: Option<Vec<String>>,
         strategy: Option<String>,
+        explain: Option<bool>,
     ) -> PyResult<Py<PyAny>> {
         let request = RecallRequest {
             query,
@@ -171,6 +172,7 @@ impl MnemoClient {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain,
         };
 
         let response = self
@@ -197,6 +199,15 @@ impl MnemoClient {
                     dict.set_item("access_count", m.access_count).unwrap();
                     dict.set_item("created_at", &m.created_at).unwrap();
                     dict.set_item("updated_at", &m.updated_at).unwrap();
+                    if let Some(ref b) = m.score_breakdown {
+                        let bd = PyDict::new(py);
+                        bd.set_item("vector", b.vector).unwrap();
+                        bd.set_item("bm25", b.bm25).unwrap();
+                        bd.set_item("graph", b.graph).unwrap();
+                        bd.set_item("recency", b.recency).unwrap();
+                        bd.set_item("rrf_rank", b.rrf_rank).unwrap();
+                        dict.set_item("score_breakdown", bd).unwrap();
+                    }
                     dict.into_any().unbind()
                 })
                 .collect();
@@ -216,7 +227,7 @@ impl MnemoClient {
         min_importance: Option<f32>,
         tags: Option<Vec<String>>,
     ) -> PyResult<Py<PyAny>> {
-        self.recall(query, limit, memory_type, min_importance, tags, None)
+        self.recall(query, limit, memory_type, min_importance, tags, None, None)
     }
 
     #[pyo3(signature = (memory_ids, strategy=None))]

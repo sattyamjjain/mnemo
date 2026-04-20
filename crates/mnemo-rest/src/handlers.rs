@@ -76,6 +76,7 @@ pub struct RecallParams {
     pub memory_types: Option<String>,
     pub hybrid_weights: Option<String>,
     pub rrf_k: Option<f32>,
+    pub explain: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,6 +208,7 @@ pub async fn recall_handler(
         hybrid_weights,
         rrf_k: params.rrf_k,
         as_of: params.as_of,
+        explain: params.explain,
     };
 
     let response = engine.recall(request).await?;

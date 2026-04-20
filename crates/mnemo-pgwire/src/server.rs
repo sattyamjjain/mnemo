@@ -190,6 +190,7 @@ async fn handle_query(
                 hybrid_weights: None,
                 rrf_k: None,
                 as_of: None,
+                explain: None,
             };
 
             let response = engine.recall(request).await?;

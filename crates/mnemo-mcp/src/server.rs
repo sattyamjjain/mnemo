@@ -199,6 +199,7 @@ impl MnemoServer {
         request.hybrid_weights = input.hybrid_weights;
         request.rrf_k = input.rrf_k;
         request.as_of = input.as_of;
+        request.explain = input.explain;
 
         match self.engine.recall(request).await {
             Ok(response) => {

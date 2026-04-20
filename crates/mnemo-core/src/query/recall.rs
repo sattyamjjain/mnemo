@@ -41,6 +41,10 @@ pub struct RecallRequest {
     pub hybrid_weights: Option<Vec<f32>>,
     pub rrf_k: Option<f32>,
     pub as_of: Option<String>,
+    /// When set, each `ScoredMemory` is augmented with a `score_breakdown`
+    /// that reports the per-signal score contributions (vector, bm25, graph,
+    /// recency) and final RRF rank.
+    pub explain: Option<bool>,
 }
 
 impl RecallRequest {
@@ -61,8 +65,24 @@ impl RecallRequest {
             hybrid_weights: None,
             rrf_k: None,
             as_of: None,
+            explain: None,
         }
     }
+}
+
+/// Per-signal score contributions for a single recall hit.
+///
+/// Emitted when `RecallRequest.explain = Some(true)`. Each field is the
+/// raw signal score used as input to reciprocal-rank fusion (0 when the
+/// memory didn't appear in that list).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScoreBreakdown {
+    pub vector: f32,
+    pub bm25: f32,
+    pub graph: f32,
+    pub recency: f32,
+    /// 0-based position of the memory in the fused ranking.
+    pub rrf_rank: u32,
 }
 
 #[non_exhaustive]
@@ -93,6 +113,8 @@ pub struct ScoredMemory {
     pub access_count: u64,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_breakdown: Option<ScoreBreakdown>,
 }
 
 impl From<(MemoryRecord, f32)> for ScoredMemory {
@@ -110,6 +132,7 @@ impl From<(MemoryRecord, f32)> for ScoredMemory {
             access_count: record.access_count,
             created_at: record.created_at,
             updated_at: record.updated_at,
+            score_breakdown: None,
         }
     }
 }
@@ -151,6 +174,8 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     let perm_filter = |id: Uuid| accessible_ids.contains(&id);
 
     let mut scored_memories: Vec<(MemoryRecord, f32)> = Vec::new();
+    let mut breakdowns: std::collections::HashMap<Uuid, ScoreBreakdown> =
+        std::collections::HashMap::new();
 
     match strategy {
         "lexical" => {
@@ -346,6 +371,26 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 }
                 graph_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
+                // Capture per-signal score maps before moving the ranked lists
+                // into the fusion call, so `explain=true` can surface each
+                // signal's contribution in the response.
+                let explain = request.explain.unwrap_or(false);
+                let (vector_map, bm25_map, recency_map, graph_map): (
+                    std::collections::HashMap<Uuid, f32>,
+                    std::collections::HashMap<Uuid, f32>,
+                    std::collections::HashMap<Uuid, f32>,
+                    std::collections::HashMap<Uuid, f32>,
+                ) = if explain {
+                    (
+                        v_sorted.iter().copied().collect(),
+                        b_sorted.iter().copied().collect(),
+                        recency_ranked.iter().copied().collect(),
+                        graph_ranked.iter().copied().collect(),
+                    )
+                } else {
+                    Default::default()
+                };
+
                 let ranked_lists = vec![v_sorted, b_sorted, recency_ranked, graph_ranked];
                 let rrf_k = request.rrf_k.unwrap_or(60.0);
                 let fused = if let Some(ref weights) = request.hybrid_weights {
@@ -354,11 +399,20 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                     crate::query::retrieval::reciprocal_rank_fusion(&ranked_lists, rrf_k)
                 };
 
-                for (id, score) in fused {
+                for (rank, (id, score)) in fused.into_iter().enumerate() {
                     if let Some(record) = get_memory_cached(engine, id).await?
                         && passes_filters(&record, &request, &agent_id, engine).await
                     {
                         scored_memories.push((record, score));
+                        if explain {
+                            breakdowns.insert(id, ScoreBreakdown {
+                                vector: vector_map.get(&id).copied().unwrap_or(0.0),
+                                bm25: bm25_map.get(&id).copied().unwrap_or(0.0),
+                                graph: graph_map.get(&id).copied().unwrap_or(0.0),
+                                recency: recency_map.get(&id).copied().unwrap_or(0.0),
+                                rrf_rank: rank as u32,
+                            });
+                        }
                     }
                 }
             } else {
@@ -414,7 +468,14 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
 
     let memories: Vec<ScoredMemory> = scored_memories
         .into_iter()
-        .map(ScoredMemory::from)
+        .map(|(record, score)| {
+            let id = record.id;
+            let mut scored = ScoredMemory::from((record, score));
+            if let Some(breakdown) = breakdowns.remove(&id) {
+                scored.score_breakdown = Some(breakdown);
+            }
+            scored
+        })
         .collect();
 
     // Emit MemoryRead event with hash chain linking (fire-and-forget)

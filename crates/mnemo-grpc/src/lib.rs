@@ -228,6 +228,7 @@ impl MnemoService for MnemoGrpcServer {
             hybrid_weights,
             rrf_k: req.rrf_k,
             as_of: req.as_of,
+            explain: req.explain,
         };
 
         let result = self
@@ -252,6 +253,13 @@ impl MnemoService for MnemoGrpcServer {
                 metadata: m.metadata.to_string(),
                 access_count: m.access_count,
                 updated_at: m.updated_at,
+                score_breakdown: m.score_breakdown.map(|b| proto::ScoreBreakdown {
+                    vector: b.vector,
+                    bm25: b.bm25,
+                    graph: b.graph,
+                    recency: b.recency,
+                    rrf_rank: b.rrf_rank,
+                }),
             })
             .collect();
 
