@@ -8,6 +8,7 @@ pub mod lifecycle;
 pub mod merge;
 pub mod poisoning;
 pub mod recall;
+pub mod reflection;
 pub mod remember;
 pub mod replay;
 pub mod retrieval;
@@ -168,6 +169,17 @@ impl MnemoEngine {
     /// one `MemoryExpired` audit event per deletion.
     pub async fn run_ttl_sweep(&self) -> Result<lifecycle::TtlReport> {
         lifecycle::run_ttl_sweep(self).await
+    }
+
+    /// Auto-Dream-compatible reflection pass: date absolutization, external
+    /// rewrite acceptance, semantic dedup, low-importance conflict
+    /// resolution, and stale archival. See [`reflection::run_reflection_pass`].
+    pub async fn run_reflection_pass(
+        &self,
+        agent_id: Option<String>,
+    ) -> Result<reflection::ReflectionReport> {
+        let agent_id = agent_id.unwrap_or_else(|| self.default_agent_id.clone());
+        reflection::run_reflection_pass(self, &agent_id).await
     }
 
     pub async fn share(&self, request: share::ShareRequest) -> Result<share::ShareResponse> {
