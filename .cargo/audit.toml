@@ -1,0 +1,25 @@
+# cargo-audit configuration.
+#
+# Each ignore entry MUST carry a rationale and, where possible, a follow-up
+# owner. Entries here should be reviewed at every dependency bump — do not
+# leave an ignore in place once a fixed upstream version is reachable.
+
+[advisories]
+ignore = [
+    # rsa 0.9.x — Marvin attack on PKCS#1 v1.5 decryption via timing
+    # sidechannels. Upstream has NOT published a fixed release; the only
+    # mitigation is to migrate to OAEP/PSS or to a different crate. Mnemo
+    # pulls `rsa` transitively through `sqlx`; we do not perform PKCS#1 v1.5
+    # decryption of attacker-controlled ciphertexts, so the practical blast
+    # radius here is limited. Revisit once an upstream fix lands.
+    "RUSTSEC-2023-0071",
+
+    # rustls-webpki 0.101.x — certificate name-constraint handling bugs.
+    # Fixed in >=0.103.12 but pulled in transitively through a dependency
+    # path we cannot upgrade without a coordinated bump of the relevant
+    # TLS stack. The relevant constraint behaviour is not used by Mnemo's
+    # own TLS config. Lift this ignore as soon as the transitive bump is
+    # available.
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+]
