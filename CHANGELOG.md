@@ -2,6 +2,87 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.3.0] - 2026-04-20
+
+### Highlights
+
+Auto-Dream-aware consolidation, Letta-style memory tiers, DPDPA +
+EU AI Act compliance primitives, pgvector CVE-2026-3172 fix, and a
+public LongMemEval / LoCoMo benchmark harness. Rolled up on top of
+v0.2.0 (which was merged to main the same day).
+
+### Added
+
+- **Letta-style memory tiers** (`MemoryTier` type alias for the existing
+  `MemoryType` enum; Working / Procedural / Semantic / Episodic). The
+  engine now applies tier-specific behaviours on write: Working memories
+  auto-expire after `ttl_working_seconds` (default 3600s) when no explicit
+  ttl is given, and Procedural memories are clamped to the
+  `procedural_importance_floor` (default 0.8) so system prompts never
+  fall below recall visibility. New builder knobs
+  `with_ttl_working_seconds` and `with_procedural_importance_floor`.
+- **Auto-Dream-compatible reflection pass** —
+  `engine.run_reflection_pass(agent_id)` performs date absolutization
+  (regex rewrites `"yesterday"`, `"last week"`, `"N days ago"`, etc. to
+  ISO-8601 anchored on `created_at`), accepts external rewrites
+  (`metadata.dreamed_at`) and re-embeds, consolidates semantically
+  near-duplicate records (`cosine ≥ 0.92`) into the newer record with
+  merged tags + summed access_count, auto-resolves low-importance
+  conflicts via `KeepNewest`, and archives stale low-importance
+  records. Emits `ReflectionReport` with per-phase counts.
+- **OpenAI Agents SDK GA snapshot store** —
+  `mnemo.openai_sessions_ga.MnemoSnapshotStore` implements
+  `save_snapshot` / `load_snapshot` / `list_snapshots` / `resume` plus
+  `SnapshotRef` with a `snapshot://<session>/<ts>` URI. Pluggable
+  `WorkspaceStorage` supports local FS today and stubs S3/R2/GCS/Azure
+  behind the matching `mnemo[openai-sandbox-<backend>]` extras. Payloads
+  above `inline_threshold_bytes` (default 64 KiB) offload to workspace;
+  Mnemo keeps pointer + SHA-256 and verifies integrity on load.
+- **DPDPA consent manager adapter** in the new `mnemo-compliance` crate
+  — `ConsentSource` trait, `HttpConsentManager` (generic HTTP binding
+  with optional bearer auth), `StaticConsentSource` (tests / single-
+  tenant self-hosting). `ConsentState` carries scope list, expiry, and
+  consent-token hash. `ComplianceError::ConsentDenied` surfaces cleanly.
+- **EU AI Act audit export** — `export_audit_log(events, format, signer)`
+  with two formats: `NdjsonSigned` (one JSON line per event plus a
+  detached Ed25519 signature chain covering `SHA256(index ∥ prev_hash
+  ∥ event_json)`; canonicalised through `serde_json::Value` so signer
+  and verifier agree on bytes) and `EuAiOfficeCsv` (the AI Office GPAI
+  template columns with RFC4180 escaping). `verify_ndjson_signed`
+  walks the chain and rejects tampered rows with the offending index.
+- **Benchmark harness** — `mnemo.benches.locomo_runner` (with CLI)
+  runs `recall@5`/`recall@10`/MRR/p50/p95/p99 across
+  `auto`/`vector_only`/`hybrid_rrf`/`graph_boosted` strategies and
+  emits a Markdown report + JSON sidecar under `docs/benchmarks/`.
+  Real dataset loaders stubbed behind the `mnemo[benchmark]` extra;
+  first live numbers published in v0.3.0-rc2.
+
+### Changed
+
+- `pgvector` upgraded from 0.4 → 0.8.2 to pick up the fix for
+  **CVE-2026-3172** (buffer overflow in parallel HNSW builds). Also
+  enables `hnsw.iterative_scan` for strict-order filtered recall — the
+  migration SQL will adopt it once PostgreSQL backends regenerate
+  indexes.
+
+### Carried forward from the unreleased v0.2.0
+
+The full T1–T6 v0.2.0 feature set is included (Claude Agent SDK
+adapter, OpenAI preview `Session` store, TTL sweeper,
+GDPR-safe `forget_subject`, `replay(as_of=...)`, recall
+`ScoreBreakdown` / `explain`). v0.2.0 was merged to main earlier today
+via admin merge; the tag itself is skipped.
+
+### Deferred to v0.3.0-rc2
+
+- **rmcp 0.14 → 1.3 + MCP resource exposure** (prior T7). PR #27 stays
+  open; the API migration is its own release.
+- **DuckDB 1.4 → 1.5.2 + DuckLake opt-in backend** (Task 12b). Ships
+  behind the `storage-ducklake` feature flag once the sorted-table +
+  bucket-partitioning API lands.
+- **First published LongMemEval / LoCoMo numbers**. The harness is
+  shippable today; the datasets come with the `mnemo[benchmark]` extra.
+
 ## [0.2.0] - 2026-04-20
 
 ### Highlights

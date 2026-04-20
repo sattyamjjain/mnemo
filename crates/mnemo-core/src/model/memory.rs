@@ -154,6 +154,24 @@ pub enum MemoryType {
     Working,
 }
 
+/// Letta-style memory tier. Alias for `MemoryType`; the same four variants
+/// describe both "what kind of memory is this" (Episodic/Semantic) and "how
+/// should the engine treat it" (Working TTL, Procedural importance floor,
+/// Episodic per-session logging). Kept as a single type to avoid carrying two
+/// semantically-redundant fields on every record.
+///
+/// Tier-specific behaviours live on the engine, not on the data model:
+///
+/// * `Working` — auto-expires after `engine.ttl_working_seconds` when the
+///   caller doesn't supply an explicit `expires_at`; always recall-boosted
+///   when the query carries a matching `thread_id` (session id).
+/// * `Procedural` — importance is clamped to a `>=0.8` floor on write; decay
+///   is disabled on recall via `effective_importance_with(Procedural)`.
+/// * `Semantic` — current default behaviour, no special handling.
+/// * `Episodic` — interaction logs; relies on `thread_id` for session scope
+///   and is the prime target for the reflection pass.
+pub type MemoryTier = MemoryType;
+
 impl std::fmt::Display for MemoryType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

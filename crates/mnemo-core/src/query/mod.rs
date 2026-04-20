@@ -8,6 +8,7 @@ pub mod lifecycle;
 pub mod merge;
 pub mod poisoning;
 pub mod recall;
+pub mod reflection;
 pub mod remember;
 pub mod replay;
 pub mod retrieval;
@@ -63,7 +64,19 @@ pub struct MnemoEngine {
     pub cold_storage: Option<Arc<dyn ColdStorage>>,
     pub cache: Option<Arc<MemoryCache>>,
     pub embed_events: bool,
+    /// Default TTL applied to `Working`-tier memories whose `remember`
+    /// request does not supply an explicit `ttl_seconds`. Defaults to 1 hour.
+    pub ttl_working_seconds: u64,
+    /// Importance floor enforced on write for `Procedural`-tier memories.
+    /// Defaults to 0.8.
+    pub procedural_importance_floor: f32,
 }
+
+/// Default TTL (in seconds) applied to Working-tier memories.
+pub const DEFAULT_TTL_WORKING_SECONDS: u64 = 3600;
+
+/// Minimum importance floor applied to Procedural-tier memories on write.
+pub const DEFAULT_PROCEDURAL_IMPORTANCE_FLOOR: f32 = 0.8;
 
 impl MnemoEngine {
     pub fn new(
@@ -84,7 +97,23 @@ impl MnemoEngine {
             cold_storage: None,
             cache: None,
             embed_events: false,
+            ttl_working_seconds: DEFAULT_TTL_WORKING_SECONDS,
+            procedural_importance_floor: DEFAULT_PROCEDURAL_IMPORTANCE_FLOOR,
         }
+    }
+
+    /// Override the default 1-hour TTL applied to `Working`-tier memories
+    /// when a caller does not supply an explicit `ttl_seconds`.
+    pub fn with_ttl_working_seconds(mut self, seconds: u64) -> Self {
+        self.ttl_working_seconds = seconds;
+        self
+    }
+
+    /// Override the default 0.8 importance floor applied to Procedural
+    /// memories on write.
+    pub fn with_procedural_importance_floor(mut self, floor: f32) -> Self {
+        self.procedural_importance_floor = floor.clamp(0.0, 1.0);
+        self
     }
 
     pub fn with_full_text(mut self, ft: Arc<dyn FullTextIndex>) -> Self {
@@ -140,6 +169,17 @@ impl MnemoEngine {
     /// one `MemoryExpired` audit event per deletion.
     pub async fn run_ttl_sweep(&self) -> Result<lifecycle::TtlReport> {
         lifecycle::run_ttl_sweep(self).await
+    }
+
+    /// Auto-Dream-compatible reflection pass: date absolutization, external
+    /// rewrite acceptance, semantic dedup, low-importance conflict
+    /// resolution, and stale archival. See [`reflection::run_reflection_pass`].
+    pub async fn run_reflection_pass(
+        &self,
+        agent_id: Option<String>,
+    ) -> Result<reflection::ReflectionReport> {
+        let agent_id = agent_id.unwrap_or_else(|| self.default_agent_id.clone());
+        reflection::run_reflection_pass(self, &agent_id).await
     }
 
     pub async fn share(&self, request: share::ShareRequest) -> Result<share::ShareResponse> {

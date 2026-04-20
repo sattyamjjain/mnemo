@@ -203,11 +203,15 @@ async fn test_multiple_memories_with_filtering() {
         .await
         .unwrap();
 
+    // Uses Episodic rather than Procedural so the Task 8 importance floor
+    // (0.8 on Procedural) does not bump this record above the min_importance
+    // filter below — the test's intent is "low-importance record gets
+    // filtered out", which the tier behaviour would otherwise break.
     let _m3 = engine
         .remember(RememberRequest {
             content: "Morning standup at 9:30 AM".to_string(),
             agent_id: None,
-            memory_type: Some(MemoryType::Procedural),
+            memory_type: Some(MemoryType::Episodic),
             scope: None,
             importance: Some(0.5),
             tags: Some(vec!["schedule".to_string()]),
@@ -2608,6 +2612,311 @@ async fn test_forget_subject_redact_preserves_hash_chain() {
         .filter(|e| e.event_type == EventType::MemoryRedact)
         .count();
     assert_eq!(redacts, 2);
+}
+
+/// Reflection pass rewrites relative temporal expressions to ISO-8601
+/// using each record's `created_at` as the anchor.
+#[tokio::test]
+async fn test_reflection_absolutizes_relative_dates() {
+    use mnemo_core::model::memory::{
+        ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+    };
+
+    let engine = create_engine("dream-agent");
+
+    let record = MemoryRecord {
+        id: uuid::Uuid::now_v7(),
+        agent_id: "dream-agent".to_string(),
+        content: "We decided yesterday to use Redis for caching.".to_string(),
+        memory_type: MemoryType::Semantic,
+        scope: Scope::Private,
+        importance: 0.6,
+        tags: Vec::new(),
+        metadata: serde_json::json!({}),
+        embedding: None,
+        content_hash: vec![],
+        prev_hash: None,
+        source_type: SourceType::Agent,
+        source_id: None,
+        consolidation_state: ConsolidationState::Raw,
+        access_count: 1,
+        org_id: None,
+        thread_id: None,
+        created_at: "2026-04-15T12:00:00Z".to_string(),
+        updated_at: "2026-04-15T12:00:00Z".to_string(),
+        last_accessed_at: None,
+        expires_at: None,
+        deleted_at: None,
+        decay_rate: None,
+        created_by: None,
+        version: 1,
+        prev_version_id: None,
+        quarantined: false,
+        quarantine_reason: None,
+        decay_function: None,
+    };
+    engine.storage.insert_memory(&record).await.unwrap();
+
+    let report = engine
+        .run_reflection_pass(Some("dream-agent".to_string()))
+        .await
+        .unwrap();
+
+    assert!(report.absolutized_dates >= 1, "expected a date rewrite");
+    let updated = engine.storage.get_memory(record.id).await.unwrap().unwrap();
+    assert!(
+        updated.content.contains("2026-04-14"),
+        "yesterday anchored on 2026-04-15 should resolve to 2026-04-14; content: {}",
+        updated.content
+    );
+}
+
+/// The reflection pass consolidates semantically-identical records into a
+/// single surviving record with merged tags and summed access_count.
+#[tokio::test]
+async fn test_reflection_consolidates_near_duplicates() {
+    use mnemo_core::model::memory::{
+        ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+    };
+
+    let engine = create_engine("dedup-agent");
+
+    // Construct two near-identical records by hand, giving them an
+    // identical embedding so cosine similarity is exactly 1.0.
+    let shared_embedding: Vec<f32> = (0..128).map(|i| (i as f32 / 128.0).sin()).collect();
+    let mk = |id: uuid::Uuid, created: &str, tag: &str| MemoryRecord {
+        id,
+        agent_id: "dedup-agent".to_string(),
+        content: "User prefers dark mode for the dashboard.".to_string(),
+        memory_type: MemoryType::Semantic,
+        scope: Scope::Private,
+        importance: 0.5,
+        tags: vec![tag.to_string()],
+        metadata: serde_json::json!({}),
+        embedding: Some(shared_embedding.clone()),
+        content_hash: vec![],
+        prev_hash: None,
+        source_type: SourceType::Agent,
+        source_id: None,
+        consolidation_state: ConsolidationState::Raw,
+        access_count: 2,
+        org_id: None,
+        thread_id: None,
+        created_at: created.to_string(),
+        updated_at: created.to_string(),
+        last_accessed_at: None,
+        expires_at: None,
+        deleted_at: None,
+        decay_rate: None,
+        created_by: None,
+        version: 1,
+        prev_version_id: None,
+        quarantined: false,
+        quarantine_reason: None,
+        decay_function: None,
+    };
+    let id_a = uuid::Uuid::now_v7();
+    let id_b = uuid::Uuid::now_v7();
+    let a = mk(id_a, "2026-04-01T00:00:00Z", "pref-older");
+    let b = mk(id_b, "2026-04-10T00:00:00Z", "pref-newer");
+    engine.storage.insert_memory(&a).await.unwrap();
+    engine.storage.insert_memory(&b).await.unwrap();
+
+    let report = engine
+        .run_reflection_pass(Some("dedup-agent".to_string()))
+        .await
+        .unwrap();
+    assert_eq!(report.consolidated, 1, "one pair should collapse");
+
+    let keeper = engine.storage.get_memory(id_b).await.unwrap().unwrap();
+    let victim = engine.storage.get_memory(id_a).await.unwrap().unwrap();
+    assert_eq!(victim.consolidation_state, ConsolidationState::Consolidated);
+    assert!(keeper.tags.contains(&"pref-older".to_string()));
+    assert!(keeper.tags.contains(&"pref-newer".to_string()));
+    assert_eq!(keeper.access_count, 4);
+}
+
+/// `metadata.dreamed_at` set by the Claude Agent SDK bridge causes the
+/// reflection pass to accept the external rewrite and re-embed.
+#[tokio::test]
+async fn test_reflection_accepts_auto_dream_rewrite() {
+    use mnemo_core::model::memory::{
+        ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+    };
+
+    let engine = create_engine("dream-accept-agent");
+
+    let record = MemoryRecord {
+        id: uuid::Uuid::now_v7(),
+        agent_id: "dream-accept-agent".to_string(),
+        content: "auto-dream rewrote this to be more concise".to_string(),
+        memory_type: MemoryType::Semantic,
+        scope: Scope::Private,
+        importance: 0.5,
+        tags: vec![],
+        metadata: serde_json::json!({"dreamed_at": "2026-04-20T00:00:00Z"}),
+        embedding: None,
+        content_hash: vec![],
+        prev_hash: None,
+        source_type: SourceType::Agent,
+        source_id: None,
+        consolidation_state: ConsolidationState::Raw,
+        access_count: 0,
+        org_id: None,
+        thread_id: None,
+        created_at: "2026-04-19T00:00:00Z".to_string(),
+        updated_at: "2026-04-20T00:00:00Z".to_string(),
+        last_accessed_at: None,
+        expires_at: None,
+        deleted_at: None,
+        decay_rate: None,
+        created_by: None,
+        version: 1,
+        prev_version_id: None,
+        quarantined: false,
+        quarantine_reason: None,
+        decay_function: None,
+    };
+    engine.storage.insert_memory(&record).await.unwrap();
+
+    let report = engine
+        .run_reflection_pass(Some("dream-accept-agent".to_string()))
+        .await
+        .unwrap();
+    assert!(
+        report.dreamed_accepted >= 1,
+        "auto-dream rewrite should be accepted"
+    );
+
+    let after = engine.storage.get_memory(record.id).await.unwrap().unwrap();
+    assert_eq!(
+        after
+            .metadata
+            .get("dreamed_processed")
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "dreamed_processed must be set so the pass is idempotent"
+    );
+}
+
+/// Working-tier memories get an automatic TTL applied when the caller
+/// doesn't supply `ttl_seconds`. Caller-supplied TTL still wins.
+#[tokio::test]
+async fn test_working_tier_gets_auto_ttl() {
+    let engine = create_engine("tier-agent");
+
+    let resp = engine
+        .remember(RememberRequest {
+            content: "ephemeral session fact".to_string(),
+            agent_id: None,
+            memory_type: Some(MemoryType::Working),
+            scope: None,
+            importance: Some(0.5),
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: Some("session-1".to_string()),
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let record = engine
+        .storage
+        .get_memory(resp.id)
+        .await
+        .unwrap()
+        .expect("record must exist");
+    assert!(
+        record.expires_at.is_some(),
+        "Working memory must auto-populate expires_at"
+    );
+    let exp = chrono::DateTime::parse_from_rfc3339(record.expires_at.as_ref().unwrap()).unwrap();
+    let created = chrono::DateTime::parse_from_rfc3339(&record.created_at).unwrap();
+    let delta = (exp - created).num_seconds();
+    assert!(
+        (3595..=3605).contains(&delta),
+        "Working memory TTL should default to ~1 hour, got {delta}s"
+    );
+}
+
+/// Procedural-tier memories have their importance clamped to the engine's
+/// floor on write so they never decay below recall visibility.
+#[tokio::test]
+async fn test_procedural_tier_applies_importance_floor() {
+    let engine = create_engine("proc-agent");
+
+    let resp = engine
+        .remember(RememberRequest {
+            content: "system prompt: you are a helpful assistant".to_string(),
+            agent_id: None,
+            memory_type: Some(MemoryType::Procedural),
+            scope: None,
+            importance: Some(0.2), // below the default 0.8 floor
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: None,
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let record = engine
+        .storage
+        .get_memory(resp.id)
+        .await
+        .unwrap()
+        .expect("record must exist");
+    assert!(
+        record.importance >= 0.8,
+        "Procedural importance must be clamped to >=0.8, got {}",
+        record.importance
+    );
+    assert_eq!(record.memory_type, MemoryType::Procedural);
+}
+
+/// Non-Working tiers do NOT receive an automatic TTL.
+#[tokio::test]
+async fn test_semantic_tier_has_no_auto_ttl() {
+    let engine = create_engine("sem-agent");
+
+    let resp = engine
+        .remember(RememberRequest {
+            content: "permanent fact".to_string(),
+            agent_id: None,
+            memory_type: Some(MemoryType::Semantic),
+            scope: None,
+            importance: Some(0.5),
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: None,
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let record = engine.storage.get_memory(resp.id).await.unwrap().unwrap();
+    assert!(
+        record.expires_at.is_none(),
+        "Semantic memory must not receive an auto-TTL"
+    );
 }
 
 /// `recall(explain=true)` surfaces the per-signal contributions that drove
