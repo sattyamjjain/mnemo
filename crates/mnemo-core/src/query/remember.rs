@@ -70,7 +70,15 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
         return Err(Error::Validation("content cannot be empty".to_string()));
     }
 
-    let importance = request.importance.unwrap_or(0.5);
+    let resolved_tier = request.memory_type.unwrap_or(MemoryType::Episodic);
+
+    // Tier-specific importance enforcement:
+    // Procedural memories (system prompts, tool definitions) carry an
+    // importance floor so they never decay below the recall threshold.
+    let mut importance = request.importance.unwrap_or(0.5);
+    if resolved_tier == MemoryType::Procedural && importance < engine.procedural_importance_floor {
+        importance = engine.procedural_importance_floor;
+    }
     if !(0.0..=1.0).contains(&importance) {
         return Err(Error::Validation(
             "importance must be between 0.0 and 1.0".to_string(),
@@ -102,16 +110,24 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
         .await?;
     let prev_hash = Some(compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
 
-    // Compute expires_at from ttl_seconds
-    let expires_at = request
-        .ttl_seconds
-        .map(|ttl| (now + chrono::Duration::seconds(ttl as i64)).to_rfc3339());
+    // Compute expires_at from ttl_seconds. Working-tier memories get an
+    // automatic TTL so they can't outlive their session — caller-supplied
+    // ttl_seconds still wins.
+    let effective_ttl = request.ttl_seconds.or_else(|| {
+        if resolved_tier == MemoryType::Working {
+            Some(engine.ttl_working_seconds)
+        } else {
+            None
+        }
+    });
+    let expires_at =
+        effective_ttl.map(|ttl| (now + chrono::Duration::seconds(ttl as i64)).to_rfc3339());
 
     let mut record = MemoryRecord {
         id,
         agent_id: agent_id.clone(),
         content: request.content,
-        memory_type: request.memory_type.unwrap_or(MemoryType::Episodic),
+        memory_type: resolved_tier,
         scope: request.scope.unwrap_or(Scope::Private),
         importance,
         tags: request.tags.unwrap_or_default(),

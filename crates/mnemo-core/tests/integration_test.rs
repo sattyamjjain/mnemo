@@ -2610,6 +2610,126 @@ async fn test_forget_subject_redact_preserves_hash_chain() {
     assert_eq!(redacts, 2);
 }
 
+/// Working-tier memories get an automatic TTL applied when the caller
+/// doesn't supply `ttl_seconds`. Caller-supplied TTL still wins.
+#[tokio::test]
+async fn test_working_tier_gets_auto_ttl() {
+    let engine = create_engine("tier-agent");
+
+    let resp = engine
+        .remember(RememberRequest {
+            content: "ephemeral session fact".to_string(),
+            agent_id: None,
+            memory_type: Some(MemoryType::Working),
+            scope: None,
+            importance: Some(0.5),
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: Some("session-1".to_string()),
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let record = engine
+        .storage
+        .get_memory(resp.id)
+        .await
+        .unwrap()
+        .expect("record must exist");
+    assert!(
+        record.expires_at.is_some(),
+        "Working memory must auto-populate expires_at"
+    );
+    let exp = chrono::DateTime::parse_from_rfc3339(record.expires_at.as_ref().unwrap()).unwrap();
+    let created = chrono::DateTime::parse_from_rfc3339(&record.created_at).unwrap();
+    let delta = (exp - created).num_seconds();
+    assert!(
+        (3595..=3605).contains(&delta),
+        "Working memory TTL should default to ~1 hour, got {delta}s"
+    );
+}
+
+/// Procedural-tier memories have their importance clamped to the engine's
+/// floor on write so they never decay below recall visibility.
+#[tokio::test]
+async fn test_procedural_tier_applies_importance_floor() {
+    let engine = create_engine("proc-agent");
+
+    let resp = engine
+        .remember(RememberRequest {
+            content: "system prompt: you are a helpful assistant".to_string(),
+            agent_id: None,
+            memory_type: Some(MemoryType::Procedural),
+            scope: None,
+            importance: Some(0.2), // below the default 0.8 floor
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: None,
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let record = engine
+        .storage
+        .get_memory(resp.id)
+        .await
+        .unwrap()
+        .expect("record must exist");
+    assert!(
+        record.importance >= 0.8,
+        "Procedural importance must be clamped to >=0.8, got {}",
+        record.importance
+    );
+    assert_eq!(record.memory_type, MemoryType::Procedural);
+}
+
+/// Non-Working tiers do NOT receive an automatic TTL.
+#[tokio::test]
+async fn test_semantic_tier_has_no_auto_ttl() {
+    let engine = create_engine("sem-agent");
+
+    let resp = engine
+        .remember(RememberRequest {
+            content: "permanent fact".to_string(),
+            agent_id: None,
+            memory_type: Some(MemoryType::Semantic),
+            scope: None,
+            importance: Some(0.5),
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: None,
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let record = engine.storage.get_memory(resp.id).await.unwrap().unwrap();
+    assert!(
+        record.expires_at.is_none(),
+        "Semantic memory must not receive an auto-TTL"
+    );
+}
+
 /// `recall(explain=true)` surfaces the per-signal contributions that drove
 /// the final RRF fusion. The hybrid path is only active when the engine has a
 /// full-text index attached, so the test wires Tantivy in explicitly.
