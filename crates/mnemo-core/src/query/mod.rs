@@ -182,6 +182,18 @@ impl MnemoEngine {
         reflection::run_reflection_pass(self, &agent_id).await
     }
 
+    /// Reflection pass that honours the new `ReflectionMode` gate (v0.3.1).
+    /// Use `Coordinated` to avoid double-work when Auto Dream is also running.
+    pub async fn run_reflection_pass_with_mode(
+        &self,
+        agent_id: Option<String>,
+        mode: reflection::ReflectionMode,
+        force: bool,
+    ) -> Result<reflection::ReflectionReport> {
+        let agent_id = agent_id.unwrap_or_else(|| self.default_agent_id.clone());
+        reflection::run_reflection_pass_with_mode(self, &agent_id, mode, force).await
+    }
+
     pub async fn share(&self, request: share::ShareRequest) -> Result<share::ShareResponse> {
         share::execute(self, request).await
     }

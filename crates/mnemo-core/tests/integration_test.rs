@@ -2614,6 +2614,171 @@ async fn test_forget_subject_redact_preserves_hash_chain() {
     assert_eq!(redacts, 2);
 }
 
+/// Coordinated mode skips when fewer than the new-record floor have
+/// been written since the last successful pass.
+#[tokio::test]
+async fn test_coordinated_skips_below_new_record_floor() {
+    use mnemo_core::query::reflection::{ReflectionMode, SkipReason};
+
+    let engine = create_engine("coord-agent");
+
+    // Seed 3 records (below the MIN_NEW_RECORDS_FOR_COORDINATED_RUN=5 floor).
+    for i in 0..3 {
+        engine
+            .remember(RememberRequest {
+                content: format!("entry {i}"),
+                agent_id: None,
+                memory_type: None,
+                scope: None,
+                importance: Some(0.5),
+                tags: None,
+                metadata: None,
+                source_type: None,
+                source_id: None,
+                org_id: None,
+                thread_id: None,
+                ttl_seconds: None,
+                related_to: None,
+                decay_rate: None,
+                created_by: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    let report = engine
+        .run_reflection_pass_with_mode(
+            Some("coord-agent".to_string()),
+            ReflectionMode::Coordinated,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.skipped, Some(SkipReason::NotEnoughNewRecords));
+    assert_eq!(report.total_scanned, 0, "skipped pass must not scan");
+}
+
+/// `Always` mode ignores the floor.
+#[tokio::test]
+async fn test_always_mode_ignores_cadence() {
+    use mnemo_core::query::reflection::ReflectionMode;
+
+    let engine = create_engine("always-agent");
+    for i in 0..2 {
+        engine
+            .remember(RememberRequest {
+                content: format!("entry {i}"),
+                agent_id: None,
+                memory_type: None,
+                scope: None,
+                importance: Some(0.5),
+                tags: None,
+                metadata: None,
+                source_type: None,
+                source_id: None,
+                org_id: None,
+                thread_id: None,
+                ttl_seconds: None,
+                related_to: None,
+                decay_rate: None,
+                created_by: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    let report = engine
+        .run_reflection_pass_with_mode(
+            Some("always-agent".to_string()),
+            ReflectionMode::Always,
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(report.skipped.is_none(), "Always mode never skips");
+    assert_eq!(report.total_scanned, 2);
+}
+
+/// Auto Dream organization-report trailer is parsed, counts are extracted,
+/// and a `DreamReportIngested` event is emitted. Idempotent across runs.
+#[tokio::test]
+async fn test_dream_report_ingestion_is_idempotent() {
+    use mnemo_core::query::reflection::ReflectionMode;
+
+    let engine = create_engine("dream-ingest");
+    // Seed enough records to clear the floor, with one carrying a dream
+    // report trailer.
+    for i in 0..5 {
+        let content = if i == 0 {
+            "Session notes.\n\n## Organization Report\nConsolidated: 7\nRemoved: 2\nReindexed: 3\n"
+                .to_string()
+        } else {
+            format!("filler {i}")
+        };
+        engine
+            .remember(RememberRequest {
+                content,
+                agent_id: None,
+                memory_type: None,
+                scope: None,
+                importance: Some(0.5),
+                tags: None,
+                metadata: None,
+                source_type: None,
+                source_id: None,
+                org_id: None,
+                thread_id: None,
+                ttl_seconds: None,
+                related_to: None,
+                decay_rate: None,
+                created_by: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    let first = engine
+        .run_reflection_pass_with_mode(
+            Some("dream-ingest".to_string()),
+            ReflectionMode::Always,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.dream_report_ingested, 1);
+
+    let events = engine.storage.list_events("dream-ingest", 1000, 0).await.unwrap();
+    let report_events = events
+        .iter()
+        .filter(|e| e.event_type == EventType::DreamReportIngested)
+        .count();
+    assert_eq!(report_events, 1);
+
+    // Second pass must not re-ingest (idempotent via metadata marker).
+    let second = engine
+        .run_reflection_pass_with_mode(
+            Some("dream-ingest".to_string()),
+            ReflectionMode::Always,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.dream_report_ingested, 0);
+}
+
+/// Pure parser test for the organization-report trailer.
+#[test]
+fn test_parse_organization_report_counts() {
+    use mnemo_core::query::reflection::parse_organization_report;
+    let text = "pre-amble\n\n## Organization Report\nConsolidated: 4\nRemoved = 1\nRe-indexed: 9\ntail";
+    let report = parse_organization_report(text).expect("should parse");
+    assert_eq!(report.consolidated, 4);
+    assert_eq!(report.removed, 1);
+    assert_eq!(report.reindexed, 9);
+
+    assert!(parse_organization_report("no trailer here").is_none());
+}
+
 /// Reflection pass rewrites relative temporal expressions to ISO-8601
 /// using each record's `created_at` as the anchor.
 #[tokio::test]

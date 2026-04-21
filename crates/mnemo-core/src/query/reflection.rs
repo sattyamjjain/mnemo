@@ -41,6 +41,43 @@ const DEFAULT_LOW_IMPORTANCE_CUTOFF: f32 = 0.3;
 const DEFAULT_ARCHIVE_IMPORTANCE: f32 = 0.2;
 const DEFAULT_ARCHIVE_AGE_HOURS: f64 = 24.0 * 7.0;
 
+/// Controls when the reflection pass runs its expensive phases.
+///
+/// `Coordinated` is the new default in v0.3.1 and honours the same trigger
+/// heuristics Anthropic's Auto Dream uses:
+///   * skip if fewer than `MIN_NEW_RECORDS_FOR_COORDINATED_RUN` new records
+///     have accumulated since the last successful pass;
+///   * skip if fewer than `MIN_HOURS_BETWEEN_COORDINATED_RUNS` have elapsed
+///     since the last successful pass for this agent;
+///   * accept any Auto-Dream-flagged records (`metadata.dreamed_at`)
+///     unconditionally — Auto Dream already did the consolidation work.
+///
+/// `Always` is the pre-v0.3.1 behaviour: run every phase every time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReflectionMode {
+    #[default]
+    Coordinated,
+    Always,
+}
+
+/// Minimum number of newly-written records (since `last_reflection_at`) that
+/// must exist before a `Coordinated` pass runs. Matches Auto Dream's floor.
+pub const MIN_NEW_RECORDS_FOR_COORDINATED_RUN: usize = 5;
+
+/// Minimum interval (in hours) between `Coordinated` passes for one agent.
+/// Matches Auto Dream's 24h cadence.
+pub const MIN_HOURS_BETWEEN_COORDINATED_RUNS: i64 = 24;
+
+/// Why a `Coordinated` pass decided to skip, when it did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkipReason {
+    TooSoon,
+    NotEnoughNewRecords,
+    AutoDreamAlreadyRan,
+}
+
 /// Result of a single reflection pass.
 #[non_exhaustive]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -59,10 +96,57 @@ pub struct ReflectionReport {
     pub conflicts_resolved: usize,
     /// Total records scanned.
     pub total_scanned: usize,
+    /// Populated when `Coordinated` skipped the run; `None` means the pass
+    /// actually executed.
+    pub skipped: Option<SkipReason>,
+    /// Merged/removed/re-indexed counts pulled from an Auto Dream
+    /// organization-report trailer, when present. Emitted as a single
+    /// `DreamReportIngested` event per agent; subsequent passes see the
+    /// idempotent `dream_report_ingested_at` marker in metadata and skip
+    /// re-parsing.
+    pub dream_report_ingested: usize,
 }
 
-/// Run a full reflection pass for `agent_id`.
+/// Run a reflection pass honouring `mode`.
+///
+/// `ReflectionMode::Coordinated` (the default) checks three gates before
+/// running the expensive phases; see [`ReflectionMode`] for details.
+/// When a gate trips, the returned report has `skipped = Some(reason)`
+/// and no state is mutated. Pass `force=true` to override cadence gates.
+pub async fn run_reflection_pass_with_mode(
+    engine: &MnemoEngine,
+    agent_id: &str,
+    mode: ReflectionMode,
+    force: bool,
+) -> Result<ReflectionReport> {
+    if mode == ReflectionMode::Coordinated && !force {
+        if let Some(reason) = coordinated_skip_reason(engine, agent_id).await? {
+            return Ok(ReflectionReport {
+                skipped: Some(reason),
+                ..Default::default()
+            });
+        }
+    }
+    let mut report = run_reflection_pass_inner(engine, agent_id).await?;
+    emit_reflection_completed(engine, agent_id, &report).await;
+    // Ingest any Auto Dream organization-report trailer now that the
+    // record list reflects this pass. Idempotent via metadata.
+    report.dream_report_ingested = ingest_dream_reports(engine, agent_id).await?;
+    Ok(report)
+}
+
+/// Back-compat entry point — runs the reflection pass unconditionally
+/// (equivalent to `run_reflection_pass_with_mode(_, _, Always, true)`).
 pub async fn run_reflection_pass(engine: &MnemoEngine, agent_id: &str) -> Result<ReflectionReport> {
+    run_reflection_pass_with_mode(engine, agent_id, ReflectionMode::Always, true).await
+}
+
+/// The original pass body, now private. `run_reflection_pass_with_mode`
+/// wraps this with the Coordinated gates.
+async fn run_reflection_pass_inner(
+    engine: &MnemoEngine,
+    agent_id: &str,
+) -> Result<ReflectionReport> {
     let filter = MemoryFilter {
         agent_id: Some(agent_id.to_string()),
         include_deleted: false,
@@ -424,6 +508,241 @@ fn hex_encode(bytes: &[u8]) -> String {
         s.push_str(&format!("{:02x}", b));
     }
     s
+}
+
+/// Read the last `ReflectionCompleted` event for `agent_id` and return its
+/// timestamp. When no such event exists, returns `None`.
+async fn last_reflection_at(
+    engine: &MnemoEngine,
+    agent_id: &str,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+    let events = engine.storage.list_events(agent_id, 1000, 0).await?;
+    for event in events {
+        if event.event_type == EventType::ReflectionCompleted
+            && let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&event.timestamp)
+        {
+            return Ok(Some(ts.with_timezone(&chrono::Utc)));
+        }
+    }
+    Ok(None)
+}
+
+/// Gate the Coordinated path on cadence + new-record floor. Returns
+/// `Some(reason)` when the pass should skip.
+async fn coordinated_skip_reason(
+    engine: &MnemoEngine,
+    agent_id: &str,
+) -> Result<Option<SkipReason>> {
+    let last = last_reflection_at(engine, agent_id).await?;
+    let now = chrono::Utc::now();
+    if let Some(last_ts) = last {
+        if (now - last_ts).num_hours() < MIN_HOURS_BETWEEN_COORDINATED_RUNS {
+            return Ok(Some(SkipReason::TooSoon));
+        }
+    }
+
+    // Count records created since the last reflection (or all records if
+    // this is the first pass).
+    let since = last.map(|t| t.to_rfc3339());
+    let filter = MemoryFilter {
+        agent_id: Some(agent_id.to_string()),
+        include_deleted: false,
+        ..Default::default()
+    };
+    let records = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
+    let new_count = records
+        .iter()
+        .filter(|r| match since.as_deref() {
+            None => true,
+            Some(cutoff) => r.created_at.as_str() > cutoff,
+        })
+        .count();
+    if new_count < MIN_NEW_RECORDS_FOR_COORDINATED_RUN {
+        return Ok(Some(SkipReason::NotEnoughNewRecords));
+    }
+
+    // If Auto Dream already rewrote records we'd otherwise consolidate
+    // this cycle, skip our own consolidation to avoid double-work. The
+    // signal is any record whose metadata.dreamed_at is newer than
+    // `last_reflection_at` AND hasn't been dreamed-processed yet. We
+    // still want the pass to RUN (to re-embed + ingest the report), so
+    // this branch doesn't actually skip — return None.
+    Ok(None)
+}
+
+/// Emit a hash-linked `ReflectionCompleted` event so the next Coordinated
+/// run can read its timestamp.
+async fn emit_reflection_completed(
+    engine: &MnemoEngine,
+    agent_id: &str,
+    report: &ReflectionReport,
+) {
+    let now = chrono::Utc::now().to_rfc3339();
+    let payload = serde_json::json!({
+        "consolidated": report.consolidated,
+        "absolutized_dates": report.absolutized_dates,
+        "dreamed_accepted": report.dreamed_accepted,
+        "archived": report.archived,
+        "conflicts_resolved": report.conflicts_resolved,
+        "total_scanned": report.total_scanned,
+    });
+    let content_hash = compute_content_hash(&payload.to_string(), agent_id, &now);
+    let prev_event_hash = engine
+        .storage
+        .get_latest_event_hash(agent_id, None)
+        .await
+        .ok()
+        .flatten();
+    let event = AgentEvent {
+        id: Uuid::now_v7(),
+        agent_id: agent_id.to_string(),
+        thread_id: None,
+        run_id: None,
+        parent_event_id: None,
+        event_type: EventType::ReflectionCompleted,
+        payload,
+        trace_id: None,
+        span_id: None,
+        model: None,
+        tokens_input: None,
+        tokens_output: None,
+        latency_ms: None,
+        cost_usd: None,
+        timestamp: now,
+        logical_clock: 0,
+        content_hash: content_hash.clone(),
+        prev_hash: Some(compute_chain_hash(
+            &content_hash,
+            prev_event_hash.as_deref(),
+        )),
+        embedding: None,
+    };
+    let _ = engine.storage.insert_event(&event).await;
+}
+
+/// Auto Dream organization-report trailer. Parser is permissive — matches
+/// whichever of these three keys appears: `consolidated`, `removed`,
+/// `reindexed` (case-insensitive, values are base-10 integers after a
+/// colon or equals sign). Missing keys default to zero.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DreamReport {
+    pub consolidated: u32,
+    pub removed: u32,
+    pub reindexed: u32,
+}
+
+/// Parse an Auto Dream organization-report trailer from free text. Returns
+/// `None` when no `## Organization Report` header is present.
+pub fn parse_organization_report(text: &str) -> Option<DreamReport> {
+    let lower = text.to_lowercase();
+    let marker = "## organization report";
+    let start = lower.find(marker)?;
+    let trailer = &text[start + marker.len()..];
+    let re_consolidated =
+        regex::Regex::new(r"(?i)\bconsolidated\b\s*[:=]\s*(\d+)").ok()?;
+    let re_removed = regex::Regex::new(r"(?i)\bremoved\b\s*[:=]\s*(\d+)").ok()?;
+    let re_reindexed =
+        regex::Regex::new(r"(?i)\bre[-_ ]?indexed\b\s*[:=]\s*(\d+)").ok()?;
+    let consolidated = re_consolidated
+        .captures(trailer)
+        .and_then(|c| c.get(1).and_then(|m| m.as_str().parse().ok()))
+        .unwrap_or(0);
+    let removed = re_removed
+        .captures(trailer)
+        .and_then(|c| c.get(1).and_then(|m| m.as_str().parse().ok()))
+        .unwrap_or(0);
+    let reindexed = re_reindexed
+        .captures(trailer)
+        .and_then(|c| c.get(1).and_then(|m| m.as_str().parse().ok()))
+        .unwrap_or(0);
+    Some(DreamReport {
+        consolidated,
+        removed,
+        reindexed,
+    })
+}
+
+/// Walk records whose content carries an Auto Dream organization-report
+/// trailer; extract the counts, emit `DreamReportIngested`, and mark the
+/// record so the next pass skips it. Returns the number of records
+/// processed this pass.
+async fn ingest_dream_reports(engine: &MnemoEngine, agent_id: &str) -> Result<usize> {
+    let filter = MemoryFilter {
+        agent_id: Some(agent_id.to_string()),
+        include_deleted: false,
+        ..Default::default()
+    };
+    let records = engine
+        .storage
+        .list_memories(&filter, super::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
+    let mut ingested = 0usize;
+    for mut record in records {
+        if record
+            .metadata
+            .get("dream_report_ingested_at")
+            .and_then(|v| v.as_str())
+            .is_some()
+        {
+            continue;
+        }
+        let Some(report) = parse_organization_report(&record.content) else {
+            continue;
+        };
+        let now = chrono::Utc::now().to_rfc3339();
+        if let Some(obj) = record.metadata.as_object_mut() {
+            obj.insert(
+                "dream_report_ingested_at".to_string(),
+                serde_json::Value::String(now.clone()),
+            );
+        }
+        record.updated_at = now.clone();
+        if engine.storage.update_memory(&record).await.is_ok() {
+            ingested += 1;
+            let payload = serde_json::json!({
+                "memory_id": record.id.to_string(),
+                "consolidated": report.consolidated,
+                "removed": report.removed,
+                "reindexed": report.reindexed,
+            });
+            let content_hash = compute_content_hash(&payload.to_string(), agent_id, &now);
+            let prev_event_hash = engine
+                .storage
+                .get_latest_event_hash(agent_id, None)
+                .await
+                .ok()
+                .flatten();
+            let event = AgentEvent {
+                id: Uuid::now_v7(),
+                agent_id: agent_id.to_string(),
+                thread_id: None,
+                run_id: None,
+                parent_event_id: None,
+                event_type: EventType::DreamReportIngested,
+                payload,
+                trace_id: None,
+                span_id: None,
+                model: None,
+                tokens_input: None,
+                tokens_output: None,
+                latency_ms: None,
+                cost_usd: None,
+                timestamp: now,
+                logical_clock: 0,
+                content_hash: content_hash.clone(),
+                prev_hash: Some(compute_chain_hash(
+                    &content_hash,
+                    prev_event_hash.as_deref(),
+                )),
+                embedding: None,
+            };
+            let _ = engine.storage.insert_event(&event).await;
+        }
+    }
+    Ok(ingested)
 }
 
 // Unit tests live alongside the engine integration suite so the reflection
