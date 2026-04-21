@@ -287,12 +287,21 @@ cd sdks/typescript && npm install && npm test
 cd sdks/go && go test ./...
 ```
 
+## Benchmarks
+
+We run LoCoMo-MC10 and LongMemEval on every release. First public numbers
+are at [`docs/benchmarks/2026-04-21-mnemo-v0.3.0.md`](docs/benchmarks/2026-04-21-mnemo-v0.3.0.md).
+Latency is comfortably inside the 250 ms p95 target; recall quality is
+pinned to floor values today because the Python `MnemoClient` does not
+attach a full-text index — tracked as a v0.3.1 fix.
+
 ## Documentation
 
 - **mdBook**: `docs/` directory — run `mdbook serve docs` for local browsing
 - **Compliance**: SOC 2 controls mapping and HIPAA safeguards at `docs/src/compliance/`
 - **REST API**: `docs/src/rest-api.md`
 - **Tool reference**: `docs/src/tools/` (one page per MCP tool)
+- **Benchmarks**: `docs/benchmarks/`
 
 ## License
 

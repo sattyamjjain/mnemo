@@ -128,6 +128,13 @@ pub enum EventType {
     RetrievalQuery,
     RetrievalResult,
     Decision,
+    /// `run_reflection_pass` finished successfully. Payload carries the
+    /// `ReflectionReport` so cadence-aware callers can skip when
+    /// `last_reflection_at` is too recent.
+    ReflectionCompleted,
+    /// An Auto Dream organization-report trailer was parsed and
+    /// ingested. Payload carries merged/removed/re-indexed counts.
+    DreamReportIngested,
 }
 
 impl std::fmt::Display for EventType {
@@ -150,6 +157,8 @@ impl std::fmt::Display for EventType {
             EventType::RetrievalQuery => write!(f, "retrieval_query"),
             EventType::RetrievalResult => write!(f, "retrieval_result"),
             EventType::Decision => write!(f, "decision"),
+            EventType::ReflectionCompleted => write!(f, "reflection_completed"),
+            EventType::DreamReportIngested => write!(f, "dream_report_ingested"),
         }
     }
 }
@@ -175,6 +184,8 @@ impl std::str::FromStr for EventType {
             "retrieval_query" => Ok(EventType::RetrievalQuery),
             "retrieval_result" => Ok(EventType::RetrievalResult),
             "decision" => Ok(EventType::Decision),
+            "reflection_completed" => Ok(EventType::ReflectionCompleted),
+            "dream_report_ingested" => Ok(EventType::DreamReportIngested),
             _ => Err(crate::error::Error::Validation(format!(
                 "invalid event type: {s}"
             ))),
