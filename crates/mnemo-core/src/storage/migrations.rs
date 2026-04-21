@@ -182,6 +182,21 @@ CREATE TABLE IF NOT EXISTS sync_metadata (
 );
 ";
 
+/// Schema version stamp table. One row per database file, populated on
+/// first `run_migrations` call. A missing row on an existing database
+/// indicates a pre-0.3.1 file and is treated as version 1.
+pub const CREATE_MNEMO_META_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS mnemo_meta (
+    key VARCHAR PRIMARY KEY,
+    value VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+";
+
+/// Persistence format version this release writes. Bump when the on-disk
+/// schema changes in a way that requires a migrator pass.
+pub const CURRENT_PERSISTENCE_VERSION: u32 = 3;
+
 pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_MEMORIES_TABLE)?;
     conn.execute_batch(CREATE_ACLS_TABLE)?;
@@ -205,12 +220,105 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     );
     // Sprint 8: sync watermarks table
     conn.execute_batch(CREATE_SYNC_METADATA_TABLE)?;
+    // v0.3.2: persistence-version stamp.
+    conn.execute_batch(CREATE_MNEMO_META_TABLE)?;
+    stamp_persistence_version(conn)?;
+    Ok(())
+}
+
+/// Read the stored persistence version, or `None` if the marker is absent
+/// (i.e. this is a fresh database OR a pre-0.3.2 file).
+pub fn read_persistence_version(conn: &duckdb::Connection) -> duckdb::Result<Option<u32>> {
+    let mut stmt =
+        conn.prepare("SELECT value FROM mnemo_meta WHERE key = 'persistence_version'")?;
+    let mut rows = stmt.query([])?;
+    if let Some(row) = rows.next()? {
+        let raw: String = row.get(0)?;
+        Ok(raw.parse::<u32>().ok())
+    } else {
+        Ok(None)
+    }
+}
+
+/// Write / update the persistence version stamp. Called at the end of
+/// `run_migrations` after every schema operation has succeeded.
+///
+/// * If the stamp is missing, this is either a fresh DB or a pre-0.3.2
+///   file. Either way the post-run schema is the current one, so we
+///   write `CURRENT_PERSISTENCE_VERSION`.
+/// * If the stamp is older than `CURRENT_PERSISTENCE_VERSION`, we've
+///   just run a migrator over a legacy file; update to current.
+/// * If the stamp is already current, no-op.
+fn stamp_persistence_version(conn: &duckdb::Connection) -> duckdb::Result<()> {
+    let existing = read_persistence_version(conn)?;
+    let current = CURRENT_PERSISTENCE_VERSION;
+    if let Some(v) = existing
+        && v == current
+    {
+        return Ok(());
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    // DuckDB's ON CONFLICT parser is picky with DEFAULT columns; drive the
+    // updated_at value from Rust explicitly instead.
+    conn.execute(
+        "DELETE FROM mnemo_meta WHERE key = 'persistence_version'",
+        [],
+    )?;
+    conn.execute(
+        "INSERT INTO mnemo_meta(key, value, updated_at) VALUES ('persistence_version', ?, ?)",
+        duckdb::params![current.to_string(), now],
+    )?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_fresh_db_stamps_current_persistence_version() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let v = read_persistence_version(&conn).unwrap();
+        assert_eq!(v, Some(CURRENT_PERSISTENCE_VERSION));
+    }
+
+    /// A "legacy" database (no mnemo_meta row) must get stamped to the
+    /// current version the first time run_migrations sees it. Subsequent
+    /// passes are no-ops. This mirrors what will happen when a v0.1.1
+    /// DuckDB file is opened by a v0.3.2 reader.
+    #[test]
+    fn test_legacy_db_gets_stamped_on_open() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        // Simulate a pre-0.3.2 file: create every table EXCEPT mnemo_meta.
+        conn.execute_batch(CREATE_MEMORIES_TABLE).unwrap();
+        conn.execute_batch(CREATE_ACLS_TABLE).unwrap();
+        conn.execute_batch(CREATE_RELATIONS_TABLE).unwrap();
+        conn.execute_batch(CREATE_AGENT_EVENTS_TABLE).unwrap();
+        conn.execute_batch(CREATE_CHECKPOINTS_TABLE).unwrap();
+        conn.execute_batch(CREATE_DELEGATIONS_TABLE).unwrap();
+        conn.execute_batch(CREATE_AGENT_PROFILES_TABLE).unwrap();
+        conn.execute_batch(CREATE_SYNC_METADATA_TABLE).unwrap();
+
+        assert!(
+            read_persistence_version(&conn).is_err()
+                || read_persistence_version(&conn).unwrap().is_none(),
+            "pre-migration legacy file should have no stamp"
+        );
+
+        run_migrations(&conn).unwrap();
+        assert_eq!(
+            read_persistence_version(&conn).unwrap(),
+            Some(CURRENT_PERSISTENCE_VERSION)
+        );
+
+        // Second pass is a no-op.
+        run_migrations(&conn).unwrap();
+        assert_eq!(
+            read_persistence_version(&conn).unwrap(),
+            Some(CURRENT_PERSISTENCE_VERSION)
+        );
+    }
 
     #[test]
     fn test_migrations_run_on_in_memory_db() {
