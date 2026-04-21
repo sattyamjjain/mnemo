@@ -194,6 +194,17 @@ impl MnemoEngine {
         reflection::run_reflection_pass_with_mode(self, &agent_id, mode, force).await
     }
 
+    /// List quarantined memories for operator review. See
+    /// [`poisoning::replay_quarantine`].
+    pub async fn replay_quarantine(
+        &self,
+        agent_id: Option<String>,
+        since: Option<&str>,
+    ) -> Result<Vec<poisoning::QuarantineReplayEntry>> {
+        let agent_id = agent_id.unwrap_or_else(|| self.default_agent_id.clone());
+        poisoning::replay_quarantine(self, &agent_id, since).await
+    }
+
     pub async fn share(&self, request: share::ShareRequest) -> Result<share::ShareResponse> {
         share::execute(self, request).await
     }
