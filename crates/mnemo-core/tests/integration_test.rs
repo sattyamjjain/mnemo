@@ -2722,7 +2722,11 @@ async fn test_minja_style_poisoning_tpr_fpr_bars() {
         r.scope = Scope::Private;
         r.consolidation_state = ConsolidationState::Raw;
         let out = check_for_anomaly(&engine, &r).await.unwrap();
-        if out.is_anomalous { tp += 1; } else { fn_ += 1; }
+        if out.is_anomalous {
+            tp += 1;
+        } else {
+            fn_ += 1;
+        }
     }
     for content in benigns {
         let mut r = MemoryRecord::new("minja-agent".to_string(), (*content).to_string());
@@ -2731,7 +2735,11 @@ async fn test_minja_style_poisoning_tpr_fpr_bars() {
         r.scope = Scope::Private;
         r.consolidation_state = ConsolidationState::Raw;
         let out = check_for_anomaly(&engine, &r).await.unwrap();
-        if out.is_anomalous { fp += 1; } else { tn += 1; }
+        if out.is_anomalous {
+            fp += 1;
+        } else {
+            tn += 1;
+        }
     }
 
     let tpr = tp as f32 / (tp + fn_) as f32;
@@ -2772,8 +2780,12 @@ async fn test_replay_quarantine_ordering_and_cutoff() {
             .unwrap();
         ids.push(r.id);
     }
-    quarantine_memory(&engine, ids[1], "test-trigger").await.unwrap();
-    quarantine_memory(&engine, ids[3], "test-trigger").await.unwrap();
+    quarantine_memory(&engine, ids[1], "test-trigger")
+        .await
+        .unwrap();
+    quarantine_memory(&engine, ids[3], "test-trigger")
+        .await
+        .unwrap();
 
     let all = engine
         .replay_quarantine(Some("q-agent".to_string()), None)

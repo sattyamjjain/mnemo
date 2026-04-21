@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mnemo"
-version = "0.3.1"
+version = "0.3.2"
 description = "MCP-native memory database for AI agents"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"

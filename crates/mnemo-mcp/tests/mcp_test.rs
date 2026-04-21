@@ -44,8 +44,58 @@ async fn test_server_construction() {
 async fn test_server_capabilities() {
     let (server, _) = create_server();
     let info = server.get_info();
-    // Should have tools capability enabled
+    // Both tools and the new v0.3.2 resources capability are advertised.
     assert!(info.capabilities.tools.is_some());
+    assert!(
+        info.capabilities.resources.is_some(),
+        "resources capability must be advertised in v0.3.2"
+    );
+}
+
+/// The building blocks of `list_resources` / `read_resource`: seed
+/// memories, list them via the same storage path the resource handler
+/// uses, and fetch one by id. Full MCP-handler dispatch needs a running
+/// service harness and stdio transport — covered by the broader
+/// end-to-end tests; this asserts the data surface the handler depends on.
+#[tokio::test]
+async fn test_resource_surface_storage_contract() {
+    use mnemo_mcp::server::MEMORY_RESOURCE_SCHEME;
+
+    let (_, engine) = create_server();
+    let first = engine
+        .remember(RememberRequest {
+            content: "First resource memory".to_string(),
+            agent_id: None,
+            memory_type: None,
+            scope: None,
+            importance: Some(0.5),
+            tags: None,
+            metadata: None,
+            source_type: None,
+            source_id: None,
+            org_id: None,
+            thread_id: None,
+            ttl_seconds: None,
+            related_to: None,
+            decay_rate: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let filter = mnemo_core::storage::MemoryFilter {
+        agent_id: Some("test-agent".to_string()),
+        include_deleted: false,
+        ..Default::default()
+    };
+    let records = engine.storage.list_memories(&filter, 50, 0).await.unwrap();
+    assert!(!records.is_empty());
+
+    let uri = format!("{MEMORY_RESOURCE_SCHEME}{}", first.id);
+    assert!(uri.starts_with("mem://"));
+
+    let round_trip = engine.storage.get_memory(first.id).await.unwrap().unwrap();
+    assert_eq!(round_trip.content, "First resource memory");
 }
 
 #[tokio::test]

@@ -69,7 +69,10 @@ fn looks_like_indirect_ingest(record: &MemoryRecord) -> bool {
             || lower == "source:email"
             || lower == "source:third_party"
             || lower == "source:retrieved"
-    }) || matches!(record.source_type, SourceType::Retrieval | SourceType::Import)
+    }) || matches!(
+        record.source_type,
+        SourceType::Retrieval | SourceType::Import
+    )
 }
 
 /// Self-referential instruction marker check — MINJA-class indirect

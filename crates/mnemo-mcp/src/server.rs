@@ -34,6 +34,10 @@ use crate::tools::verify::VerifyInput;
 #[derive(Clone)]
 pub struct MnemoServer {
     engine: Arc<MnemoEngine>,
+    // Populated by the `#[tool_router]` macro and consumed by the macro's
+    // generated code. Rustc can't see it referenced outside the macro
+    // expansion, so we silence the false-positive dead_code lint.
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
     activity_tracker: Option<Arc<AtomicU64>>,
 }
@@ -724,29 +728,129 @@ fn parse_source_type(s: &str) -> Option<SourceType> {
     }
 }
 
+/// Cap on how many most-recent memories `list_resources` exposes.
+const LIST_RESOURCES_LIMIT: usize = 50;
+
+/// Prefix every memory URI in the resource layer carries.
+pub const MEMORY_RESOURCE_SCHEME: &str = "mem://";
+
+/// Compress a memory body into a ~60-char summary suitable for the
+/// `name` field of an MCP resource listing.
+fn summarize(content: &str) -> String {
+    let cleaned: String = content
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let trimmed: String = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    if trimmed.len() <= 60 {
+        return trimmed;
+    }
+    let mut out = String::new();
+    for word in trimmed.split_whitespace() {
+        if out.len() + word.len() + 1 > 57 {
+            break;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(word);
+    }
+    out.push_str("...");
+    out
+}
+
 #[tool_handler]
 impl ServerHandler for MnemoServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "Mnemo is an MCP-native memory database for AI agents. \
-                 Use mnemo.remember to store memories, mnemo.recall to search them, \
-                 mnemo.forget to delete them, mnemo.share to share with other agents, \
-                 mnemo.checkpoint to snapshot state, mnemo.branch to fork for exploration, \
-                 mnemo.merge to combine branches, mnemo.replay to reconstruct context, \
-                 mnemo.verify to check hash chain integrity, \
-                 and mnemo.delegate to grant scoped permissions to other agents."
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "mnemo".into(),
-                title: None,
-                version: env!("CARGO_PKG_VERSION").into(),
-                icons: None,
-                website_url: None,
-            },
+    async fn list_resources(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListResourcesResult, McpError> {
+        use mnemo_core::storage::MemoryFilter;
+        self.touch_activity();
+        let filter = MemoryFilter {
+            agent_id: Some(self.engine.default_agent_id.clone()),
+            include_deleted: false,
             ..Default::default()
-        }
+        };
+        let records = self
+            .engine
+            .storage
+            .list_memories(&filter, LIST_RESOURCES_LIMIT, 0)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let resources = records
+            .into_iter()
+            .map(|r| {
+                let mut raw = rmcp::model::RawResource::new(
+                    format!("{MEMORY_RESOURCE_SCHEME}{}", r.id),
+                    summarize(&r.content),
+                );
+                raw.description = Some(format!("agent={} type={}", r.agent_id, r.memory_type));
+                raw.mime_type = Some("text/markdown".into());
+                raw.size = Some(r.content.len() as u32);
+                raw.no_annotation()
+            })
+            .collect();
+        Ok(rmcp::model::ListResourcesResult {
+            resources,
+            ..Default::default()
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: rmcp::model::ReadResourceRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ReadResourceResult, McpError> {
+        self.touch_activity();
+        let uri = request.uri.clone();
+        let Some(id_str) = uri.strip_prefix(MEMORY_RESOURCE_SCHEME) else {
+            return Err(McpError::invalid_params(
+                format!("unknown resource scheme: {uri}"),
+                None,
+            ));
+        };
+        let id = uuid::Uuid::parse_str(id_str)
+            .map_err(|e| McpError::invalid_params(format!("bad uuid: {e}"), None))?;
+        let record = self
+            .engine
+            .storage
+            .get_memory(id)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            .ok_or_else(|| McpError::resource_not_found(format!("memory {id} not found"), None))?;
+        let contents = rmcp::model::ResourceContents::TextResourceContents {
+            uri,
+            mime_type: Some("text/markdown".into()),
+            text: record.content,
+            meta: None,
+        };
+        Ok(rmcp::model::ReadResourceResult::new(vec![contents]))
+    }
+
+    fn get_info(&self) -> ServerInfo {
+        let mut info = ServerInfo::default();
+        info.instructions = Some(
+            "Mnemo is an MCP-native memory database for AI agents. \
+             Use mnemo.remember to store memories, mnemo.recall to search them, \
+             mnemo.forget to delete them, mnemo.share to share with other agents, \
+             mnemo.checkpoint to snapshot state, mnemo.branch to fork for exploration, \
+             mnemo.merge to combine branches, mnemo.replay to reconstruct context, \
+             mnemo.verify to check hash chain integrity, \
+             and mnemo.delegate to grant scoped permissions to other agents."
+                .into(),
+        );
+        info.capabilities = ServerCapabilities::builder()
+            .enable_tools()
+            .enable_resources()
+            .build();
+        // Implementation::from_build_env() picks up rmcp's own PKG name —
+        // set the fields explicitly so the server advertises as "mnemo".
+        let mut impl_block = Implementation::from_build_env();
+        impl_block.name = "mnemo".into();
+        impl_block.version = env!("CARGO_PKG_VERSION").into();
+        info.server_info = impl_block;
+        info
     }
 }
