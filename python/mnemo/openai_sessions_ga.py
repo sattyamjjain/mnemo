@@ -196,8 +196,10 @@ class MnemoSnapshotStore:
         try:
             from mnemo._mnemo import MnemoClient  # type: ignore[attr-defined]
         except ImportError as exc:  # pragma: no cover
-            raise ImportError(
-                "mnemo native extension not built. Run `maturin develop` in python/."
+            from mnemo.availability import MnemoClientUnavailable
+
+            raise MnemoClientUnavailable(
+                "MnemoSnapshotStore needs the native mnemo._mnemo extension"
             ) from exc
         self._client = MnemoClient(
             db_path=self.db_path,
