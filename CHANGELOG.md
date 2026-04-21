@@ -2,6 +2,83 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.3.2] - 2026-04-21
+
+### Highlights
+
+Closes every v0.3.1-deferred task: real MINJA poisoning numbers, real
+S3 workspace backend, persistence format stamp, and the long-awaited
+rmcp 0.14 → 1.3 upgrade with MCP resource exposure.
+
+### Added
+
+- **MINJA / InjecMEM indirect-injection detector** — new signal on
+  `check_for_anomaly`: self-referential instruction markers
+  ("remember this", "in the future, always", 13 total) fire only when
+  the record arrived via `SourceType::Retrieval|Import` or a
+  `source:web|document|email|third_party|retrieved` tag. Legitimate
+  "please remember …" from user input is not flagged.
+- **Quarantine replay** — `engine.replay_quarantine(agent_id, since)`
+  returns every quarantined record with id / agent / content / reason /
+  source_type / tags / created_at, chronologically ordered.
+- **Public MINJA-style numbers** at
+  `docs/benchmarks/2026-04-21-poisoning.md`: TPR 0.960, FPR 0.000, F1
+  0.980 against a 50-prompt in-repo fixture modelled on
+  arXiv:2503.03704. Clears both brief bars (TPR ≥ 0.85, FPR ≤ 0.05).
+- **`mnemo.openai_sandbox` subpackage**
+  (`pip install mnemo[openai-sandbox-s3]`):
+    - `LocalSnapshotSpec` / `RemoteSnapshotSpec` — the GA
+      `SnapshotSpec` split.
+    - `WorkspaceSigner` + `dump_workspace` / `load_workspace` —
+      Ed25519-signed manifest, per-file SHA-256 digests, symlink
+      preservation (walks with `PurePosixPath`, records
+      `{source, target}` pairs).
+    - `S3Workspace` — real `boto3`-backed implementation of the workspace
+      put / get / delete contract (`s3://<bucket>/<key_prefix>/files/...`).
+    - Tamper detection fails closed on both manifest tamper (Ed25519
+      `InvalidSignature`) and per-file tamper (`ValueError`).
+- **Persistence format stamp** — new `mnemo_meta` table carries a
+  `persistence_version` row (currently `3`). `run_migrations` stamps
+  fresh files on first open; legacy v0.1.1 / v0.3.0 / v0.3.1 files get
+  stamped the first time a v0.3.2 reader opens them.
+  `CURRENT_PERSISTENCE_VERSION` exported for downstream tooling.
+- **MCP resources** — the rmcp 1.3+ `list_resources` / `read_resource`
+  handlers surface the 50 most recent memories as
+  `mem://<uuid>` resources with `text/markdown` MIME. The server now
+  advertises the `resources` capability as well as `tools`.
+
+### Changed
+
+- **rmcp 0.14 → 1.3** (satisfied by 1.5 on the current lockfile). The
+  `ServerInfo` / `Implementation` / `ReadResourceResult` shapes moved to
+  `#[non_exhaustive]` in the upstream crate; `MnemoServer::get_info`
+  now builds `ServerInfo` through `Default::default()` + field
+  assignment + `Implementation::from_build_env()` with the name and
+  version overridden. Closes the PR #27 deferral.
+- Two new `EventType` variants — `ReflectionCompleted`,
+  `DreamReportIngested` — were already added in v0.3.1; no change here.
+
+### Tests
+
+158 Rust tests, 0 failed, including the new MINJA bench, quarantine
+replay, persistence version stamp tests, and the resource-surface
+storage contract test. 43 Python tests (5 new S3 workspace tests
+including a moto-backed round-trip) — 43 pass, 4 skipped gracefully
+when `OPENAI_API_KEY` is absent.
+
+### Deferred to v0.3.3
+
+- **Embedding z-score outlier detector** (part of Task 3) — needs a
+  baseline-mean training pass on the corpus. Queued alongside the
+  benchmark-harness `--train-baseline` step.
+- **LLM-as-judge scoring** for LongMemEval's inferential gold answers.
+  Will re-run the 2026-04-21 benchmark and lift the zero-recall floor.
+- **R2 / GCS / Azure workspace backends**. Stubs remain in place behind
+  the matching `mnemo[openai-sandbox-<backend>]` extras.
+- **Golden DuckDB fixtures** (`v0_1_1.mnemo.db`, `v0_3_0.mnemo.db`).
+  Generating a deterministic 0.1.1 file needs a pinned historical
+  build; held for a dedicated follow-up.
+
 ## [0.3.1] - 2026-04-21
 
 ### Highlights
