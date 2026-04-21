@@ -2747,7 +2747,11 @@ async fn test_dream_report_ingestion_is_idempotent() {
         .unwrap();
     assert_eq!(first.dream_report_ingested, 1);
 
-    let events = engine.storage.list_events("dream-ingest", 1000, 0).await.unwrap();
+    let events = engine
+        .storage
+        .list_events("dream-ingest", 1000, 0)
+        .await
+        .unwrap();
     let report_events = events
         .iter()
         .filter(|e| e.event_type == EventType::DreamReportIngested)
@@ -2770,7 +2774,8 @@ async fn test_dream_report_ingestion_is_idempotent() {
 #[test]
 fn test_parse_organization_report_counts() {
     use mnemo_core::query::reflection::parse_organization_report;
-    let text = "pre-amble\n\n## Organization Report\nConsolidated: 4\nRemoved = 1\nRe-indexed: 9\ntail";
+    let text =
+        "pre-amble\n\n## Organization Report\nConsolidated: 4\nRemoved = 1\nRe-indexed: 9\ntail";
     let report = parse_organization_report(text).expect("should parse");
     assert_eq!(report.consolidated, 4);
     assert_eq!(report.removed, 1);

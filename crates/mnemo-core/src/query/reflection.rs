@@ -119,13 +119,14 @@ pub async fn run_reflection_pass_with_mode(
     mode: ReflectionMode,
     force: bool,
 ) -> Result<ReflectionReport> {
-    if mode == ReflectionMode::Coordinated && !force {
-        if let Some(reason) = coordinated_skip_reason(engine, agent_id).await? {
-            return Ok(ReflectionReport {
-                skipped: Some(reason),
-                ..Default::default()
-            });
-        }
+    if mode == ReflectionMode::Coordinated
+        && !force
+        && let Some(reason) = coordinated_skip_reason(engine, agent_id).await?
+    {
+        return Ok(ReflectionReport {
+            skipped: Some(reason),
+            ..Default::default()
+        });
     }
     let mut report = run_reflection_pass_inner(engine, agent_id).await?;
     emit_reflection_completed(engine, agent_id, &report).await;
@@ -205,12 +206,11 @@ async fn run_reflection_pass_inner(
             .get("dreamed_at")
             .and_then(|v| v.as_str())
             .is_some()
-            && record
+            && !record
                 .metadata
                 .get("dreamed_processed")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
-                == false
         {
             let prev_hash = record.content_hash.clone();
             record.content_hash =
@@ -535,10 +535,10 @@ async fn coordinated_skip_reason(
 ) -> Result<Option<SkipReason>> {
     let last = last_reflection_at(engine, agent_id).await?;
     let now = chrono::Utc::now();
-    if let Some(last_ts) = last {
-        if (now - last_ts).num_hours() < MIN_HOURS_BETWEEN_COORDINATED_RUNS {
-            return Ok(Some(SkipReason::TooSoon));
-        }
+    if let Some(last_ts) = last
+        && (now - last_ts).num_hours() < MIN_HOURS_BETWEEN_COORDINATED_RUNS
+    {
+        return Ok(Some(SkipReason::TooSoon));
     }
 
     // Count records created since the last reflection (or all records if
@@ -641,11 +641,9 @@ pub fn parse_organization_report(text: &str) -> Option<DreamReport> {
     let marker = "## organization report";
     let start = lower.find(marker)?;
     let trailer = &text[start + marker.len()..];
-    let re_consolidated =
-        regex::Regex::new(r"(?i)\bconsolidated\b\s*[:=]\s*(\d+)").ok()?;
+    let re_consolidated = regex::Regex::new(r"(?i)\bconsolidated\b\s*[:=]\s*(\d+)").ok()?;
     let re_removed = regex::Regex::new(r"(?i)\bremoved\b\s*[:=]\s*(\d+)").ok()?;
-    let re_reindexed =
-        regex::Regex::new(r"(?i)\bre[-_ ]?indexed\b\s*[:=]\s*(\d+)").ok()?;
+    let re_reindexed = regex::Regex::new(r"(?i)\bre[-_ ]?indexed\b\s*[:=]\s*(\d+)").ok()?;
     let consolidated = re_consolidated
         .captures(trailer)
         .and_then(|c| c.get(1).and_then(|m| m.as_str().parse().ok()))

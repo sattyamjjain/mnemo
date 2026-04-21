@@ -2,6 +2,77 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.3.1] - 2026-04-21
+
+### Highlights
+
+Honesty pass on top of v0.3.0: first public benchmark numbers, Auto Dream
+cadence coordination, typed error surface for the Python client, and the
+five documentation pages the v0.2.0/v0.3.0 acceptance checklists kept
+promising. Four tasks from the v0.3.1 brief remain deferred to v0.3.2 —
+listed below.
+
+### Added
+
+- **First public LoCoMo / LongMemEval numbers**
+  (`docs/benchmarks/2026-04-21-mnemo-v0.3.0.md`). The harness runs; the
+  numbers are floor values because two v0.3.0 bugs surfaced during the
+  run (the Python `MnemoClient` does not attach a full-text index, and
+  the default `NoopEmbedding` collapses semantic retrieval to noise).
+  Report documents both root causes and opens four tracking items.
+- **Auto Dream cadence coordination**. New `ReflectionMode::Coordinated`
+  gate on `engine.run_reflection_pass_with_mode(agent_id, mode, force)`
+  honours the same 24 h / 5-record cadence Auto Dream uses. Gate
+  decisions surface as `SkipReason::{TooSoon, NotEnoughNewRecords}` on
+  the returned report.
+- **Auto Dream organization-report ingestion**. `parse_organization_report`
+  parses the standard trailer (`Consolidated: N / Removed: M /
+  Re-indexed: K`); `ingest_dream_reports` walks agent memories, emits
+  one `EventType::DreamReportIngested` event per trailer, and marks
+  `metadata.dream_report_ingested_at` for idempotency.
+- **Typed `mnemo.availability` module** — `is_native_available()`,
+  `native_build_hint()`, `installed_adapters()`. Replaces the opaque
+  `AttributeError` adapters used to produce when the PyO3 extension
+  wasn't built with a clean `MnemoClientUnavailable` error carrying the
+  build hint.
+- **`python -m mnemo doctor`** subcommand — prints Python + platform,
+  native-extension status, and an adapter probe table. Exits 0 when
+  the core client is available, 1 otherwise.
+- **Five documentation pages** finally on `main`:
+  `docs/src/integrations/claude-agent-sdk.md`,
+  `integrations/openai-agents-ga.md`, `concepts/memory-tiers.md`,
+  `compliance/dpdpa.md`, `compliance/eu-ai-act.md`. Wired into
+  `docs/SUMMARY.md`. The memory-tiers page explicitly flags that
+  `MemoryTier` is a type alias over `MemoryType`, not a separate field.
+
+### Changed
+
+- Two new `EventType` variants: `ReflectionCompleted` and
+  `DreamReportIngested`. Both additive; hash-chain-linked.
+- `claude_agent_sdk`, `openai_sessions`, and `openai_sessions_ga` adapter
+  constructors raise `MnemoClientUnavailable` instead of a generic
+  `ImportError`.
+- The four integration tests in `test_claude_agent_sdk.py` that need
+  real embeddings now skip when `OPENAI_API_KEY` is unset, rather than
+  failing opaquely under `NoopEmbedding`.
+
+### Deferred to v0.3.2
+
+Documented in the v0.3.1 roadmap; not regressions from v0.3.0.
+
+- **Task 3 — MINJA poisoning benchmark + quarantine replay.** The
+  poisoning detector exists in `mnemo-core` but has no published TPR
+  / FPR numbers against the MINJA fixture.
+- **Task 4 — Real S3 snapshot backend + `SnapshotSpec` split.** v0.3.1
+  ships the local workspace backend; S3/R2/GCS/Azure remain stubs that
+  raise `NotImplementedError` pointing at the matching `mnemo[...]`
+  extras.
+- **Task 5 — Persistence format stability + migration tests.** Adding
+  `persistence_version` to the `mnemo_meta` table and landing golden
+  v0.1.1 / v0.3.0 DuckDB fixtures is queued.
+- **Task 8 — Merge rmcp 1.3 (PR #27) + expose MCP resources.** Still
+  open; rebase needs a fresh look.
+
 ## [0.3.0] - 2026-04-20
 
 ### Highlights
