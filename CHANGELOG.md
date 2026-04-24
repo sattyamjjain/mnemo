@@ -2,6 +2,131 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.3.3] - 2026-04-24
+
+### Highlights
+
+Patch release focused on the three v0.3.2-deferred items named as the
+v0.3.3 target (Tasks A + B + G of the 2026-04-24 prompt). Four Rust and
+three TypeScript Dependabot PRs absorbed; TS 6.0 (#26) held for a
+separate validation pass. No runtime API removed; every new knob is
+opt-in and defaults to the v0.3.2 behaviour.
+
+Six GitHub issues filed (#36–#41) tracking: Hindsight SOTA gap, full
+MINJA-procedure harness, golden DuckDB fixtures, R2/GCS/Azure
+workspace backends, TS 6.0 migration, and DuckDB 1.5.2 + DuckLake v1.0
+evaluation.
+
+### Added
+
+- **Embedding z-score outlier detector** (Task A — closes v0.3.2
+  deferred item). `crates/mnemo-core/src/anomaly/outlier.rs` with
+  Mahalanobis-proxy scoring over a diagonal-covariance per-agent
+  baseline trained via Welford's algorithm. `PoisoningPolicy` struct
+  in `query/poisoning.rs` with `with_outlier_threshold(z)` enabling
+  the gate; off by default, pinned `is_outlier = false` below
+  `MIN_BASELINE_SAMPLES = 30`. `OUTLIER_SCORE_CONTRIBUTION = 0.5`
+  added to anomaly score on fire so one outlier alone crosses the
+  `is_anomalous >= 0.5` bar.
+- **`embedding_baseline` storage table** (DuckDB + PostgreSQL JSONB).
+  `StorageBackend::{get,insert_or_update}_embedding_baseline`.
+  `CURRENT_PERSISTENCE_VERSION` bumped 3 → 4; pre-existing v0.3.2
+  files auto-create the table on open.
+- **`mnemo baseline --train --agent-id <id>`** CLI subcommand.
+- **LLM-as-judge scorer** (Task B — closes v0.3.2 deferred item).
+  `python/mnemo/benches/judge.py` with `LlmJudge` + `JudgeVerdict`;
+  default model `claude-haiku-4-5-20251001`, override via
+  `MNEMO_JUDGE_MODEL`. YES/NO/UNSURE contract with UNSURE counted as
+  miss. Judge failures surface as `JudgeUnavailableError` so the
+  runner falls back to `--judge=exact` with a warning rather than
+  silently degrading.
+- **`--judge=exact|llm`** flag on `mnemo.benches.locomo_runner`.
+- **PyMnemoClient full-text default.** `python/src/lib.rs::MnemoClient::new`
+  now attaches a persistent Tantivy full-text index by default
+  (kwarg `with_full_text=True`). Fixes the v0.3.0–0.3.2 bug where
+  `strategy="hybrid_rrf"` silently collapsed to vector-only because
+  `full_text` was never wired at the Python boundary. New kwarg
+  `with_noop_embedding=True` makes the Noop fallback explicit: set
+  to `False` and the constructor raises rather than silently
+  zero-vectoring.
+- **Nightly benchmark regression gate.** `.github/workflows/benchmarks-nightly.yml`
+  + `.github/scripts/check_bench_regression.py` fail CI on >3pp
+  recall@10 drop vs `docs/benchmarks/baseline.json`. First-run
+  exception: empty baseline lets the first authenticated run seed
+  the reference point without a false-positive failure.
+- **Security workflow.** `.github/workflows/security.yml` runs
+  `cargo audit` + `cargo deny check advisories` on push / PR /
+  nightly. Thirteen RustSec advisories catalogued with paragraph-level
+  rationales in `.cargo/audit.toml` + `deny.toml`; the gate lights
+  up on any NEW advisory not already documented.
+- **`**/node_modules/` in `.gitignore`** — was missing, would have
+  made any legitimate `git add sdks/typescript/` pull the entire npm
+  install tree.
+
+### Changed
+
+- Dependabot batch absorbed:
+  - `sha2` 0.10 → 0.11 (PR #28).
+  - `criterion` 0.5 → 0.8 (PR #13).
+  - `rand` 0.9 → 0.10 (PR #12) with a one-line `use rand::Rng`
+    migration in `mnemo-compliance::audit::WorkspaceSigner::generate_ephemeral`.
+  - `ndarray` 0.16 → 0.17 (PR #11), feature-gated under `onnx`.
+  - `@modelcontextprotocol/sdk` 1.26.0 → 1.29.0 (PR #31).
+  - `@types/node` 20.19.32 → 25.5.2 (PR #30).
+  - `ts-jest` 29.4.6 → 29.4.9 (PR #29).
+- `sdks/typescript/jest.config.js` now carries the standard
+  NodeNext-style `.js` moduleNameMapper. Pre-existing breakage: the
+  whole TS test suite failed to even load on main because Jest could
+  not resolve `import ... from "./types.js"` against `types.ts`.
+- PR #27 (the original rmcp 0.14 → 0.16 attempt) closed unmerged
+  back in v0.3.2. The rmcp 1.3 landing happened via the workspace
+  dep bump in commit `d4bad6b` as part of PR #35. This CHANGELOG
+  entry exists because the v0.3.3 prompt asked for the path to be
+  documented here — rmcp sits at 1.3 today; workflow captured.
+
+### Tests
+
+- **+6 unit tests** in `anomaly::outlier::tests` — train-from-records,
+  no-embedding early-exit, in-distribution-not-flagged, far-OOD-flagged,
+  noisy-baseline pin, dim-mismatch passthrough.
+- **+1 integration test** `test_zscore_outlier_catches_semantic_drift`
+  — asserts (1) no-baseline passthrough, (2) in-distribution probe
+  not flagged, (3) 50σ-drift probe flagged with the z-score reason
+  string surfaced.
+- **+11 Python unit tests** in `python/tests/test_judge.py` —
+  YES/NO/UNSURE parse, bullet-prefix tolerance, unparseable-line
+  fallback, no-memories short-circuit, SDK-exception path,
+  prompt-shape contract, content truncation, env-driven model
+  override, frozen-dataclass contract.
+- Full suite: Rust 170 pass (77 unit + 52 integration + all other
+  crates) / Python 54 pass + 4 skipped (OpenAI-gated).
+
+### Benchmarks
+
+- `docs/benchmarks/2026-04-24-poisoning-outlier.md` — methodology
+  doc for Task A. Publishes correctness of the detector (unit +
+  integration green) but **declines** to publish TPR/FPR labelled
+  as "MINJA" because the paper ships a procedure, not a corpus.
+  Full attack-success-rate harness tracked as issue #37.
+- `docs/benchmarks/2026-04-24-mnemo-v0.3.3.md` — Task B scaffolding
+  + plan. Numeric recall@10 / MRR / latency for LoCoMo-MC10 and
+  LongMemEval are deferred to the first nightly run authenticated
+  with `ANTHROPIC_API_KEY` + `OPENAI_API_KEY` + `HF_TOKEN`; the
+  code path is ready.
+
+### Deferred to v0.3.4 / v0.4.0
+
+- Graphiti-style temporal edge layer (Task C). Tracked separately.
+- DuckLake v1.0 opt-in storage backend (Task D). Issue #41.
+- R2 / GCS / Azure workspace backends (Task E). Issue #39.
+- Anthropic Claude Opus 4.7 raw-API memory-tool adapter (Task F).
+- Golden DuckDB fixtures `v0_1_1.mnemo.db` / `v0_3_0.mnemo.db`
+  (carried forward from v0.3.2). Issue #38.
+- Transitive fixes for the 13 ignored RustSec advisories — each
+  owner-pinned to the next respective dep-bump PR (see
+  `.cargo/audit.toml`).
+- TypeScript 5.9 → 6.0 (PR #26 held). Issue #40.
+
 ## [0.3.2] - 2026-04-21
 
 ### Highlights
