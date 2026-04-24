@@ -195,6 +195,22 @@ CREATE TABLE IF NOT EXISTS sync_metadata (
     .await
     .map_err(|e| Error::Storage(format!("create sync_metadata: {e}")))?;
 
+    // 9. embedding_baseline (v0.3.3 — z-score outlier detector)
+    sqlx::query(
+        r#"
+CREATE TABLE IF NOT EXISTS embedding_baseline (
+    agent_id VARCHAR PRIMARY KEY,
+    mu JSONB NOT NULL,
+    cov_diag JSONB NOT NULL,
+    n BIGINT NOT NULL,
+    updated_at VARCHAR NOT NULL
+)
+"#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| Error::Storage(format!("create embedding_baseline: {e}")))?;
+
     // ---- Indexes ----
     let index_stmts: &[&str] = &[
         "CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id)",

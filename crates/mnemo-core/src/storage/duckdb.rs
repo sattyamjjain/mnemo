@@ -7,6 +7,7 @@ use crate::model::acl::{Acl, Permission};
 use crate::model::agent_profile::AgentProfile;
 use crate::model::checkpoint::Checkpoint;
 use crate::model::delegation::{Delegation, DelegationScope};
+use crate::model::embedding_baseline::EmbeddingBaseline;
 use crate::model::event::AgentEvent;
 use crate::model::memory::MemoryRecord;
 use crate::model::relation::Relation;
@@ -879,6 +880,72 @@ impl StorageBackend for DuckDbStorage {
         });
         match result {
             Ok(profile) => Ok(Some(profile)),
+            Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Error::Storage(e.to_string())),
+        }
+    }
+
+    async fn insert_or_update_embedding_baseline(
+        &self,
+        baseline: &EmbeddingBaseline,
+    ) -> Result<()> {
+        let conn = self.conn.lock().await;
+        let mu_json = serde_json::to_string(&baseline.mu)?;
+        let cov_json = serde_json::to_string(&baseline.cov_diag)?;
+        let affected = conn.execute(
+            "UPDATE embedding_baseline SET mu = ?, cov_diag = ?, n = ?, updated_at = ? WHERE agent_id = ?",
+            duckdb::params![
+                mu_json,
+                cov_json,
+                baseline.n as i64,
+                baseline.updated_at,
+                baseline.agent_id,
+            ],
+        )?;
+        if affected == 0 {
+            let mu_json = serde_json::to_string(&baseline.mu)?;
+            let cov_json = serde_json::to_string(&baseline.cov_diag)?;
+            conn.execute(
+                "INSERT INTO embedding_baseline (agent_id, mu, cov_diag, n, updated_at) VALUES (?, ?, ?, ?, ?)",
+                duckdb::params![
+                    baseline.agent_id,
+                    mu_json,
+                    cov_json,
+                    baseline.n as i64,
+                    baseline.updated_at,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    async fn get_embedding_baseline(&self, agent_id: &str) -> Result<Option<EmbeddingBaseline>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT agent_id, mu, cov_diag, n, updated_at FROM embedding_baseline WHERE agent_id = ?",
+        )?;
+        let result: duckdb::Result<(String, String, String, i64, String)> =
+            stmt.query_row([agent_id], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            });
+        match result {
+            Ok((agent_id, mu_json, cov_json, n, updated_at)) => {
+                let mu: Vec<f32> = serde_json::from_str(&mu_json)?;
+                let cov_diag: Vec<f32> = serde_json::from_str(&cov_json)?;
+                Ok(Some(EmbeddingBaseline {
+                    agent_id,
+                    mu,
+                    cov_diag,
+                    n: n as u64,
+                    updated_at,
+                }))
+            }
             Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(Error::Storage(e.to_string())),
         }

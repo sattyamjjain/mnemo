@@ -3432,3 +3432,108 @@ async fn test_replay_as_of_returns_historical_state() {
             .contains("virtual")
     );
 }
+
+/// v0.3.3 Task A — the embedding-space z-score outlier detector catches
+/// semantic-drift attacks that the lexical marker list misses, *only*
+/// when a baseline has been trained and the policy is enabled.
+///
+/// Asserts three properties:
+/// 1. A lexically-innocent record with an in-distribution embedding does
+///    NOT trigger the anomaly gate (FPR control).
+/// 2. A lexically-innocent record with a ~50σ out-of-distribution
+///    embedding DOES trigger it (the payoff of the new detector).
+/// 3. Without a baseline stored, even the OOD record passes through —
+///    i.e. the detector is strictly opt-in and never fires unexplained.
+#[tokio::test]
+async fn test_zscore_outlier_catches_semantic_drift() {
+    use mnemo_core::anomaly::outlier::train_baseline;
+    use mnemo_core::model::memory::{MemoryRecord, MemoryType, SourceType};
+    use mnemo_core::query::poisoning::{PoisoningPolicy, check_for_anomaly};
+    use mnemo_core::storage::StorageBackend;
+
+    let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
+    let index = Arc::new(UsearchIndex::new(16).unwrap());
+    let embedding = Arc::new(NoopEmbedding::new(16));
+    let engine = Arc::new(
+        MnemoEngine::new(
+            storage.clone(),
+            index,
+            embedding,
+            "drift-agent".to_string(),
+            None,
+        )
+        .with_poisoning_policy(PoisoningPolicy::default().with_outlier_threshold(3.0)),
+    );
+
+    // Build 50 in-distribution records with tight embeddings around 0.1.
+    let mut training: Vec<MemoryRecord> = Vec::with_capacity(50);
+    for i in 0..50 {
+        let mut r = MemoryRecord::new(
+            "drift-agent".to_string(),
+            format!("routine log entry {i}"),
+        );
+        // Lightly perturbed in each dim so variance isn't zero.
+        let perturb = (i as f32 * 0.013).sin() * 0.02;
+        r.embedding = Some(vec![0.1 + perturb; 16]);
+        r.memory_type = MemoryType::Episodic;
+        r.source_type = SourceType::UserInput;
+        training.push(r);
+    }
+
+    // Lexically-innocent + in-distribution probe: must NOT fire.
+    let mut in_dist = MemoryRecord::new(
+        "drift-agent".to_string(),
+        "Sprint burndown landed on target".to_string(),
+    );
+    in_dist.embedding = Some(vec![0.1; 16]);
+    in_dist.source_type = SourceType::UserInput;
+
+    // Lexically-innocent + way-off-distribution probe: must fire once
+    // the baseline exists and the policy is on.
+    let mut drifted = MemoryRecord::new(
+        "drift-agent".to_string(),
+        "Sprint burndown landed on target".to_string(),
+    );
+    drifted.embedding = Some(vec![5.0; 16]); // ~many σ away given stddev ~0.02
+    drifted.source_type = SourceType::UserInput;
+
+    // Property 3 — no baseline yet; drifted record must pass.
+    let no_baseline = check_for_anomaly(&engine, &drifted).await.unwrap();
+    assert!(
+        !no_baseline.is_anomalous,
+        "without a baseline, z-score gate must not fire: {:?}",
+        no_baseline.reasons
+    );
+
+    // Train + persist the baseline.
+    let baseline = train_baseline("drift-agent", &training).expect("baseline trained");
+    assert!(baseline.n >= 30, "baseline must have >= MIN_BASELINE_SAMPLES");
+    storage
+        .insert_or_update_embedding_baseline(&baseline)
+        .await
+        .unwrap();
+
+    // Property 1 — in-distribution probe must not fire.
+    let in_res = check_for_anomaly(&engine, &in_dist).await.unwrap();
+    assert!(
+        !in_res.is_anomalous,
+        "in-distribution probe flagged as anomalous: z-score gate has bad FPR. reasons={:?}",
+        in_res.reasons
+    );
+
+    // Property 2 — drifted probe must fire via the outlier reason.
+    let drift_res = check_for_anomaly(&engine, &drifted).await.unwrap();
+    assert!(
+        drift_res.is_anomalous,
+        "out-of-distribution probe passed anomaly gate; z-score gate not wired: {:?}",
+        drift_res.reasons
+    );
+    assert!(
+        drift_res
+            .reasons
+            .iter()
+            .any(|r| r.starts_with("embedding z-score")),
+        "anomaly reason list must include the embedding z-score signal: {:?}",
+        drift_res.reasons
+    );
+}

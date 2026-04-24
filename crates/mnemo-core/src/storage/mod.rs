@@ -7,6 +7,7 @@ use crate::model::acl::{Acl, Permission};
 use crate::model::agent_profile::AgentProfile;
 use crate::model::checkpoint::Checkpoint;
 use crate::model::delegation::Delegation;
+use crate::model::embedding_baseline::EmbeddingBaseline;
 use crate::model::event::AgentEvent;
 use crate::model::memory::MemoryRecord;
 use crate::model::relation::Relation;
@@ -123,6 +124,13 @@ pub trait StorageBackend: Send + Sync {
     // Agent Profiles
     async fn insert_or_update_agent_profile(&self, profile: &AgentProfile) -> Result<()>;
     async fn get_agent_profile(&self, agent_id: &str) -> Result<Option<AgentProfile>>;
+
+    // Embedding baselines (v0.3.3, z-score outlier detector)
+    async fn insert_or_update_embedding_baseline(
+        &self,
+        baseline: &EmbeddingBaseline,
+    ) -> Result<()>;
+    async fn get_embedding_baseline(&self, agent_id: &str) -> Result<Option<EmbeddingBaseline>>;
 
     // Checkpoints
     async fn insert_checkpoint(&self, cp: &Checkpoint) -> Result<()>;

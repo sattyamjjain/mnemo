@@ -3,6 +3,7 @@ use mnemo_core::model::acl::{Acl, Permission};
 use mnemo_core::model::agent_profile::AgentProfile;
 use mnemo_core::model::checkpoint::Checkpoint;
 use mnemo_core::model::delegation::{Delegation, DelegationScope};
+use mnemo_core::model::embedding_baseline::EmbeddingBaseline;
 use mnemo_core::model::event::AgentEvent;
 use mnemo_core::model::memory::MemoryRecord;
 use mnemo_core::model::relation::Relation;
@@ -1255,6 +1256,68 @@ ON CONFLICT (agent_id) DO UPDATE SET
             total_memories: r.get::<i64, _>("total_memories") as u64,
             last_updated: r.get("last_updated"),
         }))
+    }
+
+    // -----------------------------------------------------------------------
+    // Embedding baselines (v0.3.3)
+    // -----------------------------------------------------------------------
+
+    async fn insert_or_update_embedding_baseline(
+        &self,
+        baseline: &EmbeddingBaseline,
+    ) -> Result<()> {
+        let mu_json = serde_json::to_value(&baseline.mu).map_err(|e| Error::Storage(e.to_string()))?;
+        let cov_json = serde_json::to_value(&baseline.cov_diag)
+            .map_err(|e| Error::Storage(e.to_string()))?;
+        sqlx::query(
+            r#"
+INSERT INTO embedding_baseline (agent_id, mu, cov_diag, n, updated_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (agent_id) DO UPDATE SET
+    mu = EXCLUDED.mu,
+    cov_diag = EXCLUDED.cov_diag,
+    n = EXCLUDED.n,
+    updated_at = EXCLUDED.updated_at
+"#,
+        )
+        .bind(&baseline.agent_id)
+        .bind(&mu_json)
+        .bind(&cov_json)
+        .bind(baseline.n as i64)
+        .bind(&baseline.updated_at)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    async fn get_embedding_baseline(&self, agent_id: &str) -> Result<Option<EmbeddingBaseline>> {
+        let row = sqlx::query(
+            "SELECT agent_id, mu, cov_diag, n, updated_at FROM embedding_baseline WHERE agent_id = $1",
+        )
+        .bind(agent_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+
+        match row {
+            None => Ok(None),
+            Some(r) => {
+                let mu_val: serde_json::Value = r.get("mu");
+                let cov_val: serde_json::Value = r.get("cov_diag");
+                let mu: Vec<f32> = serde_json::from_value(mu_val)
+                    .map_err(|e| Error::Storage(e.to_string()))?;
+                let cov_diag: Vec<f32> = serde_json::from_value(cov_val)
+                    .map_err(|e| Error::Storage(e.to_string()))?;
+                Ok(Some(EmbeddingBaseline {
+                    agent_id: r.get("agent_id"),
+                    mu,
+                    cov_diag,
+                    n: r.get::<i64, _>("n") as u64,
+                    updated_at: r.get("updated_at"),
+                }))
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

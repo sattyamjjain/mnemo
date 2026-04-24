@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::anomaly::outlier::score_embedding_outlier;
 use crate::error::Result;
 use crate::model::agent_profile::AgentProfile;
 use crate::model::memory::{MemoryRecord, SourceType};
@@ -12,6 +13,44 @@ pub struct AnomalyCheckResult {
     pub is_anomalous: bool,
     pub score: f32,
     pub reasons: Vec<String>,
+}
+
+/// Configuration for [`check_for_anomaly`].
+///
+/// All knobs are opt-in: the default policy reproduces v0.3.2 behaviour
+/// exactly (lexical markers + profile-based heuristics only). Callers
+/// attach a policy to the engine via
+/// [`crate::query::MnemoEngine::with_poisoning_policy`].
+///
+/// # v0.3.3 additions
+///
+/// [`PoisoningPolicy::with_outlier_threshold`] enables the embedding-space
+/// z-score outlier detector in [`crate::anomaly::outlier`]. When set, and
+/// when a trained [`crate::model::embedding_baseline::EmbeddingBaseline`]
+/// exists for the record's agent, `check_for_anomaly` adds
+/// `OUTLIER_SCORE_CONTRIBUTION` to the anomaly score whenever the record's
+/// embedding is at least `threshold` standard deviations from the baseline.
+#[derive(Debug, Clone, Default)]
+pub struct PoisoningPolicy {
+    /// z-score threshold above which an embedding is considered an
+    /// outlier. `None` disables the check. `Some(3.0)` is a reasonable
+    /// starting point.
+    pub outlier_threshold: Option<f32>,
+}
+
+/// How much an outlier-flagged record contributes to the anomaly score.
+/// Chosen so that an outlier alone crosses the `>= 0.5` anomalous
+/// threshold without stacking profile-based signals.
+pub const OUTLIER_SCORE_CONTRIBUTION: f32 = 0.5;
+
+impl PoisoningPolicy {
+    /// Enable the z-score outlier gate with the supplied threshold.
+    ///
+    /// Example: `PoisoningPolicy::default().with_outlier_threshold(3.0)`
+    pub fn with_outlier_threshold(mut self, threshold: f32) -> Self {
+        self.outlier_threshold = Some(threshold);
+        self
+    }
 }
 
 /// One row returned by [`replay_quarantine`].
@@ -192,6 +231,28 @@ pub async fn check_for_anomaly(
         reasons.push(format!(
             "self-referential injection marker '{marker}' in indirectly-ingested record"
         ));
+    }
+
+    // v0.3.3: embedding-space z-score outlier gate. Runs only when a
+    // baseline has been trained for this agent AND the operator set
+    // `PoisoningPolicy::outlier_threshold`. Catches semantic drift that
+    // lexical markers miss — e.g. an adversarial rewrite that preserves
+    // meaning but pushes the vector off-distribution.
+    if let Some(threshold) = engine.poisoning_policy.outlier_threshold
+        && record.embedding.is_some()
+        && let Some(baseline) = engine
+            .storage
+            .get_embedding_baseline(&record.agent_id)
+            .await?
+    {
+        let out = score_embedding_outlier(record, &baseline, threshold);
+        if out.is_outlier {
+            score += OUTLIER_SCORE_CONTRIBUTION;
+            reasons.push(format!(
+                "embedding z-score {:.2} >= threshold {:.2} (baseline n={}, {} dims >3σ)",
+                out.z_score, out.threshold, out.baseline_n, out.dims_flagged
+            ));
+        }
     }
 
     Ok(AnomalyCheckResult {
