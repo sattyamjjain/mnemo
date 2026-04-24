@@ -23,6 +23,6 @@ reqwest = { workspace = true }
 
 # Detached signatures for NdjsonSigned export
 ed25519-dalek = { version = "2.1" }
-rand = "0.9"
+rand = "0.10"
 sha2 = "0.11"
 hex = "0.4"
