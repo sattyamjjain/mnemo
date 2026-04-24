@@ -126,10 +126,8 @@ pub trait StorageBackend: Send + Sync {
     async fn get_agent_profile(&self, agent_id: &str) -> Result<Option<AgentProfile>>;
 
     // Embedding baselines (v0.3.3, z-score outlier detector)
-    async fn insert_or_update_embedding_baseline(
-        &self,
-        baseline: &EmbeddingBaseline,
-    ) -> Result<()>;
+    async fn insert_or_update_embedding_baseline(&self, baseline: &EmbeddingBaseline)
+    -> Result<()>;
     async fn get_embedding_baseline(&self, agent_id: &str) -> Result<Option<EmbeddingBaseline>>;
 
     // Checkpoints

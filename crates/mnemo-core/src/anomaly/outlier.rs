@@ -169,7 +169,9 @@ mod tests {
         for i in 0..n {
             let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
             let magnitude = stddev * ((i as f32 / n as f32).sin().abs() + 0.5);
-            let emb: Vec<f32> = (0..d).map(|k| mean + sign * magnitude + k as f32 * 0.001).collect();
+            let emb: Vec<f32> = (0..d)
+                .map(|k| mean + sign * magnitude + k as f32 * 0.001)
+                .collect();
             out.push(record_with_embedding(emb));
         }
         out

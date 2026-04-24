@@ -412,7 +412,9 @@ async fn run_baseline(cli: &Cli, args: &BaselineArgs) -> Result<(), Box<dyn std:
         .into());
     };
 
-    storage.insert_or_update_embedding_baseline(&baseline).await?;
+    storage
+        .insert_or_update_embedding_baseline(&baseline)
+        .await?;
     println!(
         "baseline trained for agent '{}' — n={} d={} updated_at={}",
         baseline.agent_id,

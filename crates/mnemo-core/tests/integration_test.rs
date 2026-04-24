@@ -3468,10 +3468,7 @@ async fn test_zscore_outlier_catches_semantic_drift() {
     // Build 50 in-distribution records with tight embeddings around 0.1.
     let mut training: Vec<MemoryRecord> = Vec::with_capacity(50);
     for i in 0..50 {
-        let mut r = MemoryRecord::new(
-            "drift-agent".to_string(),
-            format!("routine log entry {i}"),
-        );
+        let mut r = MemoryRecord::new("drift-agent".to_string(), format!("routine log entry {i}"));
         // Lightly perturbed in each dim so variance isn't zero.
         let perturb = (i as f32 * 0.013).sin() * 0.02;
         r.embedding = Some(vec![0.1 + perturb; 16]);
@@ -3507,7 +3504,10 @@ async fn test_zscore_outlier_catches_semantic_drift() {
 
     // Train + persist the baseline.
     let baseline = train_baseline("drift-agent", &training).expect("baseline trained");
-    assert!(baseline.n >= 30, "baseline must have >= MIN_BASELINE_SAMPLES");
+    assert!(
+        baseline.n >= 30,
+        "baseline must have >= MIN_BASELINE_SAMPLES"
+    );
     storage
         .insert_or_update_embedding_baseline(&baseline)
         .await

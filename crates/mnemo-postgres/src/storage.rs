@@ -1266,9 +1266,10 @@ ON CONFLICT (agent_id) DO UPDATE SET
         &self,
         baseline: &EmbeddingBaseline,
     ) -> Result<()> {
-        let mu_json = serde_json::to_value(&baseline.mu).map_err(|e| Error::Storage(e.to_string()))?;
-        let cov_json = serde_json::to_value(&baseline.cov_diag)
-            .map_err(|e| Error::Storage(e.to_string()))?;
+        let mu_json =
+            serde_json::to_value(&baseline.mu).map_err(|e| Error::Storage(e.to_string()))?;
+        let cov_json =
+            serde_json::to_value(&baseline.cov_diag).map_err(|e| Error::Storage(e.to_string()))?;
         sqlx::query(
             r#"
 INSERT INTO embedding_baseline (agent_id, mu, cov_diag, n, updated_at)
@@ -1305,10 +1306,10 @@ ON CONFLICT (agent_id) DO UPDATE SET
             Some(r) => {
                 let mu_val: serde_json::Value = r.get("mu");
                 let cov_val: serde_json::Value = r.get("cov_diag");
-                let mu: Vec<f32> = serde_json::from_value(mu_val)
-                    .map_err(|e| Error::Storage(e.to_string()))?;
-                let cov_diag: Vec<f32> = serde_json::from_value(cov_val)
-                    .map_err(|e| Error::Storage(e.to_string()))?;
+                let mu: Vec<f32> =
+                    serde_json::from_value(mu_val).map_err(|e| Error::Storage(e.to_string()))?;
+                let cov_diag: Vec<f32> =
+                    serde_json::from_value(cov_val).map_err(|e| Error::Storage(e.to_string()))?;
                 Ok(Some(EmbeddingBaseline {
                     agent_id: r.get("agent_id"),
                     mu,
