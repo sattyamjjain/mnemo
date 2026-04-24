@@ -1,0 +1,49 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Catch new advisories published against pinned deps even without a
+    # code change. Runs at 04:07 UTC — off the main CI hot hour.
+    - cron: "7 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+
+      - name: cargo audit
+        # Exits non-zero on any advisory not listed in .cargo/audit.toml.
+        # That file must carry a rationale + owner for every entry — see
+        # `chore: update audit.toml ignores` commits for the convention.
+        run: cargo audit
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+
+      - name: cargo deny check advisories
+        # The advisories check is the only one we gate on today — duplicate
+        # detection and licence classification need their own config file
+        # (tracked as a follow-up, not this PR). `--hide-inclusion-graph`
+        # keeps the CI log readable on a clean pass.
+        run: cargo deny --workspace check advisories --hide-inclusion-graph

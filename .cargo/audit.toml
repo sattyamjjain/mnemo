@@ -3,9 +3,16 @@
 # Each ignore entry MUST carry a rationale and, where possible, a follow-up
 # owner. Entries here should be reviewed at every dependency bump — do not
 # leave an ignore in place once a fixed upstream version is reachable.
+#
+# Kept in lockstep with `deny.toml` (cargo-deny reads a different file but
+# the same ignore list). Lift both when lifting one.
 
 [advisories]
 ignore = [
+    # ------------------------------------------------------------------
+    # TLS / crypto transitive via sqlx, duckdb, aws-sdk-s3
+    # ------------------------------------------------------------------
+
     # rsa 0.9.x — Marvin attack on PKCS#1 v1.5 decryption via timing
     # sidechannels. Upstream has NOT published a fixed release; the only
     # mitigation is to migrate to OAEP/PSS or to a different crate. Mnemo
@@ -14,12 +21,84 @@ ignore = [
     # radius here is limited. Revisit once an upstream fix lands.
     "RUSTSEC-2023-0071",
 
-    # rustls-webpki 0.101.x — certificate name-constraint handling bugs.
-    # Fixed in >=0.103.12 but pulled in transitively through a dependency
-    # path we cannot upgrade without a coordinated bump of the relevant
-    # TLS stack. The relevant constraint behaviour is not used by Mnemo's
-    # own TLS config. Lift this ignore as soon as the transitive bump is
-    # available.
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
+    # rustls-webpki < 0.103.10 / 0.103.13 — certificate name-constraint
+    # and CRL-parsing bugs. Fixed upstream but pulled transitively through
+    # a dependency path we cannot upgrade without coordinated bumps of the
+    # TLS stack carried by quinn/h2. Mnemo's own `reqwest` config uses
+    # rustls-platform-verifier which is unaffected. Lift as soon as the
+    # transitive bump is available.
+    "RUSTSEC-2026-0098",  # name-constraint handling
+    "RUSTSEC-2026-0099",  # name-constraint handling
+    "RUSTSEC-2026-0049",  # CRL authoritative-check logic (fix: >=0.103.10)
+    "RUSTSEC-2026-0104",  # CRL parsing panic (fix: >=0.103.13)
+
+    # ------------------------------------------------------------------
+    # AWS-LC transitive via aws-sdk-s3 (optional `s3` feature, not on by
+    # default). The v0.3.2 S3 cold-storage and v0.3.3 R2 workspace paths
+    # only call AWS SDK client methods for PUT/GET/DELETE with Signature
+    # V4; none of the CCM / PKCS7 / name-constraint / CRL code paths here
+    # are on the mnemo call path. Revisit when aws-lc-rs ships a fixed
+    # version that aws-sdk-s3 picks up transitively.
+    # ------------------------------------------------------------------
+    "RUSTSEC-2026-0044",  # X.509 name constraints wildcard/Unicode (fix: >=0.39)
+    "RUSTSEC-2026-0045",  # AES-CCM tag-verification timing (fix: >=0.38)
+    "RUSTSEC-2026-0046",  # PKCS7 chain-validation bypass (fix: >=0.38)
+    "RUSTSEC-2026-0047",  # PKCS7 signature-validation bypass (fix: >=0.38)
+    "RUSTSEC-2026-0048",  # CRL distribution-point check (fix: >=0.39)
+
+    # ------------------------------------------------------------------
+    # Decompression / transport
+    # ------------------------------------------------------------------
+
+    # zstd-safe / zstd 0.11.5 — decompression of invalid data can leak
+    # uninitialised memory. Pulled via arrow/parquet through duckdb. We
+    # do not decompress attacker-supplied zstd streams at the mnemo
+    # surface; arrow reads are internal to duckdb's Parquet loader and
+    # not driven by untrusted input in our code paths.
+    "RUSTSEC-2026-0041",
+
+    # quinn 0.11.x — DoS in endpoint processing of malformed packets.
+    # Not exposed — mnemo does not run a QUIC listener; quinn is pulled
+    # transitively and never initialised.
+    "RUSTSEC-2026-0037",
+
+    # ------------------------------------------------------------------
+    # tar-rs via aws-sdk-s3 packaging helpers
+    # ------------------------------------------------------------------
+
+    # tar-rs < 0.4.45 — PAX header parsing + symlink-chmod issues in
+    # `unpack_in`. Mnemo does not call `tar::Archive::unpack_in`
+    # anywhere; this is transitive tooling. Bump when aws-sdk-s3's
+    # transitive constraint allows.
+    "RUSTSEC-2026-0067",
+    "RUSTSEC-2026-0068",
+
+    # ------------------------------------------------------------------
+    # Python bindings
+    # ------------------------------------------------------------------
+
+    # pyo3 0.28.0 — type confusion when accessing subclass data of native
+    # types using the `abi3` feature on Python 3.12+. We build without
+    # `abi3` (mnemo-python does not set the feature), so this does not
+    # apply in practice. Fix: pyo3 >= 0.28.2; will get there on the next
+    # pyo3 bump PR.
+    "RUSTSEC-2026-0013",
+
+    # rand 0.10.x — unsoundness when a custom global logger calls
+    # `rand::rng()` during a log emit. Mnemo uses `tracing` with the
+    # default subscriber; the call chain never invokes rand during log
+    # emission. No fix version as of 2026-04-24.
+    "RUSTSEC-2026-0097",
+
+    # ------------------------------------------------------------------
+    # Unmaintained / informational
+    # ------------------------------------------------------------------
+
+    # paste — macro crate marked unmaintained, no replacement yet.
+    # Pulled transitively through many build-time deps. Non-runtime.
+    "RUSTSEC-2024-0436",
+
+    # rayon 1.x IterMut — Stacked Borrows violation. Transitive only.
+    # No exploit path in mnemo's own code.
+    "RUSTSEC-2026-0002",
 ]
