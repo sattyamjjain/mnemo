@@ -1,0 +1,17 @@
+{
+  "_comment": "Last-known-good benchmark numbers. Populated by .github/workflows/benchmarks-nightly.yml after its first successful run with ANTHROPIC_API_KEY + OPENAI_API_KEY + HF_TOKEN secrets configured. Until then the nightly gate is a no-op (first-run exception documented in the workflow). Any subsequent nightly run with recall@10 regressing by more than MNEMO_BENCH_REGRESSION_PP (default 3.0) percentage points vs the values here will fail the job.",
+  "version": "0.3.3",
+  "updated_at": null,
+  "datasets": {
+    "locomo": {
+      "split": "train",
+      "commit": null,
+      "results": []
+    },
+    "longmemeval": {
+      "split": "longmemeval_s_cleaned",
+      "commit": null,
+      "results": []
+    }
+  }
+}

@@ -18,6 +18,7 @@ use mnemo_core::query::recall::RecallRequest;
 use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
+use mnemo_core::search::tantivy_index::TantivyFullTextIndex;
 use mnemo_core::storage::duckdb::DuckDbStorage;
 
 fn to_py_err(e: impl std::fmt::Display) -> PyErr {
@@ -35,7 +36,8 @@ struct MnemoClient {
 #[pymethods]
 impl MnemoClient {
     #[new]
-    #[pyo3(signature = (db_path="mnemo.db", agent_id="default", org_id=None, openai_api_key=None, embedding_model="text-embedding-3-small", dimensions=1536))]
+    #[pyo3(signature = (db_path="mnemo.db", agent_id="default", org_id=None, openai_api_key=None, embedding_model="text-embedding-3-small", dimensions=1536, with_full_text=true, with_noop_embedding=true))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         db_path: &str,
         agent_id: &str,
@@ -43,6 +45,8 @@ impl MnemoClient {
         openai_api_key: Option<String>,
         embedding_model: &str,
         dimensions: usize,
+        with_full_text: bool,
+        with_noop_embedding: bool,
     ) -> PyResult<Self> {
         let runtime = tokio::runtime::Runtime::new().map_err(to_py_err)?;
         let db_path = std::path::PathBuf::from(db_path);
@@ -54,8 +58,14 @@ impl MnemoClient {
                 embedding_model.to_string(),
                 dimensions,
             ))
-        } else {
+        } else if with_noop_embedding {
             Arc::new(NoopEmbedding::new(dimensions))
+        } else {
+            return Err(PyRuntimeError::new_err(
+                "MnemoClient: no openai_api_key supplied and with_noop_embedding=False. \
+                 Either pass openai_api_key= (or set OPENAI_API_KEY and read it yourself) \
+                 or leave with_noop_embedding=True to fall back to zero vectors.",
+            ));
         };
 
         let index = Arc::new(UsearchIndex::new(dimensions).map_err(to_py_err)?);
@@ -65,13 +75,24 @@ impl MnemoClient {
             index.load(&index_path).map_err(to_py_err)?;
         }
 
-        let engine = Arc::new(MnemoEngine::new(
+        let mut engine = MnemoEngine::new(
             storage,
             index.clone(),
             embedding,
             agent_id.to_string(),
             org_id,
-        ));
+        );
+        // Attach a persistent Tantivy full-text index by default (v0.3.3).
+        // Without it, the Python client's `recall(..., strategy="hybrid_rrf")`
+        // falls through to vector-only retrieval and substring-style
+        // benchmarks (LongMemEval, LoCoMo) collapse. Callers that want
+        // the old zero-tantivy behaviour pass `with_full_text=False`.
+        if with_full_text {
+            let ft_path = db_path.with_extension("tantivy");
+            let ft = Arc::new(TantivyFullTextIndex::new(&ft_path).map_err(to_py_err)?);
+            engine = engine.with_full_text(ft);
+        }
+        let engine = Arc::new(engine);
 
         Ok(Self {
             engine,
