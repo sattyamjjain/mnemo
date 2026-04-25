@@ -30,6 +30,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install protoc (required by mnemo-grpc build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo clippy --all-targets --all-features
 
   test:
@@ -39,7 +41,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all
+      - name: Install protoc (required by mnemo-grpc build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - run: cargo test --workspace --exclude mnemo-python
 
   build:
     name: Build
@@ -48,7 +52,12 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --all
+      - name: Install protoc (required by mnemo-grpc build script)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      # mnemo-python is a PyO3 cdylib that won't link without the
+      # Python development headers + maturin context. Built separately
+      # via the pypi-publish workflow.
+      - run: cargo build --workspace --exclude mnemo-python
 
   security:
     name: Security Audit
