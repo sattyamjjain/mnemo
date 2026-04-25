@@ -1,12 +1,42 @@
 {
   "name": "@mnemo/sdk",
-  "version": "0.1.0",
-  "description": "TypeScript SDK for Mnemo MCP memory database",
+  "version": "0.4.0-rc1",
+  "description": "TypeScript SDK for Mnemo — MCP-native memory database for AI agents.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "test": "jest"
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mnemo",
+    "mcp",
+    "memory",
+    "ai",
+    "agent",
+    "llm",
+    "vector",
+    "embeddings",
+    "knowledge-graph",
+    "duckdb"
+  ],
+  "homepage": "https://github.com/sattyamjjain/mnemo#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sattyamjjain/mnemo.git",
+    "directory": "sdks/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/sattyamjjain/mnemo/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
