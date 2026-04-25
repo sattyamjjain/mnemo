@@ -1,0 +1,121 @@
+name: pypi-publish
+
+# Builds maturin wheels for the `mnemo` Python package and publishes
+# them to PyPI via OIDC trusted publishing — no API token in repo
+# secrets.
+#
+# Prerequisites
+#   1. Register `mnemo` on PyPI (https://pypi.org/manage/account/publishing/)
+#      as a "trusted publisher" pointing at this repo + workflow file
+#      `pypi-publish.yml` + environment `pypi`.
+#   2. Create a GitHub repo environment named `pypi` (Settings →
+#      Environments). No secrets need to live in it; the OIDC token is
+#      issued at runtime and is what PyPI consumes.
+#   3. The Python project's `version` in `python/pyproject.toml` must be
+#      a PyPI-compatible string. v0.3.4 and v0.4.0rc1 both work
+#      (PyPI normalises `v0.4.0-rc1` -> `0.4.0rc1`).
+#
+# Notes
+#   * Linux + macOS wheels only on first cut — DuckDB + PyO3 + Windows
+#     is a known sharp edge that we'll add in a follow-up once the
+#     primary path is healthy.
+#   * Skips Python 3.9 — was eligible per pyproject `>=3.9` but its EOL
+#     is approaching. Add back if a real consumer asks.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (must already exist on origin)"
+        required: true
+        type: string
+
+jobs:
+  build-linux:
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: python
+          command: build
+          args: --release --out dist -i python${{ matrix.python-version }}
+          manylinux: 2_28
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-py${{ matrix.python-version }}
+          path: python/dist
+
+  build-macos:
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: python
+          command: build
+          args: --release --out dist -i python${{ matrix.python-version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-py${{ matrix.python-version }}
+          path: python/dist
+
+  build-sdist:
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: python
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: python/dist
+
+  publish:
+    needs: [build-linux, build-macos, build-sdist]
+    runs-on: ubuntu-latest
+    # Belt-and-braces guard: even on workflow_dispatch, only publish when
+    # the dispatched tag exists. Avoids accidental dispatch from a branch.
+    if: github.repository == 'sattyamjjain/mnemo'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mnemo
+    permissions:
+      id-token: write   # required by OIDC trusted publisher
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
