@@ -122,13 +122,13 @@ export class MnemoClient {
     });
 
     // Handle unexpected exit
-    this.process.on("error", (err) => {
+    this.process.on("error", (err: Error) => {
       this.rejectAllPending(
         new MnemoConnectionError(`Child process error: ${err.message}`),
       );
     });
 
-    this.process.on("exit", (code) => {
+    this.process.on("exit", (code: number | null) => {
       this.connected = false;
       this.rejectAllPending(
         new MnemoConnectionError(
@@ -322,7 +322,7 @@ export class MnemoClient {
       this.pendingRequests.set(id, { resolve, reject });
 
       const payload = JSON.stringify(request) + "\n";
-      this.process.stdin.write(payload, (err) => {
+      this.process.stdin.write(payload, (err: Error | null | undefined) => {
         if (err) {
           this.pendingRequests.delete(id);
           reject(
