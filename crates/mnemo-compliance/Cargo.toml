@@ -16,7 +16,7 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
-thiserror = "1.0"
+thiserror = "2.0"
 
 # HTTP client for HttpConsentManager — defer TLS stack choice to workspace-wide reqwest.
 reqwest = { workspace = true }

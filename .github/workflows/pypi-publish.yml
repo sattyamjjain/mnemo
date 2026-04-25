@@ -63,7 +63,7 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - uses: PyO3/maturin-action@v1
@@ -72,7 +72,7 @@ jobs:
           command: build
           args: --release --out dist -i python${{ matrix.python-version }}
           manylinux: 2_28
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-py${{ matrix.python-version }}
           path: python/dist
@@ -87,7 +87,7 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - uses: PyO3/maturin-action@v1
@@ -95,7 +95,7 @@ jobs:
           working-directory: python
           command: build
           args: --release --out dist -i python${{ matrix.python-version }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-py${{ matrix.python-version }}
           path: python/dist
@@ -111,7 +111,7 @@ jobs:
           working-directory: python
           command: sdist
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: python/dist
@@ -126,7 +126,7 @@ jobs:
     permissions:
       id-token: write   # required for OIDC trusted publisher
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
