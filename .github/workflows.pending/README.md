@@ -5,106 +5,130 @@ that need a token with `workflow` scope to land. The default
 `sattyamjjain` token lacks that scope, so they get parked here
 until a maintainer with `workflow` scope moves them across.
 
-The v0.3.3 cohort (`benchmarks-nightly` + `security`) was already
-moved out of this directory in PR #43; the steady-state list lives
-below.
-
-## Activation drill (one-time per workflow)
+## Activation drill
 
 ```bash
-git checkout -b chore/activate-<name>
+git checkout -b chore/activate-publish-workflows
 mkdir -p .github/workflows
-git mv .github/workflows.pending/<name>.yml.txt \
-       .github/workflows/<name>.yml
-git commit -m "chore(ci): activate <name> workflow"
-git push -u origin chore/activate-<name>
-gh pr create --base main --head chore/activate-<name> \
-    --title "chore(ci): activate <name>" \
-    --body "Move from workflows.pending/. See the file's top-of-file docs for prerequisites."
-gh pr merge --admin --merge <pr-number>
+for f in cargo-publish pypi-publish npm-publish; do
+  git mv ".github/workflows.pending/${f}.yml.txt" \
+         ".github/workflows/${f}.yml"
+done
+git commit -m "chore(ci): activate auto-publish workflows"
+git push -u origin chore/activate-publish-workflows
+gh pr create --base main --head chore/activate-publish-workflows \
+    --title "chore(ci): activate auto-publish workflows" \
+    --body "Move from workflows.pending/. See README in that directory."
+gh pr merge --admin --merge "$(gh pr list --head chore/activate-publish-workflows --json number -q '.[0].number')"
 ```
 
-A token with `workflow` scope is required for the push step. Either
-refresh the personal token via `gh auth refresh -s workflow`, or do
-the move-and-push from the work account.
+A token with `workflow` scope is required for the push step.
+Either run `gh auth refresh -s workflow` once, or use a fresh PAT.
+
+---
+
+## Trigger model — auto-deploy on push to main
+
+All three workflows trigger on **push to main** (plus
+`workflow_dispatch` for manual reruns). Each runs a
+**version-changed precheck** before any actual publish:
+
+* `cargo-publish.yml` — for each of the 9 internal crates, check
+  `crates.io/api/v1/crates/<crate>/<workspace-version>`. Crates
+  whose current workspace version is already on crates.io get
+  skipped; the rest get queued and published in dependency order.
+* `pypi-publish.yml` — check `pypi.org/pypi/mnemo-db/<version>/json`.
+  Skip if 200, build wheels + publish if 404.
+* `npm-publish.yml` — `npm view @mndfreek/mnemo-sdk@<version>`.
+  Skip if it returns the version, publish otherwise.
+
+What this gives you
+
+* **Doc-only commits don't republish.** No version bump → no
+  publish attempt → no spurious failure.
+* **Version-bump commits publish exactly the channels whose
+  manifest changed.** Bump only `Cargo.toml`? Only crates.io
+  fires. Bump `pyproject.toml` too? PyPI joins. All three? Three
+  parallel publishes.
+* **Idempotent.** Re-running on the same commit is always safe.
+
+What this does NOT give you
+
+* **Auto-version-bumping.** You still edit the version field in
+  `Cargo.toml` / `pyproject.toml` / `package.json` before pushing.
+  No commit-message-driven bump (no semantic-release / changesets).
+* **Automatic CHANGELOG generation.** Manual today.
 
 ---
 
 ## Currently parked
 
-### `cargo-publish.yml.txt` — crates.io publish
+### `cargo-publish.yml.txt` — crates.io
 
-Publishes every public mnemo crate in dependency order on every
-`v*` tag push. Also supports `workflow_dispatch` with a tag input
-and a dry-run flag.
+**Prerequisites**
 
-**Before activating:**
+1. `CARGO_REGISTRY_TOKEN` repo secret. **Set 2026-04-25.** Rotate
+   per normal cadence.
+2. `[workspace.dependencies]` entries in `Cargo.toml` carry
+   `version` alongside `path`. **Already present from PR #56.**
 
-1. `CARGO_REGISTRY_TOKEN` repo secret — generate at
-   <https://crates.io/me> → API Tokens, scope to publish-new +
-   publish-update for every crate name. First publish reserves the
-   name; subsequent publishes update.
-2. The tag's `Cargo.toml` must have `version` specifiers next to
-   `path` on every internal `[workspace.dependencies]` entry. v0.4.0
-   onwards has this; pre-v0.4.0 tags can't be published without
-   re-tagging from a Cargo.toml that does.
-3. Local sanity-check before the first activation:
-   ```bash
-   cargo publish -p mnemo-core --dry-run
-   ```
-   This fails fast on naming conflicts or registry issues without
-   actually publishing.
+**What it publishes**
 
-### `pypi-publish.yml.txt` — PyPI publish (OIDC trusted publisher)
+`mnemo-core` first, then in dep order: `mnemo-graph`, `mnemo-mcp`,
+`mnemo-postgres`, `mnemo-rest`, `mnemo-admin`, `mnemo-pgwire`,
+`mnemo-grpc`, `mnemo-compliance`, then finally `mnemo-mcp-server`
+(the umbrella binary). Each new-crate publish is spaced 12 minutes
+apart to stay under crates.io's free-tier rate limit (5 new crates
+per hour).
 
-Builds maturin wheels for `python/mnemo` (linux + macOS, Python
-3.10–3.13) plus an sdist; publishes via OIDC trusted publishing
-(no API token in repo).
+### `pypi-publish.yml.txt` — PyPI
 
-**Before activating:**
+**Prerequisites**
 
-1. Register `mnemo` on PyPI with a trusted publisher pointing at
-   this repo + the workflow file `pypi-publish.yml` + environment
-   `pypi`:
-   <https://pypi.org/manage/account/publishing/>
-2. Create a GitHub repo environment named `pypi` (Settings →
-   Environments → New environment). No secrets needed inside it —
-   the OIDC token is issued at runtime.
-3. Confirm `python/pyproject.toml` `version` is PyPI-compatible.
-   v0.3.4 and v0.4.0rc1 both work (PyPI normalises `v0.4.0-rc1`
-   to `0.4.0rc1`).
+1. PyPI trusted publisher rule (`mnemo-db` → this repo +
+   `pypi-publish.yml` + env `pypi`). **Already registered** at
+   <https://pypi.org/manage/account/publishing/>.
+2. GitHub repo environment named `pypi`. **Already created.**
 
-Windows wheels are deferred — DuckDB + PyO3 + Windows is a known
-sharp edge, and shipping a wheel that fails at runtime is worse
-than not shipping one. Add after the first PyPI release succeeds.
+Linux + macOS wheels for Python 3.10–3.13 + sdist. Windows
+wheels deferred — DuckDB+PyO3+Windows is a known sharp edge.
 
-### `npm-publish.yml.txt` — npm publish (`@mndfreek/mnemo-sdk`)
+### `npm-publish.yml.txt` — npm
 
-Publishes the TypeScript SDK with npm provenance attestation.
+**Prerequisites**
 
-**Before activating:**
+1. `@mndfreek` npm scope owned by the publishing account.
+   **Already active** (predates our session).
+2. `NPM_TOKEN` repo secret (granular access token with
+   `@mndfreek/*` read+write and **2FA-bypass enabled**).
+   **Set 2026-04-25.**
+3. GitHub repo environment named `npm`. **Already created.**
 
-1. The `@mnemo` npm scope must exist and be owned by the publishing
-   account: <https://www.npmjs.com/org/create>
-2. `NPM_TOKEN` repo secret — automation token with publish scope
-   for `@mndfreek/mnemo-sdk`:
-   <https://www.npmjs.com/settings/sattyamjjain/tokens>
-3. Create a GitHub repo environment named `npm`.
-
-npm's full-OIDC trusted publisher is supported but less battle-
-tested than PyPI's. Token + `--provenance` is the safer default
-for now. Reassess in a release or two.
+Publishes with `--provenance` attestation. Prerelease versions
+(those with a `-` in the version, e.g. `0.4.0-rc2`) ship to the
+`rc` dist-tag so `npm install @mndfreek/mnemo-sdk` keeps resolving
+to the latest stable.
 
 ---
 
-## How to fire a publish run
+## Releasing once activated
 
-After all three workflows are activated and their respective
-prerequisites are configured, a single `git push origin v0.4.0`
-(or whatever the next tag is) triggers all three in parallel.
+Edit the version fields in all relevant manifests, commit, push to
+main:
 
-To publish a tag that already exists (e.g. backfill `v0.4.0` after
-this rewrite lands), use `workflow_dispatch` from the Actions UI
-with the tag name as input. The workflows checkout that tag and
-build from its committed `Cargo.toml` / `pyproject.toml` / npm
-`package.json`.
+```bash
+# Edit:
+#   Cargo.toml workspace.package.version + [workspace.dependencies] internal `version`
+#   python/pyproject.toml [project] version
+#   python/mnemo/__init__.py __version__
+#   sdks/typescript/package.json version
+git commit -am "chore: release 0.4.0"
+git push origin main
+```
+
+The three workflows fire in parallel. Each one prechecks: only the
+channels whose manifest version actually changed will publish.
+
+To re-run after a partial failure (e.g. crates.io rate-limited 4 of 9
+crates), open **Actions → cargo-publish → Run workflow** on the same
+commit. The precheck queues only the unpublished crates.

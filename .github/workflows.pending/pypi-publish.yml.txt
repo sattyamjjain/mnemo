@@ -1,41 +1,61 @@
 name: pypi-publish
 
-# Builds maturin wheels for the `mnemo` Python package and publishes
-# them to PyPI via OIDC trusted publishing — no API token in repo
-# secrets.
+# Auto-deploy mnemo-db to PyPI on push to main, gated by version-changed.
 #
-# Prerequisites
-#   1. Register `mnemo` on PyPI (https://pypi.org/manage/account/publishing/)
-#      as a "trusted publisher" pointing at this repo + workflow file
-#      `pypi-publish.yml` + environment `pypi`.
-#   2. Create a GitHub repo environment named `pypi` (Settings →
-#      Environments). No secrets need to live in it; the OIDC token is
-#      issued at runtime and is what PyPI consumes.
-#   3. The Python project's `version` in `python/pyproject.toml` must be
-#      a PyPI-compatible string. v0.3.4 and v0.4.0rc1 both work
-#      (PyPI normalises `v0.4.0-rc1` -> `0.4.0rc1`).
+# Trigger model
+#   - push to main: runs, but only publishes if `python/pyproject.toml`'s
+#     version doesn't already exist on PyPI. Doc-only commits no-op.
+#   - workflow_dispatch: manual trigger.
 #
-# Notes
-#   * Linux + macOS wheels only on first cut — DuckDB + PyO3 + Windows
-#     is a known sharp edge that we'll add in a follow-up once the
-#     primary path is healthy.
-#   * Skips Python 3.9 — was eligible per pyproject `>=3.9` but its EOL
-#     is approaching. Add back if a real consumer asks.
+# Why this design
+#   PyPI rejects republishing the same version (immutable). The
+#   precheck makes the workflow idempotent so re-running on the same
+#   commit is safe.
+#
+# Auth
+#   Trusted publisher (OIDC) — no API token in repo secrets. The trust
+#   relationship is registered at:
+#     https://pypi.org/manage/account/publishing/
+#   pointing at this repo + workflow file `pypi-publish.yml` + env `pypi`.
+#
+# Coverage caveat
+#   linux + macOS wheels (Python 3.10–3.13) + sdist. Windows deferred
+#   (DuckDB+PyO3+Windows is a known sharp edge — shipping a wheel that
+#   fails at runtime is worse than not shipping one).
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to publish (must already exist on origin)"
-        required: true
-        type: string
 
 jobs:
-  build-linux:
+  plan:
     if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check if pyproject version is already on PyPI
+        id: check
+        run: |
+          ver=$(grep -E '^version\s*=' python/pyproject.toml | head -1 | cut -d'"' -f2)
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          http=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://pypi.org/pypi/mnemo-db/${ver}/json")
+          if [ "$http" = "404" ]; then
+            echo "mnemo-db@${ver} not on PyPI — will publish"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mnemo-db@${ver} already on PyPI (HTTP ${http}) — skipping"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-linux:
+    needs: plan
+    if: needs.plan.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -43,8 +63,6 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -60,7 +78,8 @@ jobs:
           path: python/dist
 
   build-macos:
-    if: github.repository == 'sattyamjjain/mnemo'
+    needs: plan
+    if: needs.plan.outputs.should_publish == 'true'
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -68,8 +87,6 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -84,12 +101,11 @@ jobs:
           path: python/dist
 
   build-sdist:
-    if: github.repository == 'sattyamjjain/mnemo'
+    needs: plan
+    if: needs.plan.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag || github.ref_name }}
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: python
@@ -101,16 +117,14 @@ jobs:
           path: python/dist
 
   publish:
-    needs: [build-linux, build-macos, build-sdist]
+    needs: [plan, build-linux, build-macos, build-sdist]
+    if: needs.plan.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
-    # Belt-and-braces guard: even on workflow_dispatch, only publish when
-    # the dispatched tag exists. Avoids accidental dispatch from a branch.
-    if: github.repository == 'sattyamjjain/mnemo'
     environment:
       name: pypi
-      url: https://pypi.org/p/mnemo
+      url: https://pypi.org/p/mnemo-db
     permissions:
-      id-token: write   # required by OIDC trusted publisher
+      id-token: write   # required for OIDC trusted publisher
     steps:
       - uses: actions/download-artifact@v4
         with:

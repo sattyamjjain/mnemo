@@ -1,51 +1,73 @@
 name: npm-publish
 
-# Publishes the TypeScript SDK at `sdks/typescript/` to npm under the
-# scoped name `@mndfreek/mnemo-sdk`. Uses npm's OIDC provenance attestation
-# (introduced 2024) so the published artefact is cryptographically tied
-# to this exact GitHub Actions run.
+# Auto-deploy @mndfreek/mnemo-sdk to npm on push to main, gated by
+# version-changed.
 #
-# Prerequisites
-#   1. The `@mnemo` npm scope must exist and be owned by the publishing
-#      account. https://www.npmjs.com/org/create
-#   2. `NPM_TOKEN` repo secret — Automation token from
-#      https://www.npmjs.com/settings/<user>/tokens with publish scope
-#      for `@mndfreek/mnemo-sdk`. (npm's full-OIDC trusted publisher exists but
-#      remains less battle-tested than PyPI's; using an automation
-#      token + provenance attestation is the safer default for now.)
-#   3. Create a GitHub repo environment named `npm`.
+# Trigger model
+#   - push to main: runs, but only publishes if
+#     `sdks/typescript/package.json`'s version doesn't already exist on
+#     npm. Doc-only commits no-op.
+#   - workflow_dispatch: manual trigger.
 #
-# Note
-#   * `package.json` has `"name": "@mndfreek/mnemo-sdk"` — scoped packages need
-#     `--access public` to be installable without authentication.
+# Why this design
+#   npm rejects republishing the same version (immutable). The
+#   precheck makes the workflow idempotent.
+#
+# Auth
+#   NPM_TOKEN repo secret (granular access token with @mndfreek/* write
+#   + 2FA bypass enabled). npm's full-OIDC trusted publisher exists but
+#   is younger than PyPI's; reassess in a release or two.
+#
+# Provenance attestation
+#   `--provenance` ties the published artefact cryptographically to
+#   this exact GitHub Actions run. Visible on the npm page.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to publish (must already exist on origin)"
-        required: true
-        type: string
 
 jobs:
-  publish:
+  plan:
     if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Check if package.json version is already on npm
+        id: check
+        run: |
+          ver=$(node -p 'require("./sdks/typescript/package.json").version')
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          if npm view "@mndfreek/mnemo-sdk@${ver}" version >/dev/null 2>&1; then
+            echo "@mndfreek/mnemo-sdk@${ver} already on npm — skipping"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "@mndfreek/mnemo-sdk@${ver} not on npm — will publish"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: plan
+    if: needs.plan.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
       name: npm
       url: https://www.npmjs.com/package/@mndfreek/mnemo-sdk
     permissions:
-      id-token: write   # required for npm provenance attestation
+      id-token: write   # for npm provenance attestation
       contents: read
 
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -70,4 +92,14 @@ jobs:
         working-directory: sdks/typescript
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        run: |
+          # Prerelease versions (with a hyphen, e.g. 0.4.0-rc2) ship to
+          # the `rc` dist-tag so `npm install @mndfreek/mnemo-sdk` keeps
+          # resolving to the latest stable. Stable versions ship to
+          # `latest` (the default).
+          ver=$(node -p 'require("./package.json").version')
+          if [[ "$ver" == *-* ]]; then
+            npm publish --access public --provenance --tag rc
+          else
+            npm publish --access public --provenance
+          fi
