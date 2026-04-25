@@ -22,7 +22,7 @@ Install
 
 ::
 
-    pip install mnemo[openai-sandbox-r2]
+    pip install mnemo-db[openai-sandbox-r2]
 
 Construct
 ---------

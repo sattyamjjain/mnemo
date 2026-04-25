@@ -12,7 +12,7 @@ checks, batched delete.
 ## Install
 
 ```bash
-pip install 'mnemo[openai-sandbox-r2]'
+pip install 'mnemo-db[openai-sandbox-r2]'
 ```
 
 The extra pulls `boto3>=1.34` and `cryptography>=42`. R2's S3 API is

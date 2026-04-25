@@ -7,7 +7,7 @@ Ships two sides of the v0.3.2 roadmap commitment:
   them back to us across a worker restart.
 * `S3Workspace` — real `boto3`-backed implementation of the workspace
   put/get/delete contract. Opt-in; install with
-  `pip install mnemo[openai-sandbox-s3]`.
+  `pip install mnemo-db[openai-sandbox-s3]`.
 
 A workspace payload is a directory tree. We walk it with
 `pathlib.PurePosixPath`, record every file's SHA-256 digest, record every

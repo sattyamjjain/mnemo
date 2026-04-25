@@ -2,6 +2,31 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [Unreleased]
+
+### Changed (publication names — no code or behaviour change)
+
+- **PyPI distribution name**: `mnemo` → **`mnemo-db`**. The unqualified
+  name on PyPI is held by an unrelated 2021 notebook project
+  (`Gabriele Girelli/mnemo-assistant`) with last release 2021-07-06.
+  The Python package directory, the import path, and the SDK class
+  names are unchanged — `from mnemo import MnemoClient` still works.
+  Users now `pip install mnemo-db` and (for extras)
+  `pip install 'mnemo-db[anthropic-memory-tool]'` etc.
+- **`mnemo-cli` crate** → published as **`mnemo-mcp-server`** on
+  crates.io. The unqualified `mnemo-cli` is owned by
+  [github.com/watzon/mnemo](https://crates.io/crates/mnemo-cli)
+  ("CLI management tool for the Mnemo LLM memory proxy" — a different
+  project). The crate directory stays `crates/mnemo-cli/` and the
+  installed binary is still `mnemo`. Users now
+  `cargo install mnemo-mcp-server` and the resulting binary is
+  invoked as `mnemo`.
+- README, mdBook docs, integration pages, and example scripts updated
+  to reflect both new install commands.
+
+No changes to public APIs, file formats, persistence stamps, or wire
+protocols. Downgrade-safe.
+
 ## [0.4.0-rc1] - 2026-04-25
 
 ### Highlights

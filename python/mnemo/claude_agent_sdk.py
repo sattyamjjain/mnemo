@@ -43,7 +43,7 @@ Example::
 
 Install::
 
-    pip install mnemo[claude]
+    pip install mnemo-db[claude]
 """
 
 from __future__ import annotations
@@ -380,7 +380,7 @@ class MnemoClaudeMemory:
         if not _WATCHDOG_AVAILABLE:
             raise RuntimeError(
                 "watchdog is required for MnemoClaudeMemory.watch(). "
-                "Install with: pip install mnemo[claude]"
+                "Install with: pip install mnemo-db[claude]"
             )
         if self._observer is not None:
             return

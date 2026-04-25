@@ -93,4 +93,8 @@ jobs:
             sleep 60
           fi
           # Round 3: umbrella binary that pulls everything together.
-          publish mnemo-cli
+          # Published as `mnemo-mcp-server` because `mnemo-cli` is owned
+          # on crates.io by github.com/watzon/mnemo (a different
+          # LLM-memory-proxy project). The directory and binary name
+          # stay `mnemo`; only the published package name moves.
+          publish mnemo-mcp-server
