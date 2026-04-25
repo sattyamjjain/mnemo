@@ -1,0 +1,96 @@
+name: cargo-publish
+
+# Triggered by tag push (`v*`) OR manual dispatch with a specific tag.
+# Publishes every public mnemo crate to crates.io in dependency order.
+#
+# Prerequisites
+#   1. Set `CARGO_REGISTRY_TOKEN` repo secret (https://crates.io/me — "API Tokens").
+#      Token must have publish-new + publish-update scopes for every crate
+#      below; first publish reserves the name.
+#   2. The tag's `Cargo.toml` must carry `version` specifiers alongside `path`
+#      on every internal `[workspace.dependencies]` entry — `cargo publish`
+#      rejects otherwise. v0.4.0-rc1 onwards has this; pre-v0.4.0-rc1 tags
+#      can't be published without a re-tag.
+#
+# Failure modes worth knowing
+#   * crates.io has an eventual-consistency window between `cargo publish`
+#     and the crate appearing in the registry index. The 60-second sleeps
+#     below are conservative; bump if a downstream crate fails with
+#     "could not find `mnemo-core`".
+#   * Publishing a crate whose name was never reserved fails fast — set
+#     CARGO_REGISTRY_TOKEN once and run a `cargo publish --dry-run -p mnemo-core`
+#     locally first to surface naming conflicts before the workflow fires.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (must already exist on origin), e.g. v0.4.0"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry-run only (no actual publish)"
+        type: boolean
+        default: false
+
+jobs:
+  publish:
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/mnemo-core
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify workspace builds
+        run: cargo build --workspace --exclude mnemo-python
+
+      - name: Publish in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          set -e
+          publish() {
+            local crate="$1"
+            echo "::group::Publish ${crate}"
+            cargo publish -p "${crate}" $DRY_RUN
+            echo "::endgroup::"
+          }
+          # Round 1: leaf — every other crate depends on this.
+          publish mnemo-core
+          # crates.io index propagation; skip on dry-run.
+          if [ -z "$DRY_RUN" ]; then
+            echo "Waiting 60s for crates.io to publish mnemo-core..."
+            sleep 60
+          fi
+          # Round 2: direct dependents of mnemo-core (independent of each other).
+          publish mnemo-graph
+          publish mnemo-mcp
+          publish mnemo-postgres
+          publish mnemo-rest
+          publish mnemo-admin
+          publish mnemo-pgwire
+          publish mnemo-grpc
+          publish mnemo-compliance
+          # Wait again before the umbrella binary picks up the freshly
+          # published deps.
+          if [ -z "$DRY_RUN" ]; then
+            echo "Waiting 60s before publishing mnemo-cli..."
+            sleep 60
+          fi
+          # Round 3: umbrella binary that pulls everything together.
+          publish mnemo-cli
