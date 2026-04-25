@@ -1,0 +1,94 @@
+{
+  "_comment": "Canonical request/response pairs for the Anthropic memory_20250818 tool, mirrored from https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/memory-tool. Used by tests as a contract regression check: every shape here MUST round-trip through MnemoMemoryToolServer.handle without error.",
+  "tool_schema": {"type": "memory_20250818", "name": "memory"},
+  "exchanges": [
+    {
+      "name": "view directory listing",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_01C4D5E6F7G8H9I0J1K2L3M4",
+        "name": "memory",
+        "input": {"command": "view", "path": "/memories"}
+      },
+      "expected_tool_result_kind": "directory_listing"
+    },
+    {
+      "name": "view file contents",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_01D5E6F7G8H9I0J1K2L3M4N5",
+        "name": "memory",
+        "input": {"command": "view", "path": "/memories/customer_service_guidelines.xml"}
+      },
+      "expected_tool_result_kind": "file_view"
+    },
+    {
+      "name": "create file",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_create_001",
+        "name": "memory",
+        "input": {
+          "command": "create",
+          "path": "/memories/notes.txt",
+          "file_text": "Meeting notes:\n- Discussed project timeline\n- Next steps defined\n"
+        }
+      },
+      "expected_tool_result_kind": "create_success"
+    },
+    {
+      "name": "str_replace exact",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_replace_001",
+        "name": "memory",
+        "input": {
+          "command": "str_replace",
+          "path": "/memories/preferences.txt",
+          "old_str": "Favorite color: blue",
+          "new_str": "Favorite color: green"
+        }
+      },
+      "expected_tool_result_kind": "edit_success"
+    },
+    {
+      "name": "insert at line 2",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_insert_001",
+        "name": "memory",
+        "input": {
+          "command": "insert",
+          "path": "/memories/todo.txt",
+          "insert_line": 2,
+          "insert_text": "- Review memory tool documentation\n"
+        }
+      },
+      "expected_tool_result_kind": "edit_success"
+    },
+    {
+      "name": "delete file",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_delete_001",
+        "name": "memory",
+        "input": {"command": "delete", "path": "/memories/old_file.txt"}
+      },
+      "expected_tool_result_kind": "delete_success"
+    },
+    {
+      "name": "rename file",
+      "tool_use": {
+        "type": "tool_use",
+        "id": "toolu_rename_001",
+        "name": "memory",
+        "input": {
+          "command": "rename",
+          "old_path": "/memories/draft.txt",
+          "new_path": "/memories/final.txt"
+        }
+      },
+      "expected_tool_result_kind": "rename_success"
+    }
+  ]
+}

@@ -26,7 +26,7 @@ from mnemo.openai_sandbox.manifest import (
     dump_workspace,
     load_workspace,
 )
-from mnemo.openai_sandbox.spec import RemoteSnapshotSpec
+from mnemo.openai_sandbox.spec import RemoteSnapshotSpec, WorkspaceBackend
 
 try:
     import boto3  # type: ignore[import-not-found]
@@ -48,7 +48,19 @@ class S3Workspace:
     Accepts an already-configured ``boto3`` client so tests can inject
     moto's in-memory S3. Production callers typically construct one
     via ``boto3.client("s3", region_name=...)``.
+
+    The optional ``endpoint_url`` / ``region`` / ``addressing_style``
+    kwargs let subclasses target S3-compatible providers (Cloudflare R2,
+    Backblaze B2, MinIO, etc.) without re-implementing this class.
+    Setting any of them to ``None`` keeps default-AWS behaviour exactly,
+    which means existing call-sites that did not pass these kwargs
+    behave identically to v0.3.3.
     """
+
+    backend_name: WorkspaceBackend = "s3"
+    """Subclasses override to set the canonical
+    :class:`~mnemo.openai_sandbox.spec.RemoteSnapshotSpec` ``backend``
+    string (e.g. ``"r2"``)."""
 
     def __init__(
         self,
@@ -56,10 +68,44 @@ class S3Workspace:
         client: Any | None = None,
         *,
         key_prefix_root: str = "",
+        endpoint_url: str | None = None,
+        region: str | None = None,
+        addressing_style: str | None = None,
+        signature_version: str = "s3v4",
     ) -> None:
         self.bucket = bucket
-        self.client = client if client is not None else boto3.client("s3")
+        self.endpoint_url = endpoint_url
+        self.region = region
+        self.addressing_style = addressing_style
+        self.signature_version = signature_version
+        if client is not None:
+            self.client = client
+        else:
+            self.client = self._build_default_client()
         self.key_prefix_root = key_prefix_root.rstrip("/")
+
+    def _build_default_client(self) -> Any:
+        """Construct a boto3 client honouring endpoint / region / addressing.
+
+        Kept on the class so subclasses that don't take a pre-built
+        client (the R2 happy path) inherit the right configuration
+        without copying boto3 wiring.
+        """
+        kwargs: dict[str, Any] = {}
+        if self.endpoint_url:
+            kwargs["endpoint_url"] = self.endpoint_url
+        if self.region:
+            kwargs["region_name"] = self.region
+        config_kwargs: dict[str, Any] = {}
+        if self.addressing_style:
+            config_kwargs["s3"] = {"addressing_style": self.addressing_style}
+        if self.signature_version:
+            config_kwargs["signature_version"] = self.signature_version
+        if config_kwargs:
+            from botocore.config import Config  # type: ignore[import-not-found]
+
+            kwargs["config"] = Config(**config_kwargs)
+        return boto3.client("s3", **kwargs)
 
     # ------------------------------------------------------------- helpers
     def _full_key(self, *parts: str) -> str:
@@ -112,7 +158,7 @@ class S3Workspace:
 
         digest = _hash.sha256(bundle["manifest"]).hexdigest()  # type: ignore[arg-type]
         return RemoteSnapshotSpec(
-            backend="s3",
+            backend=self.backend_name,
             bucket=self.bucket,
             key_prefix=self._full_key(key_prefix),
             manifest_sha256=digest,
@@ -128,8 +174,11 @@ class S3Workspace:
     ) -> SnapshotManifest:
         """Pull the manifest + signature + every file, verify the whole
         chain, and materialise the workspace under ``workspace_root``."""
-        if spec.backend != "s3":
-            raise ValueError(f"S3Workspace can't load a {spec.backend!r} spec")
+        if spec.backend != self.backend_name:
+            raise ValueError(
+                f"{type(self).__name__} can't load a {spec.backend!r} spec "
+                f"(expected backend={self.backend_name!r})"
+            )
         if spec.bucket != self.bucket:
             raise ValueError(
                 f"spec references bucket {spec.bucket!r}, this client is on {self.bucket!r}"

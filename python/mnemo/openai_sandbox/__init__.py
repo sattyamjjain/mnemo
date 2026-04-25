@@ -48,3 +48,10 @@ try:
     __all__.append("S3Workspace")
 except ImportError:
     pass
+
+try:
+    from mnemo.openai_sandbox.r2_workspace import CloudflareR2Workspace
+
+    __all__.append("CloudflareR2Workspace")
+except ImportError:
+    pass

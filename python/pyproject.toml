@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "mnemo"
-version = "0.3.3"
+version = "0.3.4"
 description = "MCP-native memory database for AI agents"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
@@ -25,6 +25,8 @@ claude = ["claude-agent-sdk>=0.1", "watchdog>=4.0"]
 # `mnemo[openai-sandbox-s3]` pulls `boto3` + `cryptography`; R2/GCS/Azure
 # stubs today — follow-on extras once the respective SDKs land.
 "openai-sandbox-s3" = ["boto3>=1.34", "cryptography>=42"]
+"openai-sandbox-r2" = ["boto3>=1.34", "cryptography>=42"]
+"anthropic-memory-tool" = ["anthropic>=0.40"]
 benchmark = ["datasets>=4.0"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "moto>=5.0"]
 
