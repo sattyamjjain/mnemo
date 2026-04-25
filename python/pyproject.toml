@@ -9,17 +9,49 @@ build-backend = "maturin"
 # the PyPI distribution name moves. Users do `pip install mnemo-db`
 # then `from mnemo import MnemoClient`.
 name = "mnemo-db"
-version = "0.4.0rc1"
+version = "0.4.0rc2"
 description = "MCP-native memory database for AI agents"
+readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
+keywords = [
+    "mnemo",
+    "mcp",
+    "memory",
+    "ai",
+    "agent",
+    "llm",
+    "vector",
+    "embeddings",
+    "knowledge-graph",
+    "duckdb",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sattyamjjain/mnemo"
+Repository = "https://github.com/sattyamjjain/mnemo"
+Documentation = "https://github.com/sattyamjjain/mnemo#readme"
+"Bug Tracker" = "https://github.com/sattyamjjain/mnemo/issues"
+Changelog = "https://github.com/sattyamjjain/mnemo/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 langgraph = ["langgraph-checkpoint>=0.2"]
