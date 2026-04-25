@@ -58,7 +58,7 @@ impl AuditSigner {
     /// Generate a fresh ephemeral signer. Use only for tests — operators
     /// should manage their own long-lived key material.
     pub fn generate_ephemeral() -> Self {
-        use rand::RngCore;
+        use rand::Rng;
         let mut bytes = [0u8; 32];
         rand::rng().fill_bytes(&mut bytes);
         Self::from_secret_bytes(&bytes)

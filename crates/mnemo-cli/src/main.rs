@@ -2,10 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use rmcp::{ServiceExt, transport::stdio};
 use tokio::sync::Notify;
 
+use mnemo_core::anomaly::outlier::train_baseline;
 use mnemo_core::embedding::openai::OpenAiEmbedding;
 use mnemo_core::embedding::{EmbeddingProvider, NoopEmbedding};
 use mnemo_core::encryption::ContentEncryption;
@@ -14,6 +15,7 @@ use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::search::FullTextIndex;
 use mnemo_core::search::tantivy_index::TantivyFullTextIndex;
+use mnemo_core::storage::StorageBackend;
 use mnemo_core::storage::duckdb::DuckDbStorage;
 use mnemo_mcp::server::MnemoServer;
 
@@ -73,6 +75,32 @@ struct Cli {
     /// audit events.
     #[arg(long, default_value = "0", env = "MNEMO_TTL_SWEEP_INTERVAL")]
     ttl_sweep_interval_seconds: u64,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Manage the per-agent embedding-space baseline used by the z-score
+    /// outlier detector (v0.3.3, Task A).
+    Baseline(BaselineArgs),
+}
+
+#[derive(clap::Args)]
+struct BaselineArgs {
+    /// Train and persist a baseline from every non-deleted memory for this agent.
+    #[arg(long)]
+    train: bool,
+
+    /// Agent ID to train or inspect the baseline for. Falls back to
+    /// `--agent-id` / `MNEMO_AGENT_ID` when omitted.
+    #[arg(long)]
+    agent_id: Option<String>,
+
+    /// Maximum records to load when training (defaults to `MAX_BATCH_QUERY_LIMIT`).
+    #[arg(long, default_value = "10000")]
+    limit: usize,
 }
 
 #[tokio::main]
@@ -85,6 +113,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let cli = Cli::parse();
+
+    // Dispatch one-shot subcommands before any server setup.
+    if let Some(Command::Baseline(args)) = &cli.command {
+        return run_baseline(&cli, args).await;
+    }
 
     // Initialize embedding provider (ONNX > OpenAI > Noop)
     let embedding: Arc<dyn EmbeddingProvider> = if let Some(ref onnx_path) = cli.onnx_model_path {
@@ -328,5 +361,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+/// Handle `mnemo baseline --train --agent-id <id>` (v0.3.3 Task A).
+///
+/// Loads every non-deleted memory for the agent from DuckDB, computes
+/// per-dimension mean + diagonal variance over the records that carry an
+/// embedding, and persists the result to the `embedding_baseline` table.
+/// Subsequent `remember` calls with
+/// `PoisoningPolicy::with_outlier_threshold(z)` set will be scored
+/// against this baseline.
+async fn run_baseline(cli: &Cli, args: &BaselineArgs) -> Result<(), Box<dyn std::error::Error>> {
+    if !args.train {
+        return Err(
+            "baseline: nothing to do — pass `--train` to train and persist a baseline".into(),
+        );
+    }
+    let agent_id = args
+        .agent_id
+        .clone()
+        .unwrap_or_else(|| cli.agent_id.clone());
+    if agent_id.is_empty() {
+        return Err("baseline: --agent-id is required (or set MNEMO_AGENT_ID)".into());
+    }
+
+    tracing::info!(
+        agent = %agent_id,
+        db = ?cli.db_path,
+        "training embedding baseline"
+    );
+
+    let storage = Arc::new(DuckDbStorage::open(&cli.db_path)?);
+    let filter = mnemo_core::storage::MemoryFilter {
+        agent_id: Some(agent_id.clone()),
+        ..Default::default()
+    };
+    let records = storage.list_memories(&filter, args.limit, 0).await?;
+    let with_emb = records.iter().filter(|r| r.embedding.is_some()).count();
+    tracing::info!(
+        total = records.len(),
+        with_embedding = with_emb,
+        "loaded records"
+    );
+
+    let Some(baseline) = train_baseline(&agent_id, &records) else {
+        return Err(format!(
+            "baseline: not enough embedded records to train for agent {agent_id} (found {with_emb})"
+        )
+        .into());
+    };
+
+    storage
+        .insert_or_update_embedding_baseline(&baseline)
+        .await?;
+    println!(
+        "baseline trained for agent '{}' — n={} d={} updated_at={}",
+        baseline.agent_id,
+        baseline.n,
+        baseline.mu.len(),
+        baseline.updated_at
+    );
     Ok(())
 }

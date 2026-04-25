@@ -70,6 +70,10 @@ pub struct MnemoEngine {
     /// Importance floor enforced on write for `Procedural`-tier memories.
     /// Defaults to 0.8.
     pub procedural_importance_floor: f32,
+    /// Poisoning policy read by `check_for_anomaly`. Defaults to the v0.3.2
+    /// behaviour (no z-score outlier gate). Override with
+    /// [`MnemoEngine::with_poisoning_policy`].
+    pub poisoning_policy: poisoning::PoisoningPolicy,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -99,7 +103,16 @@ impl MnemoEngine {
             embed_events: false,
             ttl_working_seconds: DEFAULT_TTL_WORKING_SECONDS,
             procedural_importance_floor: DEFAULT_PROCEDURAL_IMPORTANCE_FLOOR,
+            poisoning_policy: poisoning::PoisoningPolicy::default(),
         }
+    }
+
+    /// Attach a [`poisoning::PoisoningPolicy`] to the engine. See
+    /// [`poisoning::PoisoningPolicy::with_outlier_threshold`] for the
+    /// v0.3.3 z-score outlier gate.
+    pub fn with_poisoning_policy(mut self, policy: poisoning::PoisoningPolicy) -> Self {
+        self.poisoning_policy = policy;
+        self
     }
 
     /// Override the default 1-hour TTL applied to `Working`-tier memories

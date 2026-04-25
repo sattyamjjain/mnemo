@@ -193,9 +193,23 @@ CREATE TABLE IF NOT EXISTS mnemo_meta (
 );
 ";
 
+/// Per-agent embedding-space baseline used by the z-score outlier
+/// detector (v0.3.3, Task A). `mu` and `cov_diag` are stored as JSON
+/// arrays of f32 — DuckDB's native array type isn't a good fit because
+/// length varies per embedding model.
+pub const CREATE_EMBEDDING_BASELINE_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS embedding_baseline (
+    agent_id VARCHAR PRIMARY KEY,
+    mu JSON NOT NULL,
+    cov_diag JSON NOT NULL,
+    n BIGINT NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
+";
+
 /// Persistence format version this release writes. Bump when the on-disk
 /// schema changes in a way that requires a migrator pass.
-pub const CURRENT_PERSISTENCE_VERSION: u32 = 3;
+pub const CURRENT_PERSISTENCE_VERSION: u32 = 4;
 
 pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_MEMORIES_TABLE)?;
@@ -222,6 +236,8 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_SYNC_METADATA_TABLE)?;
     // v0.3.2: persistence-version stamp.
     conn.execute_batch(CREATE_MNEMO_META_TABLE)?;
+    // v0.3.3: embedding baseline table (z-score outlier detector).
+    conn.execute_batch(CREATE_EMBEDDING_BASELINE_TABLE)?;
     stamp_persistence_version(conn)?;
     Ok(())
 }

@@ -1,0 +1,45 @@
+# cargo-deny configuration — see https://embarkstudios.github.io/cargo-deny/ .
+# Scope for v0.3.3: advisories gate only. Bans / licence enforcement is
+# deferred to a follow-up.
+#
+# IMPORTANT: keep `advisories.ignore` in sync with `.cargo/audit.toml`
+# (cargo-audit and cargo-deny read different files). Each entry MUST
+# carry a rationale in the audit.toml companion; this file keeps just
+# the ID list for the CI gate to read.
+
+[advisories]
+version = 2
+ignore = [
+    # See .cargo/audit.toml for full rationale on each of these. Lift
+    # both files together; do not diverge the two lists.
+
+    # TLS / crypto transitive via sqlx, duckdb, aws-sdk-s3
+    "RUSTSEC-2023-0071",   # rsa Marvin attack
+    "RUSTSEC-2026-0098",   # rustls-webpki name constraints
+    "RUSTSEC-2026-0099",   # rustls-webpki name constraints
+    "RUSTSEC-2026-0049",   # rustls-webpki CRL authoritative check
+    "RUSTSEC-2026-0104",   # rustls-webpki CRL parsing panic
+
+    # AWS-LC (transitive via aws-sdk-s3, optional `s3` feature)
+    "RUSTSEC-2026-0044",   # name-constraint bypass
+    "RUSTSEC-2026-0045",   # AES-CCM tag timing
+    "RUSTSEC-2026-0046",   # PKCS7 chain bypass
+    "RUSTSEC-2026-0047",   # PKCS7 signature bypass
+    "RUSTSEC-2026-0048",   # CRL distribution-point
+
+    # Decompression / transport
+    "RUSTSEC-2026-0041",   # zstd uninit read
+    "RUSTSEC-2026-0037",   # quinn DoS
+
+    # tar-rs via aws-sdk-s3 packaging
+    "RUSTSEC-2026-0067",
+    "RUSTSEC-2026-0068",
+
+    # Python bindings
+    "RUSTSEC-2026-0013",   # pyo3 abi3 subclass (unused)
+    "RUSTSEC-2026-0097",   # rand custom-logger soundness
+
+    # Unmaintained / informational
+    "RUSTSEC-2024-0436",   # paste unmaintained
+    "RUSTSEC-2026-0002",   # rayon IterMut stacked borrows
+]

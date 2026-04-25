@@ -272,27 +272,42 @@ def seed_store(
     return thread_ids
 
 
+JudgeMode = str  # "exact" | "llm"
+
+
 def evaluate_strategy(
     client: Any,
     examples: list[QueryExample],
     strategy: Strategy,
     limit: int = 10,
+    judge_mode: JudgeMode = "exact",
+    judge: Any = None,
 ) -> StrategyResult:
     """Run every query in ``examples`` under a single strategy.
 
-    Scoring is session-level when ``gold_session_ids`` is populated
-    (LongMemEval exposes the source-of-truth session ids directly); we
-    score a hit when any retrieved memory carries a ``session:{id}`` tag
-    matching a gold id. Otherwise we fall back to case-insensitive
-    substring match against ``gold_answers`` — works for LoCoMo-MC10's
-    verbatim-date/verbatim-choice answers but fails for LongMemEval's
-    inferential answers ("MBA" → "Business Administration"). Mixing
-    both scorers is tracked as the v0.3.2 LLM-as-judge upgrade.
+    Scoring rules, in priority order:
+
+    1. **Session-level** (``gold_session_ids`` populated) — native to
+       LongMemEval: a hit requires any retrieved memory carrying
+       ``session:{id}`` tag matching a gold id.
+    2. **LLM-judge** (``judge_mode="llm"`` and session ids absent) —
+       passes the top-``limit`` memories + gold to a small LLM and reads
+       its YES/NO/UNSURE verdict. Required for LongMemEval inferential
+       answers (v0.3.3 Task B).
+    3. **Substring** (fallback) — case-insensitive substring match
+       against ``gold_answers``. Works for verbatim facts, undercounts
+       paraphrase.
+
+    The judge is treated as a per-query scorer rather than a per-memory
+    scorer: the original Hindsight contract is *"did the retrieval as
+    a whole support the gold"* and that's what we reproduce.
     """
     hits_5 = 0
     hits_10 = 0
     rr_sum = 0.0
     latencies: list[float] = []
+
+    use_llm_judge = judge_mode == "llm" and judge is not None
 
     for example in examples:
         t0 = time.perf_counter()
@@ -307,15 +322,39 @@ def evaluate_strategy(
 
         use_session_scoring = bool(example.gold_session_ids)
 
-        def _memory_hit(mem: dict[str, Any]) -> bool:
-            if use_session_scoring:
-                mem_tags = mem.get("tags", []) or []
-                needed = {f"session:{s}" for s in example.gold_session_ids}
-                return any(t in needed for t in mem_tags)
-            content = str(mem.get("content", ""))
-            return any(g.lower() in content.lower() for g in example.gold_answers)
-
-        hit_flags = [_memory_hit(m) for m in memories]
+        if use_session_scoring:
+            needed = {f"session:{s}" for s in example.gold_session_ids}
+            hit_flags = [
+                any(t in needed for t in (m.get("tags", []) or []))
+                for m in memories
+            ]
+        elif use_llm_judge:
+            # Judge once per query, not per memory: verdict applies to
+            # the retrieved bundle as a whole. Mark the top-ranked memory
+            # as the hit when YES so MRR stays meaningful.
+            gold = example.gold_answers[0] if example.gold_answers else ""
+            try:
+                verdict = judge.grade(
+                    question=example.query,
+                    gold=gold,
+                    memories=memories[:limit],
+                )
+            except Exception as exc:  # pragma: no cover — judge failure = miss
+                logger_singleton().warning(
+                    "judge failed on conv=%s: %s; scoring as NO",
+                    example.conversation_id,
+                    exc,
+                )
+                verdict = None
+            correct = bool(verdict and verdict.correct)
+            hit_flags = [False] * len(memories)
+            if correct and memories:
+                hit_flags[0] = True
+        else:
+            hit_flags = [
+                any(g.lower() in str(m.get("content", "")).lower() for g in example.gold_answers)
+                for m in memories
+            ]
 
         if any(hit_flags[:5]):
             hits_5 += 1
@@ -334,6 +373,12 @@ def evaluate_strategy(
         mrr=rr_sum / n,
         latencies_ms=latencies,
     )
+
+
+def logger_singleton() -> Any:
+    import logging
+
+    return logging.getLogger("mnemo.benches.locomo_runner")
 
 
 def format_report(
@@ -379,6 +424,22 @@ def main(argv: list[str] | None = None) -> int:
         default="docs/benchmarks",
         help="Markdown report output directory.",
     )
+    parser.add_argument(
+        "--judge",
+        choices=["exact", "llm"],
+        default="exact",
+        help=(
+            "Scoring mode. `exact` uses substring match against gold (v0.3.2 "
+            "behaviour, undercounts paraphrase). `llm` uses the v0.3.3 "
+            "LlmJudge (defaults to claude-haiku-4-5; needs ANTHROPIC_API_KEY). "
+            "When `llm` init fails, the runner falls back to exact and logs."
+        ),
+    )
+    parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Override MNEMO_JUDGE_MODEL for the LLM judge.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -392,8 +453,28 @@ def main(argv: list[str] | None = None) -> int:
     client = MnemoClient(db_path=args.db_path, agent_id=args.agent_id)
     seed_store(client, examples)
 
+    judge: Any = None
+    effective_mode: JudgeMode = "exact"
+    if args.judge == "llm":
+        from mnemo.benches.judge import JudgeUnavailableError, LlmJudge
+
+        try:
+            judge = LlmJudge(model=args.judge_model)
+            effective_mode = "llm"
+        except JudgeUnavailableError as exc:
+            logger_singleton().warning(
+                "LLM judge unavailable (%s); falling back to --judge=exact", exc
+            )
+
     results = [
-        evaluate_strategy(client, examples, s, limit=args.limit)
+        evaluate_strategy(
+            client,
+            examples,
+            s,
+            limit=args.limit,
+            judge_mode=effective_mode,
+            judge=judge,
+        )
         for s in args.strategies
     ]
     report = format_report(
