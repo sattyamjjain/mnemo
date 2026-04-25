@@ -18,7 +18,7 @@ orchestration.
 needed:
 
 ```bash
-pip install mnemo
+pip install mnemo-db
 ```
 
 ## Quick start

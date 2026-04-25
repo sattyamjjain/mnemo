@@ -23,7 +23,7 @@ Example::
     asyncio.run(main())
 
 Requires:
-    pip install mnemo[openai-agents]
+    pip install mnemo-db[openai-agents]
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ class MnemoAgentMemory:
         except ImportError:
             raise ImportError(
                 "openai-agents is required for MnemoAgentMemory. "
-                "Install with: pip install mnemo[openai-agents]"
+                "Install with: pip install mnemo-db[openai-agents]"
             )
 
         self._server = MCPServerStdio(

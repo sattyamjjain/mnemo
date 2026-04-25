@@ -3,7 +3,12 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "mnemo"
+# Published on PyPI as `mnemo-db` because `mnemo` (a 2021 notebook
+# project) holds the unqualified name. The Python package directory,
+# import path, and SDK class names stay `mnemo` / `MnemoClient` — only
+# the PyPI distribution name moves. Users do `pip install mnemo-db`
+# then `from mnemo import MnemoClient`.
+name = "mnemo-db"
 version = "0.4.0rc1"
 description = "MCP-native memory database for AI agents"
 license = { text = "Apache-2.0" }

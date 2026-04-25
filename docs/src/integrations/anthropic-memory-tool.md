@@ -10,7 +10,7 @@ that's audited, hash-chained, and ACL-aware by default.
 ## Install
 
 ```bash
-pip install 'mnemo[anthropic-memory-tool]'
+pip install 'mnemo-db[anthropic-memory-tool]'
 ```
 
 The extra pulls `anthropic>=0.40` for SDK-driven integration. The

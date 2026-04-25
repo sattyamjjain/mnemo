@@ -65,8 +65,10 @@ Your AI agent now has persistent memory with 10 MCP tools:
 ### Python
 
 ```bash
-pip install mnemo
+pip install mnemo-db
 ```
+
+> **Why `mnemo-db` and not `mnemo`?** A 2021 notebook project (last release 2021-07-06, unrelated) holds the unqualified `mnemo` name on PyPI. Our distribution publishes as `mnemo-db`; the import path stays `from mnemo import …` so existing code is unaffected.
 
 ```python
 from mnemo import MnemoClient
@@ -108,9 +110,9 @@ All integrations are auto-imported via `from mnemo import <ClassName>` — depen
 
 | Surface | Class | What it does |
 |---|---|---|
-| [Anthropic memory tool `memory_20250818`](docs/src/integrations/anthropic-memory-tool.md) | `MnemoMemoryToolServer` | Client-side handler for the 6-op `view`/`create`/`str_replace`/`insert`/`delete`/`rename` surface — every "file" lands as a Mnemo memory with hash-chain + ACL coverage. `pip install 'mnemo[anthropic-memory-tool]'`. |
+| [Anthropic memory tool `memory_20250818`](docs/src/integrations/anthropic-memory-tool.md) | `MnemoMemoryToolServer` | Client-side handler for the 6-op `view`/`create`/`str_replace`/`insert`/`delete`/`rename` surface — every "file" lands as a Mnemo memory with hash-chain + ACL coverage. `pip install 'mnemo-db[anthropic-memory-tool]'`. |
 | [Letta Conversations-style shared memory](docs/src/integrations/letta-conversations.md) | `MnemoLettaShared` | Multiple agents sharing a single audit-replayable memory stream. `attach`/`detach`/`read`/`write`/`list_participants` over Mnemo memories tagged `conversation:<id>` + `participant:<agent_id>`. |
-| [Cloudflare R2 workspace](docs/src/integrations/r2-workspace.md) | `CloudflareR2Workspace` | Drop-in R2 backend for `MnemoSnapshotStore` — same signed-manifest contract as the AWS S3 path; `pip install 'mnemo[openai-sandbox-r2]'`. |
+| [Cloudflare R2 workspace](docs/src/integrations/r2-workspace.md) | `CloudflareR2Workspace` | Drop-in R2 backend for `MnemoSnapshotStore` — same signed-manifest contract as the AWS S3 path; `pip install 'mnemo-db[openai-sandbox-r2]'`. |
 
 ### TypeScript
 

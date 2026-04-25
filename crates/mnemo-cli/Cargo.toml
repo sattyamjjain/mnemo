@@ -1,9 +1,13 @@
 [package]
-name = "mnemo-cli"
+# Published as `mnemo-mcp-server` because `mnemo-cli` is owned on
+# crates.io by github.com/watzon/mnemo (a different LLM-memory-proxy
+# project). The directory stays `crates/mnemo-cli/` and the installed
+# binary stays `mnemo` — only the published package name moves.
+name = "mnemo-mcp-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "CLI binary for Mnemo MCP memory server"
+description = "Mnemo MCP memory server — runnable binary; install as `cargo install mnemo-mcp-server`, run as `mnemo`."
 
 [[bin]]
 name = "mnemo"

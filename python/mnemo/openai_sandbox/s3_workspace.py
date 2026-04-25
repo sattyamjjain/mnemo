@@ -1,6 +1,6 @@
 """`boto3`-backed S3 workspace backend for Mnemo snapshots.
 
-Opt-in dependency: ``pip install mnemo[openai-sandbox-s3]`` pulls
+Opt-in dependency: ``pip install mnemo-db[openai-sandbox-s3]`` pulls
 `boto3`. The object-storage layout mirrors what R2 / GCS / Azure will
 later reuse so the shape generalises:
 
@@ -33,7 +33,7 @@ try:
 except ImportError as _boto_exc:  # pragma: no cover
     raise ImportError(
         "S3Workspace requires `boto3`. Install with "
-        "`pip install mnemo[openai-sandbox-s3]`."
+        "`pip install mnemo-db[openai-sandbox-s3]`."
     ) from _boto_exc
 
 

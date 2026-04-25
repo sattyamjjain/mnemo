@@ -5,15 +5,20 @@ The Python SDK provides native access to Mnemo via PyO3 bindings, plus integrati
 ## Installation
 
 ```bash
-pip install mnemo
+pip install mnemo-db
 ```
+
+> The PyPI distribution name is `mnemo-db` (not `mnemo`) because the
+> unqualified name is held by an unrelated 2021 notebook project.
+> The import path is unchanged — your code keeps saying `from mnemo
+> import MnemoClient`.
 
 With framework integrations:
 
 ```bash
-pip install mnemo[langgraph]     # LangGraph checkpoint support
-pip install mnemo[crewai]        # CrewAI memory integration
-pip install mnemo[openai-agents] # OpenAI Agents SDK integration
+pip install mnemo-db[langgraph]     # LangGraph checkpoint support
+pip install mnemo-db[crewai]        # CrewAI memory integration
+pip install mnemo-db[openai-agents] # OpenAI Agents SDK integration
 ```
 
 ## Basic Usage

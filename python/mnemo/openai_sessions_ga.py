@@ -35,7 +35,7 @@ Example::
 
 Install::
 
-    pip install mnemo[openai-sandbox]
+    pip install mnemo-db[openai-sandbox]
 """
 
 from __future__ import annotations

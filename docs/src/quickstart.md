@@ -63,7 +63,7 @@ Add to your `claude_desktop_config.json`:
 ## Python SDK
 
 ```bash
-pip install mnemo
+pip install mnemo-db   # `mnemo` itself is held by a 2021 notebook project
 ```
 
 ```python

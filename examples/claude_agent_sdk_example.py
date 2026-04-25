@@ -10,12 +10,12 @@ Shows two things:
 Run::
 
     maturin develop  # inside python/, once
-    pip install mnemo[claude]
+    pip install mnemo-db[claude]
     python examples/claude_agent_sdk_example.py
 
 Requires::
 
-    pip install mnemo[claude] claude-agent-sdk
+    pip install mnemo-db[claude] claude-agent-sdk
 """
 
 from __future__ import annotations
