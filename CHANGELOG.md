@@ -2,6 +2,108 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.3.4] - 2026-04-25
+
+### Highlights
+
+Patch release shipping the **v0.3.4 floor** from the 2026-04-25 prompt:
+the public benchmark page laid out for Letta-parity comparison, the
+Anthropic raw-API memory-tool 6-op server (`memory_20250818`), and a
+Cloudflare R2 workspace backend that closes one third of issue #39.
+Tasks A4–A7 (Graphiti, Letta-shared, Mem0g, golden DuckDB fixtures)
+fold into the v0.4.0-rc1 stack landing by 2026-04-28.
+
+### Added
+
+- **`MnemoMemoryToolServer`** ([`python/mnemo/anthropic_memory_tool.py`])
+  — full client-side handler for Anthropic's `memory_20250818` tool
+  surface. Maps the six commands (`view`, `create`, `str_replace`,
+  `insert`, `delete`, `rename`) onto Mnemo memories with the
+  spec-pinned return strings, line-numbered file views, and recursive
+  directory listing semantics. `managed_agents_beta=True` flips the
+  `anthropic-beta: managed-agents-2026-04-01` header through
+  `MnemoMemoryToolServer.beta_header()`. Path-traversal protection is
+  required-and-enforced: every input must canonicalise under
+  `/memories`, with `..` and URL-encoded sequences rejected
+  pre-normalisation. Doc page at
+  `docs/src/integrations/anthropic-memory-tool.md`.
+  Source: [Anthropic memory-tool docs][memtool].
+- **`CloudflareR2Workspace`** ([`python/mnemo/openai_sandbox/r2_workspace.py`])
+  — R2-flavoured subclass of `S3Workspace`. Sets `endpoint_url=
+  https://{account_id}.r2.cloudflarestorage.com`, `region="auto"`,
+  `addressing_style="virtual"`. RemoteSnapshotSpec output carries
+  `backend="r2"` so `MnemoSnapshotStore` dispatches correctly. Live-R2
+  test gated on `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` /
+  `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` env vars; otherwise the moto
+  S3 emulator stands in.
+- **`docs/benchmarks/2026-04-25-mnemo-v0.3.4.md`** — canonical
+  benchmark page with Letta-parity reference rows ([Hindsight 91.4 /
+  89.61][hindsight], [Letta-Filesystem 74.0][letta], full-context
+  72.9 floor) plus blank mnemo rows the nightly workflow populates on
+  its first authenticated run. Wired into README "Benchmarks"
+  section. Tracking issue **#44** for the first authenticated run.
+- New extras `mnemo[anthropic-memory-tool]` (pulls `anthropic>=0.40`)
+  and `mnemo[openai-sandbox-r2]` (pulls `boto3>=1.34`,
+  `cryptography>=42`).
+
+### Changed
+
+- **`S3Workspace`** ([`python/mnemo/openai_sandbox/s3_workspace.py`]) —
+  lift `endpoint_url`, `region`, `addressing_style`,
+  `signature_version` into the constructor. All default to `None` so
+  AWS-S3 behaviour is unchanged for existing call-sites; subclasses
+  (`CloudflareR2Workspace`) read from these in `_build_default_client`.
+  Spec output now uses `self.backend_name` (defaults `"s3"`,
+  R2 sets `"r2"`) so `RemoteSnapshotSpec.backend` is correct out of
+  the box.
+- Issue **#39** rescoped to GCS + Azure Blob only after R2 landed in
+  this release.
+
+### Tests
+
+- **+32 unit tests** in `python/tests/test_anthropic_memory_tool.py` —
+  all six ops, every documented error string, path-traversal rejection
+  (`..`, URL-encoded), beta-header toggle, and a fixture round-trip
+  test that replays the canonical request shapes from the docs page
+  through `MnemoMemoryToolServer.handle`.
+- **+5 unit tests** in `python/tests/test_r2_workspace.py` — moto
+  round-trip with `backend="r2"` spec assertion, S3-spec rejection,
+  `account_id` validation, and a live-R2 opt-in test.
+- All 91 Python tests pass + 5 skipped (4 OpenAI-gated pre-existing,
+  1 live-R2). No Rust changes; Rust tests untouched at the v0.3.3
+  count.
+
+### Deferred to v0.4.0-rc1
+
+- **Task A4** — Graphiti-style temporal-edge crate (`mnemo-graph`).
+  Bitemporal `valid_from`/`valid_to`, `graph_expand` integrated into
+  `hybrid_rrf` as a fourth signal, MCP/REST/gRPC tool surfaces.
+- **Task A5** — Letta `Conversations`-style shared-memory adapter
+  (`MnemoLettaShared`).
+- **Task A6** — Mem0g-parity `with_graph_extraction(enabled, model)`
+  toggle on `MnemoMem0Compat`.
+- **Task A7** — Golden DuckDB persistence fixtures (issue #38).
+
+### Out of scope today
+
+- DuckLake v1.0 storage backend evaluation (issue #41) — bump
+  `duckdb = "1.4" -> "1.5.2"` in a separate PR.
+- TypeScript 6.0 migration (PR #26 held; tracked in #40).
+
+### Sources
+
+- [Anthropic memory-tool docs][memtool]
+- [Anthropic — Claude Opus 4.7 release post](https://www.anthropic.com/news/claude-opus-4-7)
+- [Letta — Letta-Code release](https://www.letta.com/blog/letta-code)
+- [Letta — Benchmarking AI Agent Memory][letta]
+- [Hindsight benchmarks][hindsight]
+- [OpenAI — next evolution of the Agents SDK](https://openai.com/index/the-next-evolution-of-the-agents-sdk/)
+- [Cloudflare R2 pricing & API](https://developers.cloudflare.com/r2/pricing/)
+
+[memtool]: https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/memory-tool
+[hindsight]: https://benchmarks.hindsight.vectorize.io
+[letta]: https://www.letta.com/blog/benchmarking-ai-agent-memory
+
 ## [0.3.3] - 2026-04-24
 
 ### Highlights

@@ -12,7 +12,7 @@ Example::
     memories = client.recall("user preferences")
 """
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 __all__: list[str] = []
 
 # The native PyO3 extension is optional at import time — users who only need
@@ -148,5 +148,12 @@ try:
     from mnemo.openai_sessions_ga import MnemoSnapshotStore, SnapshotRef
 
     __all__.extend(["MnemoSnapshotStore", "SnapshotRef"])
+except ImportError:
+    pass
+
+try:
+    from mnemo.anthropic_memory_tool import MnemoMemoryToolServer
+
+    __all__.append("MnemoMemoryToolServer")
 except ImportError:
     pass

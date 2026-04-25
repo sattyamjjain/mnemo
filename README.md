@@ -289,11 +289,18 @@ cd sdks/go && go test ./...
 
 ## Benchmarks
 
-We run LoCoMo-MC10 and LongMemEval on every release. First public numbers
-are at [`docs/benchmarks/2026-04-21-mnemo-v0.3.0.md`](docs/benchmarks/2026-04-21-mnemo-v0.3.0.md).
-Latency is comfortably inside the 250 ms p95 target; recall quality is
-pinned to floor values today because the Python `MnemoClient` does not
-attach a full-text index — tracked as a v0.3.1 fix.
+We run LoCoMo-MC10 and LongMemEval on every release. The canonical
+results page is
+[`docs/benchmarks/2026-04-25-mnemo-v0.3.4.md`](docs/benchmarks/2026-04-25-mnemo-v0.3.4.md)
+— it carries reference rows for Hindsight (91.4% LongMemEval / 89.61%
+LoCoMo, [source](https://benchmarks.hindsight.vectorize.io)) and
+Letta-Filesystem (74.0%) plus the four mnemo retrieval strategies
+side-by-side. The mnemo rows populate from the first authenticated
+[nightly run](.github/workflows/benchmarks-nightly.yml) — ungated CI
+forks read the empty rows and the workflow's first-run exception
+keeps the regression gate honest. Earlier reports under
+[`docs/benchmarks/`](docs/benchmarks/) carry the v0.3.0 / v0.3.1 floor
+numbers from before the v0.3.3 Tantivy-default + LLM-judge fixes.
 
 ## Documentation
 
