@@ -5,13 +5,13 @@ The TypeScript SDK communicates with Mnemo via MCP STDIO, spawning the `mnemo` b
 ## Installation
 
 ```bash
-npm install @mnemo/sdk
+npm install @mndfreek/mnemo-sdk
 ```
 
 ## Usage
 
 ```typescript
-import { MnemoClient } from '@mnemo/sdk';
+import { MnemoClient } from '@mndfreek/mnemo-sdk';
 
 const client = new MnemoClient({
   dbPath: 'agent.db',

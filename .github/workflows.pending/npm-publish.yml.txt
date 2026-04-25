@@ -1,7 +1,7 @@
 name: npm-publish
 
 # Publishes the TypeScript SDK at `sdks/typescript/` to npm under the
-# scoped name `@mnemo/sdk`. Uses npm's OIDC provenance attestation
+# scoped name `@mndfreek/mnemo-sdk`. Uses npm's OIDC provenance attestation
 # (introduced 2024) so the published artefact is cryptographically tied
 # to this exact GitHub Actions run.
 #
@@ -10,13 +10,13 @@ name: npm-publish
 #      account. https://www.npmjs.com/org/create
 #   2. `NPM_TOKEN` repo secret — Automation token from
 #      https://www.npmjs.com/settings/<user>/tokens with publish scope
-#      for `@mnemo/sdk`. (npm's full-OIDC trusted publisher exists but
+#      for `@mndfreek/mnemo-sdk`. (npm's full-OIDC trusted publisher exists but
 #      remains less battle-tested than PyPI's; using an automation
 #      token + provenance attestation is the safer default for now.)
 #   3. Create a GitHub repo environment named `npm`.
 #
 # Note
-#   * `package.json` has `"name": "@mnemo/sdk"` — scoped packages need
+#   * `package.json` has `"name": "@mndfreek/mnemo-sdk"` — scoped packages need
 #     `--access public` to be installable without authentication.
 
 on:
@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@mnemo/sdk
+      url: https://www.npmjs.com/package/@mndfreek/mnemo-sdk
     permissions:
       id-token: write   # required for npm provenance attestation
       contents: read

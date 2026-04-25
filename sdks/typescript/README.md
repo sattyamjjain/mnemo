@@ -1,9 +1,9 @@
-# `@mnemo/sdk`
+# `@mndfreek/mnemo-sdk`
 
 TypeScript SDK for [Mnemo](https://github.com/sattyamjjain/mnemo) — an MCP-native memory database for AI agents.
 
 ```bash
-npm install @mnemo/sdk
+npm install @mndfreek/mnemo-sdk
 ```
 
 ## Quick start
@@ -17,7 +17,7 @@ cargo install mnemo-mcp-server   # Rust toolchain required
 Then from your TypeScript app:
 
 ```ts
-import { MnemoClient } from "@mnemo/sdk";
+import { MnemoClient } from "@mndfreek/mnemo-sdk";
 
 const client = new MnemoClient({ dbPath: "agent.mnemo.db" });
 await client.connect();

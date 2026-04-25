@@ -117,7 +117,7 @@ All integrations are auto-imported via `from mnemo import <ClassName>` — depen
 ### TypeScript
 
 ```typescript
-import { MnemoClient } from "@mnemo/sdk";
+import { MnemoClient } from "@mndfreek/mnemo-sdk";
 
 const client = new MnemoClient({ dbPath: "agent.mnemo.db" });
 await client.connect();
