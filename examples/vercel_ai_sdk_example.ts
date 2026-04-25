@@ -5,7 +5,7 @@
  * TypeScript SDK or directly via MCP.
  *
  * Requirements:
- *   npm install @mnemo/sdk
+ *   npm install @mndfreek/mnemo-sdk
  *   # Or use MCP directly:
  *   npm install ai @ai-sdk/openai
  *   cargo build --release -p mnemo-cli
@@ -14,7 +14,7 @@
 
 // === Option 1: Using Mnemo TypeScript SDK (REST API) ===
 
-import { MnemoClient } from "@mnemo/sdk";
+import { MnemoClient } from "@mndfreek/mnemo-sdk";
 
 async function withMnemoSDK() {
   const client = new MnemoClient({

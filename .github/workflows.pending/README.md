@@ -78,7 +78,7 @@ Windows wheels are deferred — DuckDB + PyO3 + Windows is a known
 sharp edge, and shipping a wheel that fails at runtime is worse
 than not shipping one. Add after the first PyPI release succeeds.
 
-### `npm-publish.yml.txt` — npm publish (`@mnemo/sdk`)
+### `npm-publish.yml.txt` — npm publish (`@mndfreek/mnemo-sdk`)
 
 Publishes the TypeScript SDK with npm provenance attestation.
 
@@ -87,7 +87,7 @@ Publishes the TypeScript SDK with npm provenance attestation.
 1. The `@mnemo` npm scope must exist and be owned by the publishing
    account: <https://www.npmjs.com/org/create>
 2. `NPM_TOKEN` repo secret — automation token with publish scope
-   for `@mnemo/sdk`:
+   for `@mndfreek/mnemo-sdk`:
    <https://www.npmjs.com/settings/sattyamjjain/tokens>
 3. Create a GitHub repo environment named `npm`.
 
