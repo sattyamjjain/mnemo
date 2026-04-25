@@ -7,6 +7,8 @@ Cargo.lock
 *.mnemo.db
 *.mnemo.db.wal
 .mnemo/
+# ...except checked-in golden fixtures used by migration round-trip tests.
+!crates/mnemo-core/tests/golden/*.mnemo.db
 
 # USearch index files
 *.usearch

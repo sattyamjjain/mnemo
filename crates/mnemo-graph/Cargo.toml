@@ -1,0 +1,39 @@
+[package]
+name = "mnemo-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bitemporal graph layer for Mnemo — Graphiti-style temporal edges over the existing storage backends."
+
+[dependencies]
+mnemo-core = { workspace = true }
+
+# Async runtime + traits
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Time + IDs + serde
+chrono = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Errors + tracing
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Storage (DuckDB happy path; Postgres impl is feature-gated)
+duckdb = { workspace = true }
+
+[features]
+default = []
+# When enabled, `engine.remember` may invoke `TemporalEdge::extract`
+# against an LLM. v0.4.0-rc1 ships the gate but the extractor itself
+# is a stub that returns an empty edge set — full extraction lands
+# in v0.4.0 final.
+graph-extract = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = { workspace = true }

@@ -10,11 +10,12 @@ members = [
     "crates/mnemo-pgwire",
     "crates/mnemo-grpc",
     "crates/mnemo-compliance",
+    "crates/mnemo-graph",
     "python",
 ]
 
 [workspace.package]
-version = "0.3.4"
+version = "0.4.0-rc1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"
@@ -90,3 +91,4 @@ mnemo-rest = { path = "crates/mnemo-rest" }
 mnemo-admin = { path = "crates/mnemo-admin" }
 mnemo-pgwire = { path = "crates/mnemo-pgwire" }
 mnemo-grpc = { path = "crates/mnemo-grpc" }
+mnemo-graph = { path = "crates/mnemo-graph" }
