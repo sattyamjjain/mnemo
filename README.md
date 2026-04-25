@@ -104,6 +104,14 @@ Mnemo provides native integration modules for 15 agent frameworks:
 
 All integrations are auto-imported via `from mnemo import <ClassName>` — dependencies fail gracefully if not installed.
 
+#### Memory-tool servers and shared-memory adapters (v0.3.4 / v0.4.0-rc1)
+
+| Surface | Class | What it does |
+|---|---|---|
+| [Anthropic memory tool `memory_20250818`](docs/src/integrations/anthropic-memory-tool.md) | `MnemoMemoryToolServer` | Client-side handler for the 6-op `view`/`create`/`str_replace`/`insert`/`delete`/`rename` surface — every "file" lands as a Mnemo memory with hash-chain + ACL coverage. `pip install 'mnemo[anthropic-memory-tool]'`. |
+| [Letta Conversations-style shared memory](docs/src/integrations/letta-conversations.md) | `MnemoLettaShared` | Multiple agents sharing a single audit-replayable memory stream. `attach`/`detach`/`read`/`write`/`list_participants` over Mnemo memories tagged `conversation:<id>` + `participant:<agent_id>`. |
+| [Cloudflare R2 workspace](docs/src/integrations/r2-workspace.md) | `CloudflareR2Workspace` | Drop-in R2 backend for `MnemoSnapshotStore` — same signed-manifest contract as the AWS S3 path; `pip install 'mnemo[openai-sandbox-r2]'`. |
+
 ### TypeScript
 
 ```typescript
@@ -140,6 +148,7 @@ memories, _ := client.Recall(mnemo.RecallInput{Query: "user preferences"})
 ## Key Features
 
 - **Hybrid retrieval** — Reciprocal Rank Fusion combining semantic vectors (USearch/pgvector), BM25 keywords (Tantivy), knowledge graph signals, and recency scoring with configurable weights
+- **Bitemporal graph layer** ([`mnemo-graph`](docs/src/concepts/temporal-edges.md)) — Graphiti-inspired temporal edges with `valid_from` / `valid_to` (fact validity) plus `recorded_at` (system clock). `graph_expand(seed, depth, as_of)` walks the graph at any point in time without losing later corrections. New in v0.4.0-rc1.
 - **AES-256-GCM encryption** — at-rest content encryption via `MNEMO_ENCRYPTION_KEY`
 - **Hash chain integrity** — SHA-256 content hashes with chain linking and `verify` tool
 - **Memory poisoning detection** — anomaly scoring with prompt injection pattern detection; quarantine for flagged content
