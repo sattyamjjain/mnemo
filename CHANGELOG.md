@@ -2,6 +2,99 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.4.0-rc1] - 2026-04-25
+
+### Highlights
+
+Release candidate stacking on top of v0.3.4. Lands three of the four
+follow-on tasks from the 2026-04-25 prompt: the Graphiti-style
+temporal-edge crate (Task A4 minimal), the Letta Conversations-style
+shared-memory adapter (Task A5), and a partial close on the golden
+DuckDB fixtures front (Task A7). Task A6 (Mem0g graph-extraction
+toggle) waits for v0.4.0 final because it depends on Task A4's LLM
+extractor leaving stub state — see deferred section.
+
+### Added
+
+- **`mnemo-graph` crate** (Task A4 minimal). New workspace member with
+  a `TemporalEdge { src, dst, relation, valid_from, valid_to,
+  confidence, recorded_at }` model, an async `GraphStore` trait, a
+  `DuckGraphStore` impl creating `graph_nodes` + `graph_edges` tables
+  with indexes on `(src, valid_from)` and `(dst)`, and a
+  `graph_expand(seed, depth, as_of)` BFS that respects bitemporal
+  validity. The 5 unit tests in
+  `crates/mnemo-graph/tests/temporal_walk.rs` cover the headline
+  bitemporal-supersession property: an `as_of` query *between* a
+  fact and its supersession returns the original answer; an `as_of`
+  query *after* returns the new one.
+- **`MnemoLettaShared` adapter** (Task A5). New
+  `python/mnemo/letta_adapter.py` implementing
+  `attach`/`detach`/`list_participants`/`read`/`write` over Mnemo
+  memories tagged `conversation:<id>` and `participant:<agent_id>`.
+  Cross-participant writes within a 60-second window surface via
+  `overlapping_writes_within()` for operator inspection; conflict
+  resolution itself happens at recall time via Mnemo's existing
+  evidence-weighted scoring. Example at
+  `examples/letta_shared_conversation.py`.
+- **Golden fixture v0.3.4** (Task A7 partial). Generator at
+  `crates/mnemo-core/examples/gen_golden_fixture.rs`; committed
+  fixture at `crates/mnemo-core/tests/golden/v0_3_4.mnemo.db`;
+  round-trip test at
+  `crates/mnemo-core/tests/migration_roundtrip.rs` asserting the
+  fixture opens, gets stamped to `CURRENT_PERSISTENCE_VERSION = 4`,
+  and round-trips exactly 5 records. v0.1.1 / v0.3.0 historical
+  fixtures still missing — see [issue #38](https://github.com/sattyamjjain/mnemo/issues/38)
+  comment for the gap analysis (the corresponding git tags don't
+  actually exist on this repo).
+
+### Changed
+
+- Workspace version bumped 0.3.4 → 0.4.0-rc1.
+- `Cargo.toml` workspace members extended with `crates/mnemo-graph`.
+
+### Tests
+
+- **+5** new Rust integration tests in
+  `crates/mnemo-graph/tests/temporal_walk.rs` — supersession
+  correctness, confidence-ordered outgoing edges, BFS depth bound,
+  idempotent edge-close, extract-stub.
+- **+11** new Python tests in `python/tests/test_letta_adapter.py` —
+  attach/detach idempotency, participants metadata not duplicated,
+  cross-participant overlap detection, content/source validation.
+- **+1** new Rust integration test in
+  `tests/migration_roundtrip.rs` — fixture round-trip + persistence
+  stamp.
+- 100 Python pass + 5 skipped (4 OpenAI-gated pre-existing + 1
+  live-R2). All Rust crates green; `mnemo-graph` adds 5 unit-test
+  passes to the count.
+
+### Deferred to v0.4.0 final
+
+- **Task A4 — full LLM-driven `TemporalEdge::extract`.** v0.4.0-rc1
+  ships the `graph-extract` feature gate but the extractor itself
+  returns an empty `Vec`. The prompt + ICL examples are still being
+  tuned; shipping a half-tuned extractor would put bad edges in
+  everyone's graphs.
+- **Task A4 — `hybrid_rrf` 4th-signal integration.** The retrieval
+  path doesn't yet fuse graph-expanded nodes into RRF; that
+  integration needs the extractor to be live first to surface enough
+  edges for the signal to matter.
+- **Task A4 — MCP / REST / gRPC `graph_expand` tools.** The crate
+  exposes the function; binding it to the wire-protocol surfaces is
+  small additive work for v0.4.0 final.
+- **Task A6 — Mem0g `with_graph_extraction(enabled, model)` toggle.**
+  Skipped today because the underlying extractor is a stub. Lands
+  with the extractor in v0.4.0 final.
+- **Task A7 — historical fixtures `v0_1_1.mnemo.db` /
+  `v0_3_0.mnemo.db`.** Blocked by absent git tags. See [#38 comment](https://github.com/sattyamjjain/mnemo/issues/38#issuecomment-4319897458).
+
+### Sources
+
+- [Graphiti repo (getzep)](https://github.com/getzep/graphiti)
+- [Graphiti paper (arXiv:2501.13956)](https://arxiv.org/abs/2501.13956)
+- [Letta — Letta-Code release (2026-04-06)](https://www.letta.com/blog/letta-code)
+- [Mem0g paper (arXiv:2504.19413)](https://arxiv.org/abs/2504.19413)
+
 ## [0.3.4] - 2026-04-25
 
 ### Highlights
