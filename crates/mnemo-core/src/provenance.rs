@@ -288,7 +288,7 @@ mod tests {
     fn tampering_a_source_record_fails_verification() {
         let s = signer();
         let r1 = record(Uuid::now_v7(), "a", "original content");
-        let prov = s.sign("a", "q", &[r1.clone()]).unwrap();
+        let prov = s.sign("a", "q", std::slice::from_ref(&r1)).unwrap();
         // Mutate the record's content_hash after signing — this
         // simulates an attacker modifying the row in storage.
         let mut tampered = r1.clone();
@@ -304,7 +304,7 @@ mod tests {
     fn tampering_the_hmac_fails_verification() {
         let s = signer();
         let r1 = record(Uuid::now_v7(), "a", "x");
-        let mut prov = s.sign("a", "q", &[r1.clone()]).unwrap();
+        let mut prov = s.sign("a", "q", std::slice::from_ref(&r1)).unwrap();
         prov.hmac[0] ^= 0xFF;
         let err = verify_read_provenance(&prov, &[r1], &s).unwrap_err();
         assert!(matches!(err, ProvenanceError::HmacMismatch));
@@ -323,7 +323,7 @@ mod tests {
     fn unknown_key_id_fails_verification() {
         let s = signer();
         let r1 = record(Uuid::now_v7(), "a", "x");
-        let mut prov = s.sign("a", "q", &[r1.clone()]).unwrap();
+        let mut prov = s.sign("a", "q", std::slice::from_ref(&r1)).unwrap();
         prov.hmac_key_id = "rotated-out".into();
         let err = verify_read_provenance(&prov, &[r1], &s).unwrap_err();
         assert!(matches!(err, ProvenanceError::UnknownKey { .. }));
@@ -337,7 +337,7 @@ mod tests {
         let archived = ProvenanceSigner::new("mnemo-prov-2026-04", &[2u8; 32]);
 
         let r1 = record(Uuid::now_v7(), "a", "old read");
-        let prov = archived.sign("a", "q", &[r1.clone()]).unwrap();
+        let prov = archived.sign("a", "q", std::slice::from_ref(&r1)).unwrap();
 
         struct Pair<'a>(&'a ProvenanceSigner, &'a ProvenanceSigner);
         impl<'a> ProvenanceKeystore for Pair<'a> {

@@ -79,8 +79,8 @@ pub fn score_embedding_outlier(
     let d = embedding.len() as f32;
     let mut sum_sq = 0.0f32;
     let mut dims_flagged: u32 = 0;
-    for i in 0..embedding.len() {
-        let diff = embedding[i] - baseline.mu[i];
+    for (i, &x) in embedding.iter().enumerate() {
+        let diff = x - baseline.mu[i];
         let var = baseline.cov_diag[i].max(VARIANCE_FLOOR);
         let sq_z = (diff * diff) / var;
         if sq_z >= 9.0 {

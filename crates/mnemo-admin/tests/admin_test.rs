@@ -12,22 +12,32 @@ use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::storage::duckdb::DuckDbStorage;
 
-fn create_test_engine() -> Arc<MnemoEngine> {
-    let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
+/// Each test gets its own DuckDB file in a per-test tempdir. We avoid
+/// `open_in_memory()` here because parallel `cargo test` workers on
+/// Ubuntu CI can race the DuckDB extension state and produce a
+/// "Current transaction is aborted" panic during migrations — see the
+/// pre-existing flakiness on main. A per-test tempfile sidesteps the
+/// shared-state path entirely. The tempdir is returned alongside the
+/// engine so it survives until the test finishes.
+fn create_test_engine() -> (Arc<MnemoEngine>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("admin-test.duckdb");
+    let storage = Arc::new(DuckDbStorage::open(&db).unwrap());
     let index = Arc::new(UsearchIndex::new(128).unwrap());
     let embedding = Arc::new(NoopEmbedding::new(128));
-    Arc::new(MnemoEngine::new(
+    let engine = Arc::new(MnemoEngine::new(
         storage,
         index,
         embedding,
         "test-agent".to_string(),
         None,
-    ))
+    ));
+    (engine, dir)
 }
 
 #[tokio::test]
 async fn test_admin_stats_endpoint() {
-    let engine = create_test_engine();
+    let (engine, _tmp) = create_test_engine();
 
     // Seed a memory so stats are non-trivial.
     engine
@@ -95,7 +105,7 @@ async fn test_admin_stats_endpoint() {
 
 #[tokio::test]
 async fn test_admin_agents_endpoint() {
-    let engine = create_test_engine();
+    let (engine, _tmp) = create_test_engine();
 
     // Seed two memories with different agent IDs to verify distinct listing.
     engine
