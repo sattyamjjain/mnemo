@@ -187,6 +187,7 @@ async fn handle_query(
                 rrf_k: None,
                 as_of: None,
                 explain: None,
+                with_provenance: None,
             };
 
             let response = engine.recall(request).await?;

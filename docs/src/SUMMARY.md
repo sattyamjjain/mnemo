@@ -27,6 +27,7 @@
   - [OpenAI Agents GA](./integrations/openai-agents-ga.md)
   - [Cloudflare R2 workspace](./integrations/r2-workspace.md)
   - [Letta Conversations adapter](./integrations/letta-conversations.md)
+  - [mnemo mcp-server (hardened)](./integrations/mcp-server.md)
 - [Deployment](./deployment/README.md)
   - [Docker](./deployment/docker.md)
   - [Kubernetes](./deployment/kubernetes.md)

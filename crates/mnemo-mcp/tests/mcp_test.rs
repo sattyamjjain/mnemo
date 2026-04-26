@@ -172,6 +172,7 @@ async fn test_engine_recall_via_server_engine() {
             rrf_k: None,
             as_of: None,
             explain: None,
+            with_provenance: None,
         })
         .await
         .unwrap();

@@ -127,10 +127,7 @@ impl FullTextIndex for TantivyFullTextIndex {
         // `TopDocs::with_limit(limit)` implicitly ordered by BM25
         // score; 0.26 requires `.order_by_score()`.
         let top_docs = searcher
-            .search(
-                &parsed_query,
-                &TopDocs::with_limit(limit).order_by_score(),
-            )
+            .search(&parsed_query, &TopDocs::with_limit(limit).order_by_score())
             .map_err(|e| Error::Index(e.to_string()))?;
 
         let mut results = Vec::new();

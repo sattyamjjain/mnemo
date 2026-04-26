@@ -210,6 +210,7 @@ pub async fn recall_handler(
         rrf_k: params.rrf_k,
         as_of: params.as_of,
         explain: params.explain,
+        with_provenance: None,
     };
 
     let response = engine.recall(request).await?;

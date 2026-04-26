@@ -45,6 +45,13 @@ pub struct RecallRequest {
     /// that reports the per-signal score contributions (vector, bm25, graph,
     /// recency) and final RRF rank.
     pub explain: Option<bool>,
+    /// v0.4.0-rc3 (Task B1) — when `Some(true)` AND the engine has a
+    /// [`ProvenanceSigner`](crate::provenance::ProvenanceSigner)
+    /// attached, the response carries a [`ReadProvenance`](crate::provenance::ReadProvenance)
+    /// HMAC receipt over the recalled records. Default `None` keeps
+    /// the recall hot-path overhead at zero for callers that don't
+    /// need verifiable receipts.
+    pub with_provenance: Option<bool>,
 }
 
 impl RecallRequest {
@@ -66,6 +73,7 @@ impl RecallRequest {
             rrf_k: None,
             as_of: None,
             explain: None,
+            with_provenance: None,
         }
     }
 }
@@ -90,11 +98,21 @@ pub struct ScoreBreakdown {
 pub struct RecallResponse {
     pub memories: Vec<ScoredMemory>,
     pub total: usize,
+    /// HMAC receipt over the recalled records — present iff the
+    /// caller set `RecallRequest.with_provenance = Some(true)` AND
+    /// the engine has a `ProvenanceSigner` attached.
+    /// See [`crate::provenance`].
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provenance: Option<crate::provenance::ReadProvenance>,
 }
 
 impl RecallResponse {
     pub fn new(memories: Vec<ScoredMemory>, total: usize) -> Self {
-        Self { memories, total }
+        Self {
+            memories,
+            total,
+            provenance: None,
+        }
     }
 }
 
@@ -503,6 +521,17 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
     }
 
+    // Keep the underlying records around if the caller asked for a
+    // provenance receipt (Task B1) — the HMAC chain needs the
+    // content_hash + prev_hash off each record before they get
+    // collapsed into ScoredMemory.
+    let provenance_records: Option<Vec<MemoryRecord>> =
+        if request.with_provenance == Some(true) && engine.provenance_signer.is_some() {
+            Some(scored_memories.iter().map(|(r, _)| r.clone()).collect())
+        } else {
+            None
+        };
+
     let memories: Vec<ScoredMemory> = scored_memories
         .into_iter()
         .map(|(record, score)| {
@@ -564,7 +593,29 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }
 
-    Ok(RecallResponse { memories, total })
+    // v0.4.0-rc3 (B1) — sign a ReadProvenance over the recalled
+    // records when the caller opted in. Failures are non-fatal:
+    // missing signer or HMAC error degrades to "no provenance" so the
+    // recall still returns. The caller can detect by `provenance.is_none()`.
+    let provenance = if let (Some(records), Some(signer)) =
+        (provenance_records, engine.provenance_signer.as_ref())
+    {
+        match signer.sign(&agent_id, &request.query, &records) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to sign read provenance; degrading to no-provenance response");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(RecallResponse {
+        memories,
+        total,
+        provenance,
+    })
 }
 
 async fn passes_filters(

@@ -74,6 +74,12 @@ pub struct MnemoEngine {
     /// behaviour (no z-score outlier gate). Override with
     /// [`MnemoEngine::with_poisoning_policy`].
     pub poisoning_policy: poisoning::PoisoningPolicy,
+    /// v0.4.0-rc3 (Task B1) — when set, every
+    /// `recall(req)` with `req.with_provenance == Some(true)` returns
+    /// an HMAC-signed [`ReadProvenance`](crate::provenance::ReadProvenance)
+    /// receipt. `None` keeps the recall hot-path overhead at zero.
+    /// Attach via [`MnemoEngine::with_provenance_signer`].
+    pub provenance_signer: Option<Arc<crate::provenance::ProvenanceSigner>>,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -104,7 +110,19 @@ impl MnemoEngine {
             ttl_working_seconds: DEFAULT_TTL_WORKING_SECONDS,
             procedural_importance_floor: DEFAULT_PROCEDURAL_IMPORTANCE_FLOOR,
             poisoning_policy: poisoning::PoisoningPolicy::default(),
+            provenance_signer: None,
         }
+    }
+
+    /// Attach a [`provenance::ProvenanceSigner`](crate::provenance::ProvenanceSigner)
+    /// (Task B1) so callers can request signed read-receipts via
+    /// `RecallRequest.with_provenance = Some(true)`.
+    pub fn with_provenance_signer(
+        mut self,
+        signer: Arc<crate::provenance::ProvenanceSigner>,
+    ) -> Self {
+        self.provenance_signer = Some(signer);
+        self
     }
 
     /// Attach a [`poisoning::PoisoningPolicy`] to the engine. See

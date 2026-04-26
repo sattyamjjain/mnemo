@@ -1,0 +1,44 @@
+# Example manifest for `mnemo mcp-server --manifest <path>` (v0.4.0-rc3, B2).
+#
+# This is the ONLY surface that grants capabilities to the hardened
+# binary. Anything you would otherwise pass as `--config-json` /
+# environment trickery has to land here, on a chmod-restricted file
+# that you control.
+#
+# Threat model: defends against the OX-MCP "exfiltrate-then-act"
+# disclosure (2026-04-24). The binary refuses to start if the parent
+# process leaks sensitive env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# AWS_SECRET_ACCESS_KEY, etc.) into our env, if argv carries
+# JSON-injection patterns like `--config`, or if a non-TTY parent
+# process is not in `allowed_parents`.
+
+# Path to the HMAC keystore used by the provenance signer (B1). The
+# file is a tiny TOML with `key_id = "..."` and `key_hex = "..."`
+# (>= 32 raw bytes, hex-encoded). Rotate by writing a new file and
+# pointing the manifest at it.
+keystore_path = "/etc/mnemo/keystore.toml"
+
+# Where the append-only audit log should land. Future B4 work will
+# append every write here with a per-write consent token.
+audit_log_path = "/var/log/mnemo/audit.jsonl"
+
+# Tools the MCP server is allowed to expose. Anything not listed here
+# is filtered out at the server boundary. The default is the
+# minimum-blast-radius pair `mnemo.recall + mnemo.verify`.
+allowed_tools = ["mnemo.recall", "mnemo.verify"]
+
+# Agents allowed to run against this binary. Empty set means "any
+# agent". The agent_id passed via `--agent-id` / `MNEMO_AGENT_ID` must
+# be in this set when it is non-empty.
+allowed_agents = ["claude-prod", "claude-stage"]
+
+# Parent process basenames trusted to spawn the binary in non-TTY
+# mode. Set the parent name from your launcher via
+# `MNEMO_PARENT_BASENAME=<name>`. Running interactively (TTY present)
+# bypasses this check.
+allowed_parents = ["claude", "claude-code", "systemd", "supervisord"]
+
+# Lease TTL in seconds for capability-leased reads (B2). Privileged
+# tools (`mnemo.forget_subject`, `mnemo.export_audit_log`) require a
+# lease issued by a recent `mnemo.recall`. Default 60 seconds.
+lease_ttl_seconds = 60

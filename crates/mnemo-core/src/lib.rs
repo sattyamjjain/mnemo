@@ -6,6 +6,7 @@ pub mod error;
 pub mod hash;
 pub mod index;
 pub mod model;
+pub mod provenance;
 pub mod query;
 pub mod search;
 pub mod storage;
