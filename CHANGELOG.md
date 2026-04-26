@@ -2,6 +2,88 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.4.0-rc3] - 2026-04-26
+
+Threat-model release: hardens the MCP STDIO entry point against the
+OX-MCP "exfiltrate-then-act" disclosure (2026-04-24), adds memory
+provenance signing on reads, and ships compliance + competitive
+parity surfaces (DPDPA, Letta-protocol).
+
+### Added
+
+- **B1 — Memory-provenance signing API.** New `mnemo-core::provenance`
+  module with `ProvenanceSigner` (HMAC-SHA256), `ReadProvenance`
+  receipt type, and `verify_read_provenance()` helper. `RecallRequest`
+  carries a new `with_provenance: Option<bool>` field; when set and a
+  signer is attached to the engine, the response includes a verifiable
+  receipt that binds the cited records to a server-side key. Supports
+  rotated keys via `hmac_key_id`. 6 unit tests + 4 integration tests
+  in `crates/mnemo-core/tests/provenance_chain.rs`.
+- **B2 — `mnemo mcp-server --manifest <path>` hardened mode.** New
+  CLI subcommand that runs a safe-spawn gauntlet BEFORE constructing
+  any engine state: refuses inherited sensitive env vars, refuses
+  `--config`-style argv injection, refuses untrusted parents (non-TTY
+  parent must be in `manifest.allowed_parents`). Loads the HMAC
+  keystore the manifest points at and attaches a `ProvenanceSigner`
+  (B1) to the engine — key material reaches the binary via a
+  chmod-restricted file, never via env or argv. 14 unit tests
+  (manifest/safe-spawn/lease) + 4 integration tests spawning the real
+  binary.
+- **B3 — LongMemEval_M bench + `--with-provenance` toggle.** Bundled
+  45-record synthesized dataset at
+  `crates/mnemo-core/benches/data/longmemeval_m.jsonl` (override via
+  `MNEMO_LONGMEMEVAL_PATH`). New `longmemeval_bench` criterion target
+  with `recall_no_provenance` and `recall_with_provenance` arms.
+- **B4 — DPDPA Mannsetu adapter (consent-token-per-write).** New
+  `mnemo-compliance::mannsetu` module with `MannsetuConsentSource`
+  (HTTP binding to the DPB-registered Mannsetu API), `ConsentToken`
+  type, and `ConsentTokenGuard` (per-write authorization with
+  expiry/scope/revocation checks). 7 new unit tests.
+- **B5 — `mnemo-letta` crate (Letta-protocol-compat).** New workspace
+  crate exposing `POST /v1/agents`, `POST /v1/agents/{id}/messages`,
+  and `GET /v1/agents/{id}/memory` so a Letta-Code-shaped benchmark
+  or notebook can talk to Mnemo without code changes. 4 integration
+  tests.
+- **B6 — `mnemo eval` subcommand.** Replays a JSONL dataset against
+  an in-memory engine and emits a per-row JSONL report
+  (latency_us, top-k, hit). Used for config sweeps (provenance
+  on/off, hybrid weights, recency half-life). Defaults to the
+  bundled LongMemEval_M sample.
+- **Q1 — Pure-Python provenance SDK.** New `mnemo.provenance`
+  module: `ProvenanceSigner` / `ReadProvenance` / `RecordRef`
+  dataclasses + `verify_read_provenance()` helper. Auditors verify
+  receipts offline without compiling Rust. 6 pytest cases.
+- **Q2 — Claude Code MCP installer.** New `mnemo.install_claude_code`
+  module + `python -m mnemo install claude-code [--hardened <manifest>]`
+  CLI. Idempotently registers Mnemo as an MCP server in
+  `~/.claude.json`. 6 pytest cases.
+- **Q3 — DPDPA "data passport" PDF builder.** New
+  `mnemo.dpdpa_passport` module that renders a one-page PDF showing
+  every personal data point Mnemo holds for a subject (DPDPA Section
+  11 / 12 right-to-portability/access). Hand-rolled PDF (no
+  third-party dep), reproducible byte-for-byte. 5 pytest cases.
+- **Q4 — Time-travel debugger UI.** New
+  `examples/time-travel-debugger/index.html`. Vanilla JS, no build
+  step. Diffs recall results between two `as_of` timestamps.
+
+### Changed
+
+- Workspace version bumped from `0.4.0-rc2` to `0.4.0-rc3` across all
+  Rust crates (10 incl. new `mnemo-letta`), the Python package
+  (`mnemo-db`), and the TypeScript SDK (`@mndfreek/mnemo-sdk`).
+- `RecallRequest` gained `with_provenance: Option<bool>` (additive,
+  defaults to `None`). `RecallResponse` gained
+  `provenance: Option<ReadProvenance>` (skipped on the wire when
+  `None`). Downgrade-safe.
+- `MnemoEngine` gained `with_provenance_signer()` builder method.
+
+### Security
+
+- The B2 hardened mode is the direct response to the OX-MCP
+  "exfiltrate-then-act" disclosure (2026-04-24). The default `mnemo`
+  startup path is unchanged for backward compatibility; new
+  deployments should prefer `mnemo mcp-server --manifest <path>`.
+
 ## [Unreleased]
 
 ### Changed (publication names — no code or behaviour change)

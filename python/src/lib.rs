@@ -176,7 +176,8 @@ impl MnemoClient {
         )
     }
 
-    #[pyo3(signature = (query, limit=None, memory_type=None, min_importance=None, tags=None, strategy=None, explain=None))]
+    #[pyo3(signature = (query, limit=None, memory_type=None, min_importance=None, tags=None, strategy=None, explain=None, with_provenance=None))]
+    #[allow(clippy::too_many_arguments)]
     fn recall(
         &self,
         query: String,
@@ -186,6 +187,7 @@ impl MnemoClient {
         tags: Option<Vec<String>>,
         strategy: Option<String>,
         explain: Option<bool>,
+        with_provenance: Option<bool>,
     ) -> PyResult<Py<PyAny>> {
         let request = RecallRequest {
             query,
@@ -204,6 +206,7 @@ impl MnemoClient {
             rrf_k: None,
             as_of: None,
             explain,
+            with_provenance,
         };
 
         let response = self
@@ -258,7 +261,16 @@ impl MnemoClient {
         min_importance: Option<f32>,
         tags: Option<Vec<String>>,
     ) -> PyResult<Py<PyAny>> {
-        self.recall(query, limit, memory_type, min_importance, tags, None, None)
+        self.recall(
+            query,
+            limit,
+            memory_type,
+            min_importance,
+            tags,
+            None,
+            None,
+            None,
+        )
     }
 
     #[pyo3(signature = (memory_ids, strategy=None))]

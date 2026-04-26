@@ -29,6 +29,16 @@ tracing-subscriber = { workspace = true }
 rmcp = { workspace = true }
 serde_json = { workspace = true }
 
+# v0.4.0-rc3 (Task B2) — mnemo-mcp-server safe-spawn plumbing.
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+toml = "0.9"
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = ["rest"]
 rest = ["dep:mnemo-rest", "dep:axum"]

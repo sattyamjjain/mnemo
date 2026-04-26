@@ -11,11 +11,12 @@ members = [
     "crates/mnemo-grpc",
     "crates/mnemo-compliance",
     "crates/mnemo-graph",
+    "crates/mnemo-letta",
     "python",
 ]
 
 [workspace.package]
-version = "0.4.0-rc2"
+version = "0.4.0-rc3"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"
@@ -32,6 +33,7 @@ serde_json = "1.0"
 # IDs and hashing
 uuid = { version = "1.11", features = ["v7", "serde"] }
 sha2 = "0.11"
+hmac = "0.13"
 hex = "0.4"
 
 # Storage

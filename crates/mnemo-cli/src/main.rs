@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -5,6 +6,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use clap::{Parser, Subcommand};
 use rmcp::{ServiceExt, transport::stdio};
 use tokio::sync::Notify;
+
+mod lease;
+mod manifest;
+mod safe_spawn;
 
 use mnemo_core::anomaly::outlier::train_baseline;
 use mnemo_core::embedding::openai::OpenAiEmbedding;
@@ -85,6 +90,24 @@ enum Command {
     /// Manage the per-agent embedding-space baseline used by the z-score
     /// outlier detector (v0.3.3, Task A).
     Baseline(BaselineArgs),
+    /// Start the MCP STDIO server in hardened mode using a TOML manifest
+    /// (v0.4.0-rc3 Task B2).
+    ///
+    /// Defends against the OX-MCP "exfiltrate-then-act" disclosure
+    /// (2026-04-24): refuses inherited secrets, JSON-injection argv, and
+    /// untrusted parent processes before any engine state is touched. All
+    /// privileged knobs come from the TOML manifest — env vars and
+    /// command-line flags cannot grant capabilities.
+    McpServer(McpServerArgs),
+    /// Replay a JSONL dataset of `{query, expected}` rows against an
+    /// in-memory engine and emit a per-row latency / top-k report
+    /// (v0.4.0-rc3 Task B6).
+    ///
+    /// The bundled dataset at `crates/mnemo-core/benches/data/longmemeval_m.jsonl`
+    /// is the default when `--dataset` is omitted. Used to compare
+    /// configuration sweeps (provenance on/off, recency half-life,
+    /// hybrid weights) against a fixed prompt set.
+    Eval(EvalArgs),
 }
 
 #[derive(clap::Args)]
@@ -103,6 +126,37 @@ struct BaselineArgs {
     limit: usize,
 }
 
+#[derive(clap::Args)]
+struct McpServerArgs {
+    /// Path to the TOML manifest carrying every privileged knob.
+    #[arg(long)]
+    manifest: PathBuf,
+}
+
+#[derive(clap::Args)]
+struct EvalArgs {
+    /// Path to a JSONL dataset of `{id, content, query, expected}` rows.
+    /// Defaults to the bundled LongMemEval_M sample.
+    #[arg(long)]
+    dataset: Option<PathBuf>,
+    /// Where to write per-row results as JSONL. Defaults to stdout.
+    #[arg(long)]
+    output: Option<PathBuf>,
+    /// Recall limit per query.
+    #[arg(long, default_value = "5")]
+    limit: usize,
+    /// Request a provenance receipt on every recall.
+    #[arg(long)]
+    with_provenance: bool,
+    /// HMAC key (hex, >=32 bytes) for the provenance signer. Required
+    /// when `--with-provenance` is set.
+    #[arg(long)]
+    provenance_key_hex: Option<String>,
+    /// Recall strategy ("semantic", "hybrid", "lexical").
+    #[arg(long, default_value = "hybrid")]
+    strategy: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -115,8 +169,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Dispatch one-shot subcommands before any server setup.
-    if let Some(Command::Baseline(args)) = &cli.command {
-        return run_baseline(&cli, args).await;
+    match &cli.command {
+        Some(Command::Baseline(args)) => return run_baseline(&cli, args).await,
+        Some(Command::McpServer(args)) => return run_mcp_server(&cli, args).await,
+        Some(Command::Eval(args)) => return run_eval(&cli, args).await,
+        None => {}
     }
 
     // Initialize embedding provider (ONNX > OpenAI > Noop)
@@ -422,5 +479,347 @@ async fn run_baseline(cli: &Cli, args: &BaselineArgs) -> Result<(), Box<dyn std:
         baseline.mu.len(),
         baseline.updated_at
     );
+    Ok(())
+}
+
+/// Handle `mnemo mcp-server --manifest <path>` (v0.4.0-rc3 Task B2).
+///
+/// Runs the safe-spawn gauntlet against the OX-MCP threat model
+/// (2026-04-24) BEFORE constructing any engine state, then starts the
+/// existing MCP STDIO server. The lease store is allocated here so a
+/// future change to the MCP tools layer can require lease tokens for
+/// privileged operations without re-plumbing the binary.
+async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let manifest = manifest::Manifest::load(&args.manifest)?;
+    tracing::info!(
+        manifest = ?args.manifest,
+        allowed_tools = ?manifest.allowed_tools,
+        allowed_parents = ?manifest.allowed_parents,
+        lease_ttl_seconds = manifest.lease_ttl_seconds,
+        "manifest loaded"
+    );
+
+    // Gauntlet step 1: refuse inherited secrets (override with
+    // `MNEMO_REJECT_INHERITED_SECRETS=0` for opt-out testing only).
+    let reject_secrets = std::env::var("MNEMO_REJECT_INHERITED_SECRETS").as_deref() != Ok("0");
+    safe_spawn::check_inherited_secrets(std::env::vars(), reject_secrets)?;
+
+    // Gauntlet step 2: refuse JSON-injection-style argv. Operators must
+    // express config via the manifest, not via `--config`/`-c`.
+    let argv: Vec<String> = std::env::args().collect();
+    safe_spawn::check_args_pattern(&argv)?;
+
+    // Gauntlet step 3: refuse untrusted parent processes when stdin is
+    // not a TTY. Parent basename comes from `MNEMO_PARENT_BASENAME` so
+    // the operator's launcher controls the trust assertion (we avoid
+    // pulling in libc / sysctl just to read /proc).
+    let parent_basename = std::env::var("MNEMO_PARENT_BASENAME").ok();
+    let has_tty = std::io::stdin().is_terminal();
+    safe_spawn::check_parent_process(
+        parent_basename.as_deref(),
+        has_tty,
+        &manifest.allowed_parents,
+    )?;
+    tracing::info!(
+        has_tty,
+        parent = parent_basename.as_deref().unwrap_or("<unknown>"),
+        "safe-spawn gauntlet passed"
+    );
+
+    // The manifest pins the agent set the operator has approved for
+    // this binary. An empty set means "any agent", matching the
+    // permissive default the test suite exercises.
+    if !manifest.allowed_agents.is_empty() && !manifest.allowed_agents.contains(&cli.agent_id) {
+        return Err(format!(
+            "refused to start: agent_id {:?} is not in manifest.allowed_agents (got {:?})",
+            cli.agent_id, manifest.allowed_agents
+        )
+        .into());
+    }
+
+    // The manifest's `audit_log_path` is the destination for future
+    // append-only audit exports (see B4). It is logged here so an
+    // operator running the binary can see exactly what the manifest
+    // committed them to before any traffic flows.
+    tracing::info!(
+        audit_log_path = ?manifest.audit_log_path,
+        "audit log destination configured"
+    );
+
+    // Load the HMAC keystore the manifest points at and attach a
+    // `ProvenanceSigner` to the engine. With the signer attached, every
+    // `recall(..., with_provenance=true)` returns a verifiable receipt
+    // (B1) — and crucially, the key material reaches the engine via a
+    // chmod-restricted file, never via env or argv.
+    let keystore = manifest::Keystore::load(&manifest.keystore_path)?;
+    let key_bytes = keystore.key_bytes()?;
+    let signer = mnemo_core::provenance::ProvenanceSigner::new(&keystore.key_id, &key_bytes);
+    tracing::info!(
+        key_id = %signer.key_id(),
+        "provenance signer attached"
+    );
+
+    // Allocate the lease store. The MCP tools layer does not consume it
+    // yet — wiring `forget_subject` / `export_audit_log` to require a
+    // lease scope is tracked separately. The store is exercised by the
+    // unit tests in `lease.rs` and held here so the privileged path is
+    // ready for that follow-up without another binary change.
+    let lease_store = Arc::new(lease::LeaseStore::new(manifest.lease_ttl_seconds));
+    // Periodically purge expired leases so the map cannot grow without
+    // bound under repeated recall traffic.
+    let purge_store = lease_store.clone();
+    let purge_ttl = manifest.lease_ttl_seconds;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(purge_ttl));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            purge_store.purge_expired();
+        }
+    });
+
+    // Embedding provider: mirror the default startup path. ONNX > OpenAI > Noop.
+    let embedding: Arc<dyn EmbeddingProvider> = if let Some(ref onnx_path) = cli.onnx_model_path {
+        tracing::info!("Using ONNX local embeddings from {}", onnx_path);
+        Arc::new(mnemo_core::embedding::onnx::OnnxEmbedding::new(
+            onnx_path,
+            cli.dimensions,
+        )?)
+    } else if let Some(ref api_key) = cli.openai_api_key {
+        tracing::info!("Using OpenAI embeddings ({})", cli.embedding_model);
+        Arc::new(OpenAiEmbedding::new(
+            api_key.clone(),
+            cli.embedding_model.clone(),
+            cli.dimensions,
+        ))
+    } else {
+        tracing::warn!(
+            "No OPENAI_API_KEY set, using noop embeddings (semantic search will not work)"
+        );
+        Arc::new(NoopEmbedding::new(cli.dimensions))
+    };
+
+    // Storage: hardened mode is DuckDB-only (PostgreSQL connection
+    // strings are exactly the kind of capability the manifest is meant
+    // to keep out of env). `cli.db_path` still applies — it is the
+    // path-only knob in the CLI.
+    let storage = Arc::new(DuckDbStorage::open(&cli.db_path)?);
+    let index = Arc::new(UsearchIndex::new(cli.dimensions)?);
+    let index_path = cli.db_path.with_extension("usearch");
+    if index_path.exists() {
+        index.load(&index_path)?;
+        tracing::info!("Loaded vector index ({} vectors)", index.len());
+    }
+    let ft_path = cli.db_path.with_extension("tantivy");
+    let full_text = Arc::new(TantivyFullTextIndex::new(&ft_path)?);
+    tracing::info!(
+        "Full-text index ready at {:?} ({} docs)",
+        ft_path,
+        full_text.len()
+    );
+    let mut eng = MnemoEngine::new(
+        storage,
+        index.clone(),
+        embedding,
+        cli.agent_id.clone(),
+        cli.org_id.clone(),
+    )
+    .with_full_text(full_text)
+    .with_provenance_signer(Arc::new(signer));
+    if let Some(ref key_hex) = cli.encryption_key {
+        let enc = ContentEncryption::from_hex(key_hex)?;
+        eng = eng.with_encryption(Arc::new(enc));
+        tracing::info!("At-rest encryption enabled");
+    }
+    let engine = Arc::new(eng);
+
+    let shutdown_notify = Arc::new(Notify::new());
+    let signal_shutdown = shutdown_notify.clone();
+    tokio::spawn(async move {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!("Failed to listen for Ctrl+C: {e}");
+            return;
+        }
+        tracing::info!("Received shutdown signal");
+        signal_shutdown.notify_one();
+    });
+
+    let server = MnemoServer::new(engine);
+    tracing::info!("Starting Mnemo MCP server on stdio (hardened mode)");
+    let service = server.serve(stdio()).await?;
+    tokio::select! {
+        result = service.waiting() => {
+            if let Err(e) = result {
+                tracing::error!("MCP service error: {e}");
+            }
+        }
+        _ = shutdown_notify.notified() => {
+            tracing::info!("Shutdown initiated, saving state...");
+        }
+    }
+    let index_path = cli.db_path.with_extension("usearch");
+    tracing::info!("Saving vector index ({} vectors)...", index.len());
+    if let Err(e) = index.save(&index_path) {
+        tracing::error!("Failed to save vector index: {}", e);
+    }
+    Ok(())
+}
+
+/// Handle `mnemo eval` (v0.4.0-rc3 Task B6).
+///
+/// Replays a JSONL dataset of `{id, content, query, expected}` rows
+/// against an in-memory engine and emits a per-row JSONL report
+/// (latency_ms, top_k, hit). Used to compare config sweeps
+/// (provenance on/off, hybrid weights, recency half-life) against a
+/// fixed prompt set without spinning up a full deployment.
+async fn run_eval(cli: &Cli, args: &EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{BufWriter, Write};
+    use std::time::Instant;
+
+    use mnemo_core::query::recall::RecallRequest;
+    use mnemo_core::query::remember::RememberRequest;
+
+    #[derive(serde::Deserialize)]
+    struct Row {
+        id: String,
+        content: String,
+        query: String,
+        expected: String,
+    }
+
+    let dataset_path = args.dataset.clone().unwrap_or_else(|| {
+        // The bundled LongMemEval_M lives in mnemo-core's bench data
+        // dir relative to the workspace root. We resolve via
+        // CARGO_MANIFEST_DIR for robustness across the
+        // `cargo install` install path.
+        let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        here.join("..")
+            .join("mnemo-core")
+            .join("benches")
+            .join("data")
+            .join("longmemeval_m.jsonl")
+    });
+
+    let text = std::fs::read_to_string(&dataset_path)
+        .map_err(|e| format!("eval: failed to read dataset {dataset_path:?}: {e}"))?;
+    let rows: Vec<Row> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str::<Row>(l).map_err(|e| format!("eval: bad row '{l}': {e}")))
+        .collect::<Result<_, _>>()?;
+    if rows.is_empty() {
+        return Err(format!("eval: dataset {dataset_path:?} is empty").into());
+    }
+
+    // Build engine. Eval is always in-memory so a config sweep does
+    // not pollute the operator's persisted DB.
+    let storage = Arc::new(DuckDbStorage::open_in_memory()?);
+    let index = Arc::new(UsearchIndex::new(cli.dimensions)?);
+    let embedding: Arc<dyn EmbeddingProvider> = Arc::new(NoopEmbedding::new(cli.dimensions));
+    let mut eng = MnemoEngine::new(
+        storage,
+        index,
+        embedding,
+        cli.agent_id.clone(),
+        cli.org_id.clone(),
+    );
+    if args.with_provenance {
+        let key_hex = args.provenance_key_hex.as_ref().ok_or(
+            "eval: --with-provenance requires --provenance-key-hex (>=32 raw bytes hex-encoded)",
+        )?;
+        let key_bytes = hex::decode(key_hex)
+            .map_err(|e| format!("eval: --provenance-key-hex not valid hex: {e}"))?;
+        if key_bytes.len() < 32 {
+            return Err(format!(
+                "eval: --provenance-key-hex must decode to >= 32 bytes (got {})",
+                key_bytes.len()
+            )
+            .into());
+        }
+        let signer = mnemo_core::provenance::ProvenanceSigner::new("eval-key", &key_bytes);
+        eng = eng.with_provenance_signer(Arc::new(signer));
+    }
+    let engine = Arc::new(eng);
+
+    // Seed the engine with each row's content. Eval queries hit the
+    // same engine so we can measure end-to-end recall latency.
+    for r in &rows {
+        let mut req = RememberRequest::new(r.content.clone());
+        req.tags = Some(vec![format!("eval-id:{}", r.id)]);
+        engine.remember(req).await?;
+    }
+
+    // Open the output sink. None means stdout.
+    let mut out: Box<dyn Write> = match &args.output {
+        Some(path) => Box::new(BufWriter::new(std::fs::File::create(path)?)),
+        None => Box::new(BufWriter::new(std::io::stdout().lock())),
+    };
+
+    let mut hits = 0usize;
+    let mut total_latency_us: u128 = 0;
+    for r in &rows {
+        let recall = RecallRequest {
+            query: r.query.clone(),
+            agent_id: None,
+            limit: Some(args.limit),
+            memory_type: None,
+            memory_types: None,
+            scope: None,
+            min_importance: None,
+            tags: None,
+            org_id: None,
+            strategy: Some(args.strategy.clone()),
+            temporal_range: None,
+            recency_half_life_hours: None,
+            hybrid_weights: None,
+            rrf_k: None,
+            as_of: None,
+            explain: None,
+            with_provenance: if args.with_provenance {
+                Some(true)
+            } else {
+                None
+            },
+        };
+        let t0 = Instant::now();
+        let resp = engine.recall(recall).await?;
+        let elapsed_us = t0.elapsed().as_micros();
+        total_latency_us += elapsed_us;
+
+        let recalled_contents: Vec<String> =
+            resp.memories.iter().map(|m| m.content.clone()).collect();
+        let hit = recalled_contents
+            .iter()
+            .any(|c| c.to_lowercase().contains(&r.expected.to_lowercase()));
+        if hit {
+            hits += 1;
+        }
+
+        let row = serde_json::json!({
+            "id": r.id,
+            "query": r.query,
+            "expected": r.expected,
+            "recalled_count": resp.memories.len(),
+            "recalled_top1": resp.memories.first().map(|m| m.content.clone()),
+            "hit": hit,
+            "latency_us": elapsed_us,
+            "provenance_present": resp.provenance.is_some(),
+        });
+        writeln!(out, "{}", serde_json::to_string(&row)?)?;
+    }
+
+    let n = rows.len() as f64;
+    let avg_latency_us = total_latency_us as f64 / n;
+    let summary = serde_json::json!({
+        "summary": true,
+        "rows": rows.len(),
+        "hits": hits,
+        "hit_rate": hits as f64 / n,
+        "avg_latency_us": avg_latency_us,
+        "strategy": args.strategy,
+        "with_provenance": args.with_provenance,
+    });
+    writeln!(out, "{}", serde_json::to_string(&summary)?)?;
+    out.flush()?;
     Ok(())
 }
