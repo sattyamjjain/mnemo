@@ -106,13 +106,18 @@ Mnemo provides native integration modules for 15 agent frameworks:
 
 All integrations are auto-imported via `from mnemo import <ClassName>` — dependencies fail gracefully if not installed.
 
-#### Memory-tool servers and shared-memory adapters (v0.3.4 / v0.4.0-rc1)
+#### Memory-tool servers and shared-memory adapters (v0.3.4 → v0.4.0-rc3)
 
 | Surface | Class | What it does |
 |---|---|---|
 | [Anthropic memory tool `memory_20250818`](docs/src/integrations/anthropic-memory-tool.md) | `MnemoMemoryToolServer` | Client-side handler for the 6-op `view`/`create`/`str_replace`/`insert`/`delete`/`rename` surface — every "file" lands as a Mnemo memory with hash-chain + ACL coverage. `pip install 'mnemo-db[anthropic-memory-tool]'`. |
 | [Letta Conversations-style shared memory](docs/src/integrations/letta-conversations.md) | `MnemoLettaShared` | Multiple agents sharing a single audit-replayable memory stream. `attach`/`detach`/`read`/`write`/`list_participants` over Mnemo memories tagged `conversation:<id>` + `participant:<agent_id>`. |
 | [Cloudflare R2 workspace](docs/src/integrations/r2-workspace.md) | `CloudflareR2Workspace` | Drop-in R2 backend for `MnemoSnapshotStore` — same signed-manifest contract as the AWS S3 path; `pip install 'mnemo-db[openai-sandbox-r2]'`. |
+| [Letta-protocol-compat REST surface](crates/mnemo-letta/) (`mnemo-letta` crate) | `mnemo_letta::router(engine)` | `POST /v1/agents`, `POST /v1/agents/{id}/messages`, `GET /v1/agents/{id}/memory` — drop in front of any `MnemoEngine` so a Letta-Code-shaped benchmark or notebook can talk to Mnemo without code changes. New in v0.4.0-rc3 (B5). |
+| [Mannsetu DPDPA consent manager](crates/mnemo-compliance/src/mannsetu.rs) (`mnemo-compliance` crate) | `MannsetuConsentSource` + `ConsentTokenGuard` | DPB-registered consent-manager binding plus a per-write guard with expiry / scope / revocation checks. Refuses any `remember` whose consent token is missing, expired, wrong-scope, or revoked. New in v0.4.0-rc3 (B4). |
+| [DPDPA "data passport" PDF](python/mnemo/dpdpa_passport.py) | `mnemo.dpdpa_passport.build_passport_pdf` | One-page PDF showing every personal data point Mnemo holds for a subject, suitable for Section 11 / 12 access requests. Hand-rolled PDF — zero third-party deps, byte-for-byte reproducible. New in v0.4.0-rc3 (Q3). |
+| [Provenance SDK](python/mnemo/provenance.py) | `mnemo.provenance.verify_read_provenance` | Pure-Python verifier for the HMAC-SHA256 receipts that Mnemo returns alongside `recall(..., with_provenance=True)`. Auditors verify offline without compiling Rust. New in v0.4.0-rc3 (Q1). |
+| [Claude Code installer](python/mnemo/install_claude_code.py) | `python -m mnemo install claude-code [--hardened <manifest>]` | Idempotently registers Mnemo as an MCP server in `~/.claude.json`. The `--hardened` flag switches the registered launcher to the v0.4.0-rc3 hardened mode. New in v0.4.0-rc3 (Q2). |
 
 ### TypeScript
 
@@ -167,6 +172,9 @@ memories, _ := client.Recall(mnemo.RecallInput{Query: "user preferences"})
 - **OTLP observability** — ingest OpenTelemetry GenAI spans as agent events
 - **Append-only audit log** — immutable event log with database-enforced triggers (PostgreSQL)
 - **Evidence-weighted conflict resolution** — resolve multi-agent conflicts using source reliability scoring
+- **Memory-provenance signing on reads** — every `recall(..., with_provenance=True)` returns an HMAC-SHA256 receipt binding the cited records to a server-side key; supports key rotation. Verify offline from Python via `mnemo.provenance.verify_read_provenance`. New in v0.4.0-rc3.
+- **Hardened MCP launcher** — `mnemo mcp-server --manifest <path>` runs a safe-spawn gauntlet (refuse inherited secrets, refuse `--config` argv injection, refuse untrusted parents) BEFORE engine state is constructed. Direct response to the OX-MCP "exfiltrate-then-act" disclosure (2026-04-24). All privileged knobs come from a chmod-restricted TOML manifest. New in v0.4.0-rc3.
+- **DPDPA consent-token-per-write** — Mannsetu adapter + `ConsentTokenGuard` (expiry / scope / revocation) refuses every `remember` that is not authorized by a fresh consent token. Per-subject "data passport" PDF for Section 11 / 12 access requests. New in v0.4.0-rc3.
 
 ## Examples
 
@@ -195,7 +203,7 @@ The `examples/` directory contains working integration examples for all major ag
 ## CLI Options
 
 ```
-mnemo [OPTIONS]
+mnemo [OPTIONS] [COMMAND]
 
 Options:
   --db-path <PATH>              Database file path [default: mnemo.db] [env: MNEMO_DB_PATH]
@@ -204,11 +212,27 @@ Options:
   --dimensions <DIM>            Embedding dimensions [default: 1536] [env: MNEMO_DIMENSIONS]
   --agent-id <ID>               Default agent ID [default: default] [env: MNEMO_AGENT_ID]
   --org-id <ID>                 Organization ID [env: MNEMO_ORG_ID]
-  --onnx-model-path <PATH>     ONNX embedding model path (local inference) [env: MNEMO_ONNX_MODEL_PATH]
+  --onnx-model-path <PATH>      ONNX embedding model path (local inference) [env: MNEMO_ONNX_MODEL_PATH]
   --rest-port <PORT>            Enable REST API on this port [env: MNEMO_REST_PORT]
   --postgres-url <URL>          Use PostgreSQL backend [env: MNEMO_POSTGRES_URL]
   --encryption-key <HEX>        AES-256-GCM encryption key (64 hex chars) [env: MNEMO_ENCRYPTION_KEY]
   --idle-timeout-seconds <SECS> Auto-shutdown after idle period (0 = disabled) [default: 0] [env: MNEMO_IDLE_TIMEOUT]
+
+Commands:
+  baseline    Train the per-agent embedding-space baseline used by the z-score
+              outlier detector (v0.3.3, Task A).
+  mcp-server  Start the MCP STDIO server in hardened mode using a TOML manifest
+              (v0.4.0-rc3, Task B2). Refuses inherited secrets / argv injection /
+              untrusted parents BEFORE engine state is constructed. Privileged
+              knobs come from the manifest; key material reaches the binary via
+              a chmod-restricted keystore file. See
+              `examples/mcp-server/manifest.toml` for an annotated reference.
+  eval        Replay a JSONL dataset of {query, expected} rows against an
+              in-memory engine and emit a per-row latency / top-k JSONL report
+              (v0.4.0-rc3, Task B6). Defaults to the bundled LongMemEval_M
+              sample under `crates/mnemo-core/benches/data/longmemeval_m.jsonl`.
+              Pass `--with-provenance` + `--provenance-key-hex <hex>` to also
+              measure the HMAC-receipt overhead.
 ```
 
 ## Architecture
@@ -313,12 +337,28 @@ keeps the regression gate honest. Earlier reports under
 [`docs/benchmarks/`](docs/benchmarks/) carry the v0.3.0 / v0.3.1 floor
 numbers from before the v0.3.3 Tantivy-default + LLM-judge fixes.
 
+**LongMemEval_M provenance overhead bench (v0.4.0-rc3, B3).** A
+self-contained 45-record synthesized dataset ships at
+[`crates/mnemo-core/benches/data/longmemeval_m.jsonl`](crates/mnemo-core/benches/data/longmemeval_m.jsonl)
+(override with `MNEMO_LONGMEMEVAL_PATH=<path>` for the published
+gated dataset). The
+[`longmemeval_bench`](crates/mnemo-core/benches/longmemeval_bench.rs)
+criterion target runs two arms — `recall_no_provenance` and
+`recall_with_provenance` — so the per-recall HMAC-receipt overhead
+is measurable in CI:
+
+```bash
+cargo bench -p mnemo-core --bench longmemeval_bench
+```
+
 ## Documentation
 
 - **mdBook**: `docs/` directory — run `mdbook serve docs` for local browsing
 - **Compliance**: SOC 2 controls mapping and HIPAA safeguards at `docs/src/compliance/`
 - **REST API**: `docs/src/rest-api.md`
 - **Tool reference**: `docs/src/tools/` (one page per MCP tool)
+- **Hardened MCP launcher**: [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md) — manifest schema, threat model, systemd unit example
+- **Time-travel debugger**: [`examples/time-travel-debugger/index.html`](examples/time-travel-debugger/index.html) — vanilla-JS UI that diffs recall results between two `as_of` timestamps; serve any way you like (`python3 -m http.server`)
 - **Benchmarks**: `docs/benchmarks/`
 
 ## License
