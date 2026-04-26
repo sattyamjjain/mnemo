@@ -58,7 +58,7 @@ jobs:
           UA="mnemo-publish-workflow (https://github.com/sattyamjjain/mnemo)"
           for crate in mnemo-core mnemo-graph mnemo-mcp mnemo-postgres \
                        mnemo-rest mnemo-admin mnemo-pgwire mnemo-grpc \
-                       mnemo-compliance mnemo-mcp-server; do
+                       mnemo-compliance mnemo-letta mnemo-mcp-server; do
             # 200 = already published; 404 = needs publishing.
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
               "https://crates.io/api/v1/crates/${crate}/${ver}")
@@ -81,7 +81,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.to_publish != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 11 workspace crates × 12-min crates.io rate-limit spacing ≈ 132 min
+    # worst-case. Pad to 180 so a fresh-version run that has to walk
+    # every crate is not killed by GitHub's job timeout mid-sequence.
+    timeout-minutes: 180
     environment:
       name: crates-io
       url: https://crates.io/crates/mnemo-core
