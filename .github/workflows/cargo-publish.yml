@@ -58,7 +58,9 @@ jobs:
           UA="mnemo-publish-workflow (https://github.com/sattyamjjain/mnemo)"
           for crate in mnemo-core mnemo-graph mnemo-mcp mnemo-postgres \
                        mnemo-rest mnemo-admin mnemo-pgwire mnemo-grpc \
-                       mnemo-compliance mnemo-letta mnemo-mcp-server; do
+                       mnemo-compliance mnemo-letta mnemo-mesh \
+                       mnemo-codemode mnemo-deal mnemo-md-sync \
+                       mnemo-mcp-server; do
             # 200 = already published; 404 = needs publishing.
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
               "https://crates.io/api/v1/crates/${crate}/${ver}")

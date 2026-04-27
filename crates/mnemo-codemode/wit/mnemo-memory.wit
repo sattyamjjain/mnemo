@@ -1,0 +1,51 @@
+// v0.4.0 (P0-3) — Code-mode WIT world for mnemo-memory.
+//
+// An agent that runs in code mode imports this world instead of
+// calling JSON tools. Each call costs ~10 bytes of host↔guest
+// arguments instead of ~kilobyte-sized JSON tool envelopes; on long
+// conversations the per-turn token bill drops by 95%+ (Cloudflare
+// Code Mode published 99.9% with a similar shape; we expect lower
+// because we're streaming records, not pure side-effects).
+//
+// The implementation lives in `crates/mnemo-codemode/src/runner.rs`.
+// A wasmtime sandbox strips `wasi:filesystem`, `wasi:sockets`, and
+// any other capability that would let a guest agent egress data.
+
+package mnemo:memory@0.4.0;
+
+interface store {
+  record memory {
+    id: string,
+    content: string,
+    score: f32,
+  }
+
+  record provenance {
+    receipt-id: string,
+    hmac-key-id: string,
+    record-count: u32,
+  }
+
+  /// Run a recall against the host engine. The host streams matching
+  /// memories back; the guest may cut at any point.
+  recall: func(query: string, k: u32) -> list<memory>;
+
+  /// Re-score a memory under whatever scoring lane the guest wants
+  /// (decay reweight, time bias, etc.). Returns the host-computed
+  /// fused score so the guest does not need to ship the raw lane
+  /// weights into wasm.
+  score: func(mem: memory) -> f32;
+
+  /// Ask the host to attach a provenance receipt to the recall
+  /// result. The receipt is HMAC-signed with the host-side key the
+  /// operator pinned in the manifest; the guest never sees the key.
+  cite: func(mem: memory) -> provenance;
+}
+
+world memory-agent {
+  import store;
+  // Guest exports its main loop. Host calls `run` once per turn,
+  // passing the user query; the guest responds with the answer
+  // string the host hands back to the LLM.
+  export run: func(user-query: string) -> string;
+}

@@ -1,0 +1,20 @@
+[package]
+name = "mnemo-md-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bidirectional sync between a git-tracked Markdown wiki and Mnemo (v0.4.0 P2-6). Wuphf-style ergonomics with mnemo-grade recall + provenance."
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }

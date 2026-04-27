@@ -135,6 +135,13 @@ pub enum EventType {
     /// An Auto Dream organization-report trailer was parsed and
     /// ingested. Payload carries merged/removed/re-indexed counts.
     DreamReportIngested,
+    /// v0.4.0 (P0-1) — emitted by `mnemo mcp-server` whenever the
+    /// catalog of MCP tools the engine is about to advertise diverges
+    /// from the operator-pinned baseline. Payload carries the verdict
+    /// (`Match` / `Drift` / `Reject`) plus added/removed/mutated
+    /// fingerprints. Direct response to arXiv 2604.20994
+    /// (function-hijacking via tool-catalog poisoning).
+    McpToolCatalogDrift,
 }
 
 impl std::fmt::Display for EventType {
@@ -159,6 +166,7 @@ impl std::fmt::Display for EventType {
             EventType::Decision => write!(f, "decision"),
             EventType::ReflectionCompleted => write!(f, "reflection_completed"),
             EventType::DreamReportIngested => write!(f, "dream_report_ingested"),
+            EventType::McpToolCatalogDrift => write!(f, "mcp_tool_catalog_drift"),
         }
     }
 }
@@ -186,6 +194,7 @@ impl std::str::FromStr for EventType {
             "decision" => Ok(EventType::Decision),
             "reflection_completed" => Ok(EventType::ReflectionCompleted),
             "dream_report_ingested" => Ok(EventType::DreamReportIngested),
+            "mcp_tool_catalog_drift" => Ok(EventType::McpToolCatalogDrift),
             _ => Err(crate::error::Error::Validation(format!(
                 "invalid event type: {s}"
             ))),

@@ -12,11 +12,15 @@ members = [
     "crates/mnemo-compliance",
     "crates/mnemo-graph",
     "crates/mnemo-letta",
+    "crates/mnemo-mesh",
+    "crates/mnemo-codemode",
+    "crates/mnemo-deal",
+    "crates/mnemo-md-sync",
     "python",
 ]
 
 [workspace.package]
-version = "0.4.0-rc3"
+version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"

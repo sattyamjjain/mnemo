@@ -23,3 +23,8 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 hyper = "1"
 tempfile = { workspace = true }
+# v0.4.0 — admin tests share DuckDB extension state through a static
+# init the C library does inside `Connection::open`; running two of
+# them in parallel on Ubuntu CI surfaces "Current transaction is
+# aborted". `#[serial]` forces sequential execution per test.
+serial_test = "3"
