@@ -65,25 +65,19 @@ pub fn parse_markdown(input: &str) -> Result<ParsedMarkdown, ParseError> {
             let k = k.trim();
             let v = v.trim();
             match k {
-                "mnemo_id" => {
-                    if !v.is_empty() {
-                        mnemo_id = Some(
-                            Uuid::parse_str(v).map_err(|e| ParseError::InvalidId(e.to_string()))?,
-                        );
-                    }
+                "mnemo_id" if !v.is_empty() => {
+                    mnemo_id = Some(
+                        Uuid::parse_str(v).map_err(|e| ParseError::InvalidId(e.to_string()))?,
+                    );
                 }
-                "agent_id" => {
-                    if !v.is_empty() {
-                        agent_id = Some(v.to_string());
-                    }
+                "agent_id" if !v.is_empty() => {
+                    agent_id = Some(v.to_string());
                 }
                 "tags" => {
                     tags = parse_tag_list(v);
                 }
-                "expires_at" => {
-                    if !v.is_empty() {
-                        expires_at = Some(v.to_string());
-                    }
+                "expires_at" if !v.is_empty() => {
+                    expires_at = Some(v.to_string());
                 }
                 _ => {}
             }
