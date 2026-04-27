@@ -32,8 +32,8 @@ pub fn estimate_json_mode_tokens(query: &str, records: &[&str]) -> usize {
 
 /// Estimate token cost of a code-mode exchange given the same query
 /// + records. Each host call costs ~4 tokens (function name +
-/// returned-memory pointer); records are streamed back uncompressed
-/// because the LLM sees them only when it decides to emit them.
+///   returned-memory pointer); records are streamed back uncompressed
+///   because the LLM sees them only when it decides to emit them.
 pub fn estimate_code_mode_tokens(query: &str, records: &[&str], host_calls: usize) -> usize {
     let mut total = estimate_tokens(query) + host_calls * 4;
     for r in records {

@@ -35,22 +35,17 @@ impl Default for MdSyncSpec {
 
 /// How aggressive the flush-to-disk side should be when an in-engine
 /// remember would overwrite a file the human is editing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SyncFlushPolicy {
     /// Always overwrite the on-disk file with the engine's version.
     /// Used during a fresh import.
     PreferEngine,
     /// Always preserve the on-disk file; engine writes that would
     /// overwrite are written to a sibling `.conflict.md`. Default.
+    #[default]
     PreferDisk,
     /// Pick whichever has the more recent timestamp; tie goes to disk.
     NewerWins,
-}
-
-impl Default for SyncFlushPolicy {
-    fn default() -> Self {
-        Self::PreferDisk
-    }
 }
 
 #[cfg(test)]
