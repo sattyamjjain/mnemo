@@ -66,9 +66,8 @@ pub fn parse_markdown(input: &str) -> Result<ParsedMarkdown, ParseError> {
             let v = v.trim();
             match k {
                 "mnemo_id" if !v.is_empty() => {
-                    mnemo_id = Some(
-                        Uuid::parse_str(v).map_err(|e| ParseError::InvalidId(e.to_string()))?,
-                    );
+                    mnemo_id =
+                        Some(Uuid::parse_str(v).map_err(|e| ParseError::InvalidId(e.to_string()))?);
                 }
                 "agent_id" if !v.is_empty() => {
                     agent_id = Some(v.to_string());
