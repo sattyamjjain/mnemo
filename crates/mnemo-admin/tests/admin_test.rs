@@ -36,6 +36,7 @@ fn create_test_engine() -> (Arc<MnemoEngine>, tempfile::TempDir) {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_admin_stats_endpoint() {
     let (engine, _tmp) = create_test_engine();
 
@@ -104,6 +105,7 @@ async fn test_admin_stats_endpoint() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn test_admin_agents_endpoint() {
     let (engine, _tmp) = create_test_engine();
 
