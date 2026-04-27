@@ -2,6 +2,88 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.4.0] - 2026-04-27
+
+Mesh / code-mode / commerce release. Picks up four net-new
+competitive surfaces (Cloudflare Mesh, Cloudflare Code Mode,
+Anthropic Project Deal, Wuphf-style Markdown wikis) plus a hard
+defense against the new MCP function-hijacking class.
+
+### Added
+
+- **P0-1 — MCP tool-catalog attestation.** New
+  `crates/mnemo-cli/src/attest/` module with `PinnedToolCatalog`,
+  `CatalogAttestor` trait, and `PinnedAttestor` impl. Operators ship
+  a `[tool_catalog_pin]` block in the manifest; `mnemo mcp-server`
+  refuses to start if the advertised catalog has any `added` or
+  `mutated` tools, and emits a `McpToolCatalogDrift` audit event with
+  the per-tool diff. `--allow-removed-drift` lets `removed`-only
+  diffs through with a warning. Direct response to **arXiv 2604.20994**
+  (function-hijacking via tool-list poisoning). 10 unit tests.
+- **P0-2 — `mnemo-mesh` crate (Cloudflare Mesh runtime adapter).**
+  SPIFFE-style `MeshIdentity` + `AttestationToken`, `MemOp` enum
+  covering `Recall`/`Write`/`Forget`/`Branch`/`ReplayAsOf`/
+  `ExportProvenance`, `MeshPolicyEnforcer` trait + `StaticPolicyEnforcer`
+  impl with per-(SPIFFE, namespace) ACL, `MeshAuditEnvelope` with
+  deterministic `next_chain_head()` chained into the v0.4.0-rc3
+  provenance ledger. 13 unit tests. First OSS embedded memory DB to
+  speak Cloudflare Mesh attestation natively.
+- **P0-3 — `mnemo-codemode` crate (Code Mode WIT recall).** WIT
+  world definition (`mnemo:memory@0.4`) under
+  `crates/mnemo-codemode/wit/`, host-side runner with
+  `ResourceBudget` (fuel / mem_pages / wall), `RecallStep` /
+  `GuestProgram` / `RecallBundle`, token-cost estimator that
+  asserts code-mode delivers ≥20% token reduction on a 200-turn
+  conversation (vs Cloudflare's 99.9% claim — we're more
+  conservative because we stream records, not just side effects).
+  wasmtime + WASI-stripping path is feature-gated for the follow-up.
+  7 unit tests including fuel exhaust + wall-time exceeded.
+- **P1-4 — Decay-curve recall primitive.** New
+  `mnemo-core::score` module with `ScoreLane` trait + `DecayLane`
+  impl. `decay_weight(now, last_access, hits, &DecayParams)` is the
+  pure Ebbinghaus exponential with reinforcement and floor;
+  `letta_mode` flag in `ScoreContext` zeros the lane for parity with
+  Letta's published numbers. Default fuse weights:
+  `0.55 vector + 0.20 bm25 + 0.15 recency + 0.10 decay`.
+  Competitive response to YourMemory's biological-decay marketing
+  (Show HN, 2026-04-27). 9 unit tests.
+- **P1-5 — `mnemo-deal` crate (agent-on-agent deal ledger).**
+  Chained-HMAC `DealEnvelope` log with `InMemoryDealLedger` impl,
+  `verify_chain()` that produces a `DisputeReport` pinpointing the
+  first divergent offset. Substrate for Anthropic Project Deal-style
+  commerce (announced 2026-04-25). 10 unit tests including tampered
+  terms + broken prev_hash detection.
+- **P2-6 — `mnemo-md-sync` crate (Markdown+Git working set).**
+  Parser for YAML-style frontmatter (`mnemo_id`, `agent_id`,
+  `tags`, `expires_at`), `MdSyncSpec` config with
+  `SyncFlushPolicy` (PreferEngine / PreferDisk / NewerWins). Wuphf-
+  inspired ergonomics with mnemo-grade recall + provenance. 9 unit
+  tests. notify-based watcher + gix commit-on-flush land in a
+  follow-up; the contract API is stable.
+
+### Changed
+
+- Workspace version bumped from `0.4.0-rc3` to `0.4.0` across all
+  Rust crates (14 incl. four new: `mnemo-mesh`, `mnemo-codemode`,
+  `mnemo-deal`, `mnemo-md-sync`), the Python package (`mnemo-db`),
+  and the TypeScript SDK (`@mndfreek/mnemo-sdk`).
+- `mnemo-core::model::EventType` gained `McpToolCatalogDrift` for
+  P0-1 audit rows.
+- Manifest (B2 hardened mode) gained `tool_catalog_pin_path` and
+  `allow_removed_drift` fields. Both optional and additive — older
+  manifests load unchanged.
+- `cargo-publish.yml` plan list updated to include the four new
+  crates so push-to-main publishes them.
+
+### Security
+
+- The P0-1 tool-catalog attestation is a direct response to **arXiv
+  2604.20994 (2026-04-23)**: a malicious MCP source that mutates
+  `tools/list` can rename a tool, change its `inputSchema`, or
+  smuggle a hidden `secret_exfil` tool. Mnemo's hardened launcher
+  now refuses to expose any catalog whose fingerprint set differs
+  from the operator-pinned baseline.
+
 ## [0.4.0-rc3] - 2026-04-26
 
 Threat-model release: hardens the MCP STDIO entry point against the

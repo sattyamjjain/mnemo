@@ -1,0 +1,21 @@
+[package]
+name = "mnemo-deal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Chained-HMAC ledger of agent-on-agent deal envelopes (v0.4.0 P1-5). Substrate for Anthropic Project Deal-style commerce."
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

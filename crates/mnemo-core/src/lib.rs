@@ -8,6 +8,7 @@ pub mod index;
 pub mod model;
 pub mod provenance;
 pub mod query;
+pub mod score;
 pub mod search;
 pub mod storage;
 pub mod sync;

@@ -21,6 +21,19 @@ pub struct Manifest {
     pub allowed_parents: BTreeSet<String>,
     #[serde(default = "default_lease_ttl_seconds")]
     pub lease_ttl_seconds: u64,
+    /// v0.4.0 (P0-1) — optional path to the operator-pinned MCP
+    /// tool-catalog file. When set, `mnemo mcp-server` runs the
+    /// attestor against the advertised catalog before exposing it
+    /// over stdio. Defends against arXiv 2604.20994 function-hijacking
+    /// via tool-list poisoning.
+    #[serde(default)]
+    pub tool_catalog_pin_path: Option<PathBuf>,
+    /// v0.4.0 (P0-1) — when true, a `Drift { added: [], mutated: [],
+    /// removed: [..] }` verdict allows startup with an audit warning
+    /// instead of refusing. Operators set this during a graceful
+    /// downgrade where some tools have been intentionally removed.
+    #[serde(default)]
+    pub allow_removed_drift: bool,
 }
 
 fn default_allowed_tools() -> BTreeSet<String> {

@@ -36,6 +36,10 @@ uuid = { workspace = true }
 toml = "0.9"
 hex = { workspace = true }
 
+# v0.4.0 (P0-1) — MCP tool-catalog attestation.
+sha2 = { workspace = true }
+chrono = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

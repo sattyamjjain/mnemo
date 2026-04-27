@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use rmcp::{ServiceExt, transport::stdio};
 use tokio::sync::Notify;
 
+mod attest;
 mod lease;
 mod manifest;
 mod safe_spawn;
@@ -558,6 +559,41 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         key_id = %signer.key_id(),
         "provenance signer attached"
     );
+
+    // v0.4.0 (P0-1) — load the optional tool-catalog pin and build
+    // an attestor. The actual attestation against rmcp's advertised
+    // tool list happens in the MCP boot path (a separate follow-up
+    // wires it into mnemo-mcp's ServerHandler::list_tools — keeping
+    // the attestor here ensures the manifest's pin is parsed and
+    // validated even before that wiring lands, so a malformed pin
+    // refuses startup rather than silently passing through).
+    let tool_attestor: Option<attest::PinnedAttestor> =
+        if let Some(pin_path) = manifest.tool_catalog_pin_path.as_ref() {
+            let pin = attest::catalog_pin::load(pin_path)?;
+            tracing::info!(
+                pin_signer = %pin.signer,
+                pin_tool_count = pin.tools.len(),
+                pin_catalog_sha = %hex::encode(pin.catalog_sha256()),
+                "MCP tool-catalog pin loaded"
+            );
+            Some(attest::PinnedAttestor::new(pin))
+        } else {
+            tracing::warn!(
+                "no tool_catalog_pin_path in manifest — running without \
+                 catalog-poisoning defense (arXiv 2604.20994). Set \
+                 `tool_catalog_pin_path` to enable."
+            );
+            None
+        };
+    // Attestor parked here for the rmcp-side wiring follow-up. Touch
+    // it in a debug log so the binary doesn't hold a dead reference.
+    if let Some(ref a) = tool_attestor {
+        tracing::debug!(
+            allow_removed_drift = manifest.allow_removed_drift,
+            attestor_baseline_tools = a.baseline().tools.len(),
+            "tool-catalog attestor ready"
+        );
+    }
 
     // Allocate the lease store. The MCP tools layer does not consume it
     // yet — wiring `forget_subject` / `export_audit_log` to require a

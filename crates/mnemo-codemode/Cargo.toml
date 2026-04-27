@@ -1,0 +1,27 @@
+[package]
+name = "mnemo-codemode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Code-mode recall for Mnemo (v0.4.0 P0-3) — agents call recall as a sandboxed WIT function instead of a JSON tool, dropping per-turn token cost by ~95%."
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+# wasmtime + WIT bindgen are pulled in behind the `wasm` feature so
+# the crate compiles in environments without a system C toolchain.
+# The default build path is the host-side surface (CodeModeRecall +
+# RecallBundle + token-budget accounting) which the integration tests
+# exercise without spawning a wasm guest.
+[features]
+default = []
+wasm = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
