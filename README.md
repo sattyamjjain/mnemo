@@ -106,7 +106,7 @@ Mnemo provides native integration modules for 15 agent frameworks:
 
 All integrations are auto-imported via `from mnemo import <ClassName>` — dependencies fail gracefully if not installed.
 
-#### Memory-tool servers and shared-memory adapters (v0.3.4 → v0.4.0-rc3)
+#### Memory-tool servers and shared-memory adapters (v0.3.4 → v0.4.1)
 
 | Surface | Class | What it does |
 |---|---|---|
@@ -118,6 +118,10 @@ All integrations are auto-imported via `from mnemo import <ClassName>` — depen
 | [DPDPA "data passport" PDF](python/mnemo/dpdpa_passport.py) | `mnemo.dpdpa_passport.build_passport_pdf` | One-page PDF showing every personal data point Mnemo holds for a subject, suitable for Section 11 / 12 access requests. Hand-rolled PDF — zero third-party deps, byte-for-byte reproducible. New in v0.4.0-rc3 (Q3). |
 | [Provenance SDK](python/mnemo/provenance.py) | `mnemo.provenance.verify_read_provenance` | Pure-Python verifier for the HMAC-SHA256 receipts that Mnemo returns alongside `recall(..., with_provenance=True)`. Auditors verify offline without compiling Rust. New in v0.4.0-rc3 (Q1). |
 | [Claude Code installer](python/mnemo/install_claude_code.py) | `python -m mnemo install claude-code [--hardened <manifest>]` | Idempotently registers Mnemo as an MCP server in `~/.claude.json`. The `--hardened` flag switches the registered launcher to the v0.4.0-rc3 hardened mode. New in v0.4.0-rc3 (Q2). |
+| [Anthropic CMA-Memory compat shim](crates/mnemo-cma/) (`mnemo-cma` crate) | `CmaTreeRoot` + `import_cma_tree` + `audit_bridge` | Drop-in for the Anthropic Context-Managed Agent Memory beta announced 2026-04-23. Mounts an existing CMA `.memory/` tree, mirrors writes through to mnemo's HMAC chain, and exports back byte-identical so users can leave cleanly. New in v0.4.1 (P0-2). |
+| [Agent behavioural-baseline exporter](crates/mnemo-baseline/) (`mnemo-baseline` crate) | `AgentBaseline` + `JsonExporter` (OTel + OCSF) | Per-agent rolling profile (recall/write rates, namespace fanout, tool mix, HMAC continuity) emitted to OpenTelemetry semconv 1.31 + OCSF 1.4 Application-Activity envelopes with z-score+EWMA drift detection. Anti-leak invariant: emitted payloads never carry memory contents. Plugs into the agentic-SOC telemetry gap RSAC 2026 flagged. New in v0.4.1 (P0-3). |
+| [1M-context recall budget planner](crates/mnemo-core/src/budget/) (`mnemo-core::budget`) | `ContextBudget::for_model` + `plan_recall` | First OSS memory store with an explicit per-model `ContextBudget → RecallPlan` planner. Per-model table covers `deepseek-v4-1m`, `claude-3.7-sonnet-1m`, `gpt-5.1-400k`, `gemini-2.5-pro-2m` plus their smaller siblings. Typed `FallbackStrategy` (TruncateOldest / SummarizeOldestK / DropDuplicates / None). Property test: never overflows total context. New in v0.4.1 (P1-4). |
+| [Project-Deal counterparty discovery + reputation](crates/mnemo-deal/) (`mnemo-deal::discovery` + `::reputation`) | `AgentAdvertisement` + `compute_reputation` | `/.well-known/mnemo-deal-agent.json` advertisement (Ed25519-keyed, capability-tagged) plus an advisory reputation score with 90-day half-life decay and per-dispute 10% penalty. mnemo becomes not just the deal ledger but the directory of the agent-deal substrate. **Advisory only** — see `docs/deal-reputation-threats.md`. New in v0.4.1 (P1-5). |
 
 ### TypeScript
 
@@ -175,6 +179,16 @@ memories, _ := client.Recall(mnemo.RecallInput{Query: "user preferences"})
 - **Memory-provenance signing on reads** — every `recall(..., with_provenance=True)` returns an HMAC-SHA256 receipt binding the cited records to a server-side key; supports key rotation. Verify offline from Python via `mnemo.provenance.verify_read_provenance`. New in v0.4.0-rc3.
 - **Hardened MCP launcher** — `mnemo mcp-server --manifest <path>` runs a safe-spawn gauntlet (refuse inherited secrets, refuse `--config` argv injection, refuse untrusted parents) BEFORE engine state is constructed. Direct response to the OX-MCP "exfiltrate-then-act" disclosure (2026-04-24). All privileged knobs come from a chmod-restricted TOML manifest. New in v0.4.0-rc3.
 - **DPDPA consent-token-per-write** — Mannsetu adapter + `ConsentTokenGuard` (expiry / scope / revocation) refuses every `remember` that is not authorized by a fresh consent token. Per-subject "data passport" PDF for Section 11 / 12 access requests. New in v0.4.0-rc3.
+- **MCP tool-catalog attestation** — `mnemo mcp-server` pins the advertised MCP tool list, refuses to start when the catalog gains an unauthorized tool or any tool's `inputSchema` mutates, and emits `MNEMO_MCP_TOOL_DRIFT` audit rows. Direct response to arXiv 2604.20994 (function-hijacking via tool-list poisoning). New in v0.4.0.
+- **Cloudflare Mesh runtime adapter** — SPIFFE-style `MeshIdentity` + per-namespace `MemOp` ACL + `MeshAuditEnvelope` chained into the existing HMAC ledger. First OSS embedded memory DB to speak Cloudflare Mesh attestation natively. New in v0.4.0.
+- **Code-mode WIT recall** — `mnemo:memory@0.4` WIT world plus a wasmtime-friendly host runner. Agents call `recall` as a sandboxed WASM function instead of a JSON tool envelope, dropping per-turn token cost ~96% on 200-turn LongMemEval_S samples. New in v0.4.0.
+- **Decay-curve score lane** — `DecayLane` (Ebbinghaus + reinforcement) fuses with vector + BM25 + recency in the default recall path. `letta_mode` flag bypasses it for parity with Letta's published numbers. New in v0.4.0.
+- **Agent-Deal ledger** — `mnemo-deal` crate ships a chained-HMAC `DealEnvelope` log with `verify_chain → DisputeReport`. v0.4.1 adds advertisement (`/.well-known/mnemo-deal-agent.json`) + advisory reputation (90-day half-life, per-dispute 10% penalty).
+- **Markdown+Git working-set adapter** — `mnemo-md-sync` parses YAML-style frontmatter (`mnemo_id`, `tags`, `expires_at`) and provides `MdSyncSpec` + `SyncFlushPolicy` (PreferEngine / PreferDisk / NewerWins). New in v0.4.0.
+- **Anthropic CMA-Memory compat shim** — `mnemo-cma` crate mounts, mirrors, and exports the Anthropic CMA-Memory beta filesystem (announced 2026-04-23). Every CMA write is bridged into the mnemo HMAC chain via `CmaSource::CmaBeta` markers. New in v0.4.1.
+- **Agent behavioural-baseline exporter** — `mnemo-baseline` crate emits per-agent profiles in OpenTelemetry semconv 1.31 + OCSF 1.4 Application-Activity formats with z-score+EWMA drift detection; anti-leak regex test ensures payloads never carry memory contents. Plugs into the RSAC 2026 SOC telemetry gap. New in v0.4.1.
+- **1M-context recall budget planner** — `mnemo-core::budget` adds `ContextBudget::for_model` + `plan_recall` covering `deepseek-v4-1m`, `claude-3.7-sonnet-1m`, `gpt-5.1-400k`, `gemini-2.5-pro-2m`; typed `FallbackStrategy`; property test asserts no model overflows. New in v0.4.1.
+- **mnemo doctor + Grafana dashboard** — typed `DoctorReport` + `DoctorFix` recommendations and a committed `dashboards/mnemo-grafana.json` (schemaVersion 39) covering recall p50/p99, tool-catalog drift, HMAC continuity, code-mode token reduction. New in v0.4.1.
 
 ## Examples
 
@@ -369,6 +383,8 @@ cargo bench -p mnemo-core --bench longmemeval_bench
 - **Tool reference**: `docs/src/tools/` (one page per MCP tool)
 - **Hardened MCP launcher**: [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md) — manifest schema, threat model, systemd unit example
 - **Time-travel debugger**: [`examples/time-travel-debugger/index.html`](examples/time-travel-debugger/index.html) — vanilla-JS UI that diffs recall results between two `as_of` timestamps; serve any way you like (`python3 -m http.server`)
+- **LoCoMo report**: [`docs/benchmarks/locomo-2026-04-28.md`](docs/benchmarks/locomo-2026-04-28.md) — first public mnemo number alongside MemMachine + Memori with the honest temporal-slice + per-turn-token pitch
+- **Grafana dashboard**: [`dashboards/mnemo-grafana.json`](dashboards/mnemo-grafana.json) — schemaVersion 39, drop straight into Grafana 11.5; covers recall p50/p99, tool-catalog drift, HMAC continuity, code-mode token reduction, baseline anomalies
 - **Benchmarks**: `docs/benchmarks/`
 
 ## License
