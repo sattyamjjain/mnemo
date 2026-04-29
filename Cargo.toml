@@ -16,11 +16,14 @@ members = [
     "crates/mnemo-codemode",
     "crates/mnemo-deal",
     "crates/mnemo-md-sync",
+    "crates/mnemo-cma",
+    "crates/mnemo-baseline",
+    "bench/locomo",
     "python",
 ]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"

@@ -1,0 +1,22 @@
+[package]
+name = "mnemo-cma"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Anthropic CMA-Memory drop-in compatibility shim — mount, mirror, export the Markdown-tree filesystem-of-memory beta announced 2026-04-23 (v0.4.1 P0-2)."
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }

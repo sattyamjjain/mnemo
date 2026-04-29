@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 39,
+  "title": "Mnemo — operator dashboard (v0.4.1)",
+  "uid": "mnemo-operator-v0-4-1",
+  "version": 1,
+  "tags": ["mnemo", "agent-memory"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Recall p50 (ms)",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(mnemo_recall_latency_ms_bucket[5m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 20},
+              {"color": "red", "value": 50}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Recall p99 (ms)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mnemo_recall_latency_ms_bucket[5m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Tool-catalog drift events / 5m",
+      "description": "Audit-log MNEMO_MCP_TOOL_DRIFT counter (v0.4.0 P0-1).",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {
+          "expr": "increase(mnemo_mcp_tool_drift_total[5m])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "HMAC chain intact",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {"expr": "mnemo_hmac_chain_intact", "refId": "A"}
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Per-agent recall rate (per minute)",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate(mnemo_recall_total[1m])) * 60",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Per-agent write rate (per minute)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate(mnemo_remember_total[1m])) * 60",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Code-mode token reduction (per turn)",
+      "description": "1 - code_mode_tokens / json_mode_tokens.",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "1 - (mnemo_codemode_tokens / mnemo_json_mode_tokens)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit"}
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Baseline anomalies (severity ≥ Warning)",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "mnemo_baseline_anomaly{severity=~\"warning|high|critical\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "templating": {"list": []},
+  "annotations": {
+    "list": [
+      {
+        "name": "Tool-catalog drifts",
+        "datasource": "Prometheus",
+        "expr": "mnemo_mcp_tool_drift_total > 0",
+        "iconColor": "red"
+      }
+    ]
+  }
+}
