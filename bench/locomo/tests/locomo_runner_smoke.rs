@@ -42,7 +42,7 @@ async fn runner_smoke_5_dialogues_under_90s() {
             turns: vec!["the meeting is on tuesday".into()],
         },
     ];
-    let golds = vec![
+    let golds = [
         ("t1".to_string(), "penicillin".to_string()),
         ("m1".to_string(), "hemoglobin".to_string()),
         ("o1".to_string(), "paris".to_string()),

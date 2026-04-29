@@ -39,7 +39,7 @@ pub fn import_cma_tree(memory_dir: &Path) -> std::io::Result<(ImportSummary, Vec
 
     // Sort entries so the output is stable (same tree → same head).
     let mut entries: Vec<_> = walk(memory_dir)?;
-    entries.sort_by(|a, b| a.cmp(b));
+    entries.sort();
 
     for path in entries {
         if !path.is_file() {
