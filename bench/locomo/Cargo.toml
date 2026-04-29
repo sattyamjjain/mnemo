@@ -1,0 +1,30 @@
+[package]
+name = "mnemo-locomo-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "LoCoMo authenticated nightly runner with cross-judge variance bands (v0.4.1 P0-1)."
+
+[[bin]]
+name = "mnemo-locomo"
+path = "src/main.rs"
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

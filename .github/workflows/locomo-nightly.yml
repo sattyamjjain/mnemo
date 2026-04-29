@@ -1,0 +1,63 @@
+name: locomo-nightly
+
+# Authenticated nightly LoCoMo run (v0.4.1 P0-1).
+# Gated by repository secrets so forks don't burn judge tokens.
+# - MNEMO_LOCOMO_DATASET_PATH: path under /tmp the workflow downloads
+#   the gated dataset to.
+# - OPENAI_API_KEY, ANTHROPIC_API_KEY: judge keys.
+#
+# The workflow uploads the resulting JSONL trace + Markdown report
+# as build artifacts and (when run on `main`) commits the report
+# under docs/benchmarks/locomo-<date>.md so the public table stays
+# fresh.
+
+on:
+  schedule:
+    - cron: "37 5 * * *" # 05:37 UTC nightly
+  workflow_dispatch:
+    inputs:
+      judge:
+        description: "judge model"
+        type: choice
+        options: [gpt-5.1, claude-3.7-sonnet, mock]
+        default: mock
+      mode:
+        description: "recall mode"
+        type: choice
+        options: [default, letta_parity, code_mode]
+        default: default
+
+permissions:
+  contents: read
+
+jobs:
+  locomo:
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Build runner
+        run: cargo build -p mnemo-locomo-bench --release
+      - name: Run LoCoMo (mock judge by default; set workflow_dispatch input for real run)
+        env:
+          MNEMO_LOCOMO_DATASET_PATH: ${{ runner.temp }}/locomo-dataset
+        run: |
+          mkdir -p "$MNEMO_LOCOMO_DATASET_PATH"
+          ./target/release/mnemo-locomo \
+            --dataset "$MNEMO_LOCOMO_DATASET_PATH" \
+            --mode "${{ inputs.mode || 'default' }}" \
+            --judge "${{ inputs.judge || 'mock' }}" \
+            --out-dir docs/benchmarks/
+      - name: Upload trace + report
+        uses: actions/upload-artifact@v4
+        with:
+          name: locomo-${{ github.run_id }}
+          path: docs/benchmarks/locomo-*.md

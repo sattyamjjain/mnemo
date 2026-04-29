@@ -18,10 +18,14 @@
 //!    the chain, finds the first divergence between expected and
 //!    observed hashes, and pinpoints the offset that broke.
 
+pub mod discovery;
 pub mod dispute;
 pub mod envelope;
 pub mod ledger;
+pub mod reputation;
 
+pub use discovery::{AgentAdvertisement, DealCapability, Ed25519PubBytes};
 pub use dispute::{DisputeReport, verify_chain};
 pub use envelope::{AgentId, DealEnvelope, EnvelopeError};
 pub use ledger::{DealLedger, InMemoryDealLedger, LedgerError, LedgerOffset};
+pub use reputation::{ReputationScore, compute_reputation};

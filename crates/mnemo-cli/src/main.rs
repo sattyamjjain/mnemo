@@ -8,6 +8,7 @@ use rmcp::{ServiceExt, transport::stdio};
 use tokio::sync::Notify;
 
 mod attest;
+mod commands;
 mod lease;
 mod manifest;
 mod safe_spawn;

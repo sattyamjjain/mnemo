@@ -60,6 +60,7 @@ jobs:
                        mnemo-rest mnemo-admin mnemo-pgwire mnemo-grpc \
                        mnemo-compliance mnemo-letta mnemo-mesh \
                        mnemo-codemode mnemo-deal mnemo-md-sync \
+                       mnemo-cma mnemo-baseline \
                        mnemo-mcp-server; do
             # 200 = already published; 404 = needs publishing.
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \

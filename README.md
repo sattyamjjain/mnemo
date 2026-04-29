@@ -337,6 +337,16 @@ keeps the regression gate honest. Earlier reports under
 [`docs/benchmarks/`](docs/benchmarks/) carry the v0.3.0 / v0.3.1 floor
 numbers from before the v0.3.3 Tantivy-default + LLM-judge fixes.
 
+**First public LoCoMo number (v0.4.1, P0-1)** — full report at
+[`docs/benchmarks/locomo-2026-04-28.md`](docs/benchmarks/locomo-2026-04-28.md).
+mnemo joins the public LoCoMo board alongside MemMachine (84.87%,
+2026-04-24) and Memori (81.95%, 2026-04-24); the harness ships at
+[`bench/locomo`](bench/locomo) with a dual-judge variance gate
+(GPT-5.1 + Claude-3.7 Sonnet) and runs nightly via
+[`.github/workflows/locomo-nightly.yml`](.github/workflows/locomo-nightly.yml).
+mnemo trades raw overall score for **temporal-slice strength + ~96% per-turn token cost** —
+see the report for the honest pitch.
+
 **LongMemEval_M provenance overhead bench (v0.4.0-rc3, B3).** A
 self-contained 45-record synthesized dataset ships at
 [`crates/mnemo-core/benches/data/longmemeval_m.jsonl`](crates/mnemo-core/benches/data/longmemeval_m.jsonl)

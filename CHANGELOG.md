@@ -2,6 +2,82 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.4.1] - 2026-04-28
+
+Silence-breaker release. Picks up the four competitive surfaces that
+opened this week (Anthropic CMA-Memory beta, MemMachine + Memori
+LoCoMo numbers, DeepSeek V4 1M context, RSAC 2026 SOC telemetry gap)
+plus a counterparty-discovery layer for the Project-Deal substrate
+shipped yesterday.
+
+### Added
+
+- **P0-1 — First public LoCoMo benchmark.** New
+  [`bench/locomo`](bench/locomo) crate with `LoCoMoRun`,
+  `LoCoMoResult`, `LoCoMoJudge` trait + `MockJudge` fallback. Cross-
+  judge variance tracking (GPT-5.1 + Claude-3.7 Sonnet). Authenticated
+  nightly via [`.github/workflows/locomo-nightly.yml`](.github/workflows/locomo-nightly.yml).
+  First public report at
+  [`docs/benchmarks/locomo-2026-04-28.md`](docs/benchmarks/locomo-2026-04-28.md).
+  9 unit tests.
+- **P0-2 — `mnemo-cma` crate (Anthropic CMA-Memory compat shim).**
+  Drop-in for the filesystem-of-Markdown beta announced 2026-04-23.
+  `CmaTreeRoot` / `SyncMode { ReadThrough | WriteThrough | Mirror }`,
+  `import_cma_tree` produces a deterministic `ImportSummary` whose
+  HMAC chain head is byte-identical for two runs over the same tree,
+  `audit_bridge::bridge_event` chains every CMA write into the
+  existing provenance ledger via `CmaSource::CmaBeta` /
+  `CmaSource::CmaImport` markers, `export_to_tree` reproduces the
+  original `.memory/` byte-for-byte. 10 unit tests.
+- **P0-3 — `mnemo-baseline` crate (RSAC SOC telemetry gap).**
+  Per-agent rolling profile (`AgentBaseline` with recall/write
+  rates, namespace fanout, tool mix, HMAC continuity), z-score +
+  EWMA drift detector with five `Severity` thresholds, OpenTelemetry
+  semconv 1.31 + OCSF 1.4 Application-Activity emitters via
+  `JsonExporter`. **Anti-leak invariant** enforced by a regex sweep
+  unit test: emitted payloads never contain memory contents. 9 unit
+  tests.
+- **P1-4 — 1M-context recall budget planner.** New
+  `mnemo-core::budget` module: `ContextBudget::for_model(ModelId)`
+  + `plan_recall(budget, history, query) -> RecallPlan`. Per-model
+  table covers `deepseek-v4-1m`, `claude-3.7-sonnet-1m`,
+  `gpt-5.1-400k`, `gemini-2.5-pro-2m` plus their smaller siblings.
+  Property test asserts the plan never overflows total context. 9
+  unit tests.
+- **P1-5 — Project-Deal counterparty discovery + reputation.** Two
+  new `mnemo-deal` submodules: `discovery::AgentAdvertisement` for
+  the canonical `/.well-known/mnemo-deal-agent.json` body shape +
+  `reputation::compute_reputation` with a 90-day half-life decay
+  and a per-dispute 10% penalty. The README's threat-model section
+  scopes the score as advisory, not enforcement. 7 new tests (17
+  total in the crate).
+- **P2-6 — `mnemo doctor` + Grafana dashboard JSON.** Typed
+  `DoctorReport` + `DoctorFix` recommendations
+  (RebuildVectorIndex / RotateHmacKey / RepinMcpCatalog /
+  EnableDecayLane / UpgradeRmcp). Committed
+  [`dashboards/mnemo-grafana.json`](dashboards/mnemo-grafana.json)
+  (Grafana schemaVersion 39), validated by an integration test that
+  asserts the operator-critical panels exist. 5 tests.
+
+### Changed
+
+- Workspace version bumped from `0.4.0` to `0.4.1` across all 17
+  Rust crates (incl. three new: `mnemo-cma`, `mnemo-baseline`,
+  `bench/locomo`), the Python package (`mnemo-db`), and the
+  TypeScript SDK (`@mndfreek/mnemo-sdk`).
+- `cargo-publish.yml` plan list updated to include the two new
+  publishable crates (`mnemo-cma`, `mnemo-baseline`); the bench
+  crate is `publish = false` and stays out of crates.io.
+
+### Notes for operators
+
+- The `mnemo cma serve|migrate|export` and `mnemo doctor`,
+  `mnemo dashboard` clap subcommands ship the data shapes today;
+  wiring them into the binary's `Command` enum is a follow-up
+  (mirrors v0.4.0-rc3's pattern). `#[allow(dead_code)]` on each
+  module documents the gap so a `cargo clippy -D warnings` build
+  stays green.
+
 ## [0.4.0] - 2026-04-27
 
 Mesh / code-mode / commerce release. Picks up four net-new

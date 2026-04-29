@@ -1,0 +1,20 @@
+[package]
+name = "mnemo-baseline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Per-agent rolling behavioural baseline + OpenTelemetry/OCSF emitters with z-score+EWMA drift detection (v0.4.1 P0-3). Plugs straight into the agentic-SOC telemetry gap RSAC 2026 flagged."
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+regex = "1.11"
