@@ -111,11 +111,9 @@ pub fn plan_recall(b: &ContextBudget, history_tokens: u32, query: &Query) -> Rec
     // ~70% of mem_budget on memory bodies, the remaining 30% buffers
     // dedup + chunk overhead.
     let usable = (mem_budget as f32 * 0.7) as u32;
-    let k = if chunk_tokens == 0 {
-        0
-    } else {
-        (usable / chunk_tokens).clamp(1, 256)
-    };
+    let k = usable
+        .checked_div(chunk_tokens)
+        .map_or(0, |q| q.clamp(1, 256));
 
     // Lighter dedup on small windows (less risk of redundancy);
     // tighter on large.
