@@ -133,6 +133,7 @@ await client.connect();
 
 const { id } = await client.remember({ content: "User prefers dark mode" });
 const { memories } = await client.recall({ query: "user preferences" });
+await client.share({ memory_id: id, target_agent_id: "auditor-agent" });
 
 await client.close();
 ```
@@ -147,6 +148,7 @@ defer client.Close()
 
 result, _ := client.Remember(mnemo.RememberInput{Content: "User prefers dark mode"})
 memories, _ := client.Recall(mnemo.RecallInput{Query: "user preferences"})
+_, _ = client.Share(mnemo.ShareInput{MemoryID: result.ID, TargetAgentID: "auditor-agent"})
 ```
 
 ## Storage Backends
@@ -189,6 +191,35 @@ memories, _ := client.Recall(mnemo.RecallInput{Query: "user preferences"})
 - **Agent behavioural-baseline exporter** — `mnemo-baseline` crate emits per-agent profiles in OpenTelemetry semconv 1.31 + OCSF 1.4 Application-Activity formats with z-score+EWMA drift detection; anti-leak regex test ensures payloads never carry memory contents. Plugs into the RSAC 2026 SOC telemetry gap. New in v0.4.1.
 - **1M-context recall budget planner** — `mnemo-core::budget` adds `ContextBudget::for_model` + `plan_recall` covering `deepseek-v4-1m`, `claude-3.7-sonnet-1m`, `gpt-5.1-400k`, `gemini-2.5-pro-2m`; typed `FallbackStrategy`; property test asserts no model overflows. New in v0.4.1.
 - **mnemo doctor + Grafana dashboard** — typed `DoctorReport` + `DoctorFix` recommendations and a committed `dashboards/mnemo-grafana.json` (schemaVersion 39) covering recall p50/p99, tool-catalog drift, HMAC continuity, code-mode token reduction. New in v0.4.1.
+- **MCP role-aware tool filter** — manifest `[role_filter]` block with `caller_roles`, `default = "allow_all" | "deny_all"`, per-tool `allow` / `deny` maps (deny wins), and an `McpRoleDenied` audit row on every blocked call. Aligned with the [2025-11-25 MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). Omitting the block keeps pre-v0.4.2 behaviour byte-for-byte. New in v0.4.2.
+
+## Why mnemo when Cloudflare Agent Memory exists?
+
+Cloudflare announced Agent Memory GA during [Agents Week (2026-04-30)](https://www.cloudflare.com/agents-week/updates/),
+followed by Workers AI inference, Email Service beta, and an Agents
+SDK preview. It is the closest hosted competitor to mnemo.
+
+mnemo is an embedded, cryptographically-audited, replayable memory
+the regulator can inspect offline. Cloudflare optimises recall
+throughput on the edge runtime; mnemo optimises a memory whose every
+write is HMAC-chained, every read is provenance-signed, and whose
+storage layer survives outside any cloud's audit boundary.
+
+Honest concession: on per-recall p50 against the Workers KV+Vectorize
+backend, edge-recall throughput likely favours Cloudflare. mnemo's
+axis is provenance, chain replay, point-in-time `as_of`, evidence-
+weighted conflict resolution, DPDPA / GDPR subject erasure with audit
+preservation, and the v0.4.2 MCP role-aware tool filter — surfaces
+that matter when an auditor or regulator must reconstruct exactly what
+an agent saw and decided, three months later, without depending on a
+cloud account staying live.
+
+The full bench harness against Cloudflare Agent Memory ships in v0.4.3
+as a `mnemo-bench-cf` crate. Until then,
+[`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md)
+documents the differentiation scenario list with empty-bench
+placeholders so the comparison's contract is explicit before the
+numbers land.
 
 ## Examples
 

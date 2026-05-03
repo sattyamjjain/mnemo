@@ -42,3 +42,38 @@ allowed_parents = ["claude", "claude-code", "systemd", "supervisord"]
 # tools (`mnemo.forget_subject`, `mnemo.export_audit_log`) require a
 # lease issued by a recent `mnemo.recall`. Default 60 seconds.
 lease_ttl_seconds = 60
+
+# v0.4.2 (A1) — Optional MCP role-aware tool filter aligned with the
+# 2025-11-25 MCP authorization spec (role-based annotations,
+# https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+#
+# When this `[role_filter]` block is omitted, every advertised tool
+# stays reachable and no audit events are emitted (byte-for-byte
+# pre-v0.4.2 behaviour).
+#
+# When present:
+#   - `caller_roles` is the role list the operator has assigned to the
+#     binary's caller-context. In stdio transport this represents the
+#     single caller (the launching process); in a future HTTP transport
+#     it would be inferred from the `Authorization` header.
+#   - `default` is `"allow_all"` (default) or `"deny_all"`. Use
+#     `deny_all` to turn the filter into a strict allow-list.
+#   - `allow` maps each tool name to the roles that can call it.
+#   - `deny` maps each tool name to the roles that CANNOT call it.
+#   - Deny always wins over allow.
+#
+# Every denied call emits an `McpRoleDenied { caller_id, tool_name,
+# attempted_at, reason }` audit row to `audit_log_path`.
+#
+# [role_filter]
+# caller_roles = ["auditor"]
+# default = "deny_all"
+#
+# [role_filter.allow]
+# "mnemo.recall" = ["auditor", "agent"]
+# "mnemo.verify" = ["auditor"]
+# "mnemo.remember" = ["agent"]
+# "mnemo.forget"   = ["agent"]
+#
+# [role_filter.deny]
+# "mnemo.delegate" = ["auditor"]
