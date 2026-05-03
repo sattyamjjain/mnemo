@@ -2,6 +2,85 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [0.4.2] - 2026-05-03
+
+Reconciliation release. Three S-effort surfaces driven by the
+2026-04-30 MCP authorization spec (role-based annotations) and the
+Cloudflare Agents Week wrap (2026-04-29). Resyncs the workspace
+version metadata that drifted ahead of `main` in the prompt ledger.
+
+### Added
+
+- **A1 — MCP role-aware tool filter.** New
+  [`crates/mnemo-mcp/src/role_filter.rs`](crates/mnemo-mcp/src/role_filter.rs)
+  with `RoleFilter` trait + `ManifestRoleFilter` impl. Manifest-driven
+  `[role_filter]` block (default no-op when omitted, byte-for-byte
+  preserves existing behaviour). Aligns with the MCP authorization
+  spec (2025-11-25, role-based annotations,
+  https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+  Three integration tests: `role_filter_allow_deny`,
+  `role_filter_audit_event`, `role_filter_no_block_when_unset`.
+- **U2 — Cloudflare differentiation.** New
+  [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md)
+  long-form scenario list with empty-bench placeholders pointing to the
+  v0.4.3 `mnemo-bench-cf` crate. README gains a "Why mnemo when
+  Cloudflare Agent Memory exists?" section that explicitly concedes
+  edge-recall perf likely favours Cloudflare and positions the
+  differentiator on provenance, chain replay, and offline auditability.
+  Grep-lint `tests/readme_no_marketing_phrases.rs` rejects "beat
+  Cloudflare" / "faster than Cloudflare" / "Cloudflare killer" in CI.
+- **U2 — SHARE on TS + Go quickstarts.** TypeScript and Go SDK README
+  blocks now show `client.share({memoryId, withAgent})` /
+  `client.Share(mnemo.ShareInput{...})` lines so the SHARE primitive
+  has explicit quickstart parity with REMEMBER / RECALL / FORGET.
+
+### Changed
+
+- **U1 — Workspace version resync.** `workspace.package.version`
+  bumped `0.4.1 → 0.4.2`. Internal-crate version pins (lines 99-106 of
+  `Cargo.toml`) bumped from `0.4.0-rc2` to `0.4.2` so consumers can
+  resolve `mnemo-core = "0.4.2"` against the published workspace.
+  `python/pyproject.toml` and `sdks/typescript/package.json` bumped to
+  `0.4.2`. `sdks/go/mnemo.go` gains a `Version` constant + package
+  version doc-comment so the Go SDK reports the same version on MCP
+  `initialize`.
+- **Compatibility matrix.** New
+  [`docs/compat/version-skew-matrix.md`](docs/compat/version-skew-matrix.md)
+  pinning `mnemo` ↔ `rmcp` ↔ `tantivy` ↔ `usearch` ↔ `pgvector` ↔
+  Python/TS/Go SDK versions.
+
+### Tests
+
+- `crates/mnemo-core/tests/version_metadata.rs` — asserts
+  `env!("CARGO_PKG_VERSION") == "0.4.2"` so any future drift between
+  the workspace stamp and the source crate fails CI.
+- `python/tests/test_version_alignment.py` — asserts
+  `mnemo.__version__` matches the Cargo workspace version.
+- `tests/readme_no_marketing_phrases.rs` — top-level integration test
+  greps `README.md` for the three banned marketing phrases.
+
+### Deferred to v0.4.3
+
+The 2026-05-02 prompt's six P0/P1 rows are explicitly **rebased to
+v0.4.3** because their prerequisite crates (`mnemo-envelope`,
+`mnemo-aas01`, `mnemo-mgt`) never landed on `main` between 2026-04-29
+and 2026-05-03:
+
+- `mnemo-bench-cf` (full Cloudflare bench crate — v0.4.2 ships only
+  the README differentiation paragraph)
+- `mnemo-langgraph` 1.2 checkpoint adapter (no LangGraph 1.2 release
+  ≤7d to force the schedule)
+- `mnemo-purview` (Microsoft Purview log adapter, M-effort)
+- `EnvelopeKind::FetcherAttestation` (depends on `mnemo-envelope`
+  being on `main` first)
+- Agent-vs-human authorship tag (same dependency)
+- `mnemo-toolhive` (Stacklok Registry v1.2.0 sync, opportunistic)
+
+### Sources
+
+- MCP Authorization spec — https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+- Cloudflare Agents Week wrap — https://www.cloudflare.com/agents-week/updates/
+
 ## [0.4.1] - 2026-04-28
 
 Silence-breaker release. Picks up the four competitive surfaces that

@@ -113,6 +113,56 @@ mnemo mcp-server --manifest /etc/mnemo/manifest.toml --config-json '{}'
 The full integration suite that exercises every refusal path lives in
 `crates/mnemo-cli/tests/safe_spawn_integration.rs`.
 
+## Role-aware tool filter (v0.4.2 — A1)
+
+Mnemo's MCP server aligns with the 2025-11-25
+[MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+role-based annotations. The manifest can declare an optional
+`[role_filter]` block that gates `tools/list` (filters the advertised
+catalog) and `tools/call` (denies disallowed calls with a spec-compliant
+`-32601`).
+
+```toml
+[role_filter]
+caller_roles = ["auditor"]
+default      = "deny_all"
+
+[role_filter.allow]
+"mnemo.recall"   = ["auditor", "agent"]
+"mnemo.verify"   = ["auditor"]
+"mnemo.remember" = ["agent"]
+"mnemo.forget"   = ["agent"]
+
+[role_filter.deny]
+"mnemo.delegate" = ["auditor"]
+```
+
+Rules:
+
+- **Deny always wins.** A tool that appears in both `allow` and `deny`
+  for the same role is denied.
+- **`default = "allow_all"`** (the implicit default) lets any tool not
+  named in `allow`/`deny` through. Use `deny_all` for a strict
+  allow-list.
+- **`caller_roles`** declares the role assignment the operator has made
+  for the binary itself. In stdio transport this is the entire caller
+  identity; in future HTTP transports it composes with roles inferred
+  from the `Authorization` header.
+- Every denied call emits an `McpRoleDenied { caller_id, tool_name,
+  attempted_at, reason }` row to `audit_log_path`.
+- **Omitting the block keeps pre-v0.4.2 behaviour byte-for-byte.**
+  Every advertised tool stays reachable and no audit events are
+  emitted.
+
+The filter contract (`RoleFilter` trait + `ManifestRoleFilter` impl) is
+public, so a custom filter can replace the manifest-driven default at
+test time. See
+[`crates/mnemo-mcp/src/role_filter.rs`](https://github.com/sattyamjjain/mnemo/blob/main/crates/mnemo-mcp/src/role_filter.rs)
+and the three integration tests under
+[`crates/mnemo-mcp/tests/`](https://github.com/sattyamjjain/mnemo/tree/main/crates/mnemo-mcp/tests)
+(`role_filter_allow_deny.rs`, `role_filter_audit_event.rs`,
+`role_filter_no_block_when_unset.rs`).
+
 ## What this does NOT cover
 
 - The capability-leased reads (B2 follow-up): `forget_subject` and
@@ -121,6 +171,11 @@ The full integration suite that exercises every refusal path lives in
   wiring lands in a follow-up PR.
 - The DPDPA consent-token-per-write path (B4).
 - The Letta-protocol-compat surface (B5).
+- Per-tool-method enforcement of the role filter at `tools/call`
+  dispatch — the manifest schema, the filter trait/impl, and the
+  audit emission are shipped in v0.4.2; threading the filter through
+  every `MnemoServer` tool method body lands in v0.4.3 with the
+  `mnemo-envelope` exporter.
 
 For the threat model and the full design notes, see the rationale at
 the top of `crates/mnemo-cli/src/safe_spawn.rs`.

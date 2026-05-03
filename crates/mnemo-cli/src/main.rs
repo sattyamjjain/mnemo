@@ -596,6 +596,31 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         );
     }
 
+    // v0.4.2 (A1) — load the optional `[role_filter]` block. Same
+    // park-and-log pattern as the catalog pin: validating + building
+    // the `ManifestRoleFilter` here means a malformed manifest refuses
+    // startup rather than silently accepting an unenforceable filter,
+    // even before per-tool dispatch wiring lands.
+    let role_filter = manifest.role_filter.as_ref().map(|cfg| {
+        let filter = mnemo_mcp::role_filter::ManifestRoleFilter::new(cfg.clone());
+        tracing::info!(
+            default_policy = ?cfg.default,
+            caller_role_count = cfg.caller_roles.len(),
+            allow_entries = cfg.allow.len(),
+            deny_entries = cfg.deny.len(),
+            is_noop = filter.is_noop(),
+            "MCP role filter loaded (manifest [role_filter])"
+        );
+        Arc::new(filter)
+    });
+    if role_filter.is_none() {
+        tracing::info!(
+            "no [role_filter] block in manifest — every advertised tool is reachable \
+             (pre-v0.4.2 behaviour preserved). See \
+             https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
+        );
+    }
+
     // Allocate the lease store. The MCP tools layer does not consume it
     // yet — wiring `forget_subject` / `export_audit_log` to require a
     // lease scope is tracked separately. The store is exercised by the

@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use mnemo_mcp::role_filter::RoleFilterConfig;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -34,6 +35,13 @@ pub struct Manifest {
     /// downgrade where some tools have been intentionally removed.
     #[serde(default)]
     pub allow_removed_drift: bool,
+    /// v0.4.2 (A1) — optional `[role_filter]` block aligned with the
+    /// MCP authorization spec (2025-11-25, role-based annotations,
+    /// <https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization>).
+    /// Omitting it preserves pre-v0.4.2 behaviour byte-for-byte
+    /// (every advertised tool is reachable, no audit events emitted).
+    #[serde(default)]
+    pub role_filter: Option<RoleFilterConfig>,
 }
 
 fn default_allowed_tools() -> BTreeSet<String> {
