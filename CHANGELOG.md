@@ -2,6 +2,40 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [Unreleased]
+
+### ⚠️  Breaking — persisted state upgrade required
+
+- **Bumped `duckdb` 1.4 → 1.5.2** (closes [#41](https://github.com/sattyamjjain/mnemo/issues/41) Step 1; PR [#75](https://github.com/sattyamjjain/mnemo/pull/75)).
+  DuckDB 1.5.2 stamps a newer on-disk file-format header. **Operators
+  upgrading mnemo across this version must:**
+  1. **Back up** any persisted `*.mnemo.db` file (and the sibling
+     `*.usearch` / `*.tantivy` index directories) before running the
+     new binary.
+  2. **Open the DB once with the new binary** to upgrade the file
+     format in place. Once upgraded, the file is no longer readable
+     by mnemo binaries pinned to duckdb 1.4.x — downgrading after
+     this point requires a fresh DB.
+  3. If a downgrade is required, restore from the pre-upgrade backup
+     in step 1.
+  4. **No operator action is required for fresh DBs** — the new
+     binary writes the new format on first open.
+
+  See the upstream [DuckDB 1.5.2 release notes](https://duckdb.org/2026/04/13/announcing-duckdb-152)
+  and the [`duckdb-rs` 1.10502.0 release](https://github.com/duckdb/duckdb-rs/releases) for full file-format change details.
+
+### Changed
+
+- **Migrations are now idempotent under DuckDB 1.5+** (PR [#75](https://github.com/sattyamjjain/mnemo/pull/75)).
+  The previous "issue ALTER, swallow column-exists error" pattern in
+  `run_migrations` no longer works — DuckDB 1.5 aborts the
+  connection's implicit transaction after a few consecutive failures.
+  New `apply_alters_idempotent` introspects
+  `information_schema.columns` first and only emits an `ALTER` when
+  the column is actually missing. Side benefit: also resolves the
+  pre-existing Ubuntu DuckDB extension race that was admin-merged
+  through every prior release.
+
 ## [0.4.2] - 2026-05-03
 
 Reconciliation release. Three S-effort surfaces driven by the
