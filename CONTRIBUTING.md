@@ -64,6 +64,31 @@ Use the [GitHub Issues](https://github.com/sattyamjjain/mnemo/issues) tab with t
 
 Use the [GitHub Issues](https://github.com/sattyamjjain/mnemo/issues) tab with the feature request template.
 
+## Spec-drift policy
+
+The daily-product-prompt pipeline that generates this repo's release
+schedule runs against an external skill template whose anchored
+description sometimes drifts from this repo's actual description.
+The repo description on `main` is **canonical** — see
+[`docs/spec-drift-2026-05-04.md`](docs/spec-drift-2026-05-04.md) for
+the recorded reconciliation, the rationale, and the mapping from
+skill-template surface anchors to where each one actually lives in
+this codebase.
+
+**If you are landing a surface-affecting change** (renaming a public
+crate, removing a primary API, changing the wire-protocol version,
+deprecating a backend), please:
+
+1. Read `docs/spec-drift-*.md` — the most-recent file is the active
+   reconciliation.
+2. If your change widens the divergence (the skill template would now
+   be even more wrong), file a new `docs/spec-drift-<date>.md` in the
+   same PR and update the link from this section.
+3. If your change *narrows* the divergence (e.g. landing the actual
+   `mnemo-langgraph` Rust adapter the skill template anticipated),
+   call that out explicitly in the PR body so the schedule pipeline
+   can retire that anchor row.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the Apache License 2.0.

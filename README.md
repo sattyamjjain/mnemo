@@ -332,6 +332,28 @@ helm install mnemo deploy/helm/mnemo \
 
 The Helm chart includes: Deployment, Service, ConfigMap, Secret, PVC, HPA, and Ingress templates.
 
+### Cloudflare Workers deploy template (design anchor)
+
+> **Status:** *design anchor*, not a shipped template. The `deploy/cloudflare/` scaffold is parked for v0.4.3 follow-up. This section documents the contract that scaffold will produce against — see [`docs/src/integrations/cloudflare-workers-deploy.md`](docs/src/integrations/cloudflare-workers-deploy.md) for the full design note.
+
+[Cloudflare Durable Object Facets](https://blog.cloudflare.com/durable-object-facets-dynamic-workers/) (open beta, 2026-04-30) lets a single Worker dynamically load Durable Object classes, each with its own SQLite database. That's the per-tenant embedded-substrate shape mnemo already runs on DuckDB-per-agent — making Workers the natural managed runtime for an mnemo MCP server when you don't want to operate the box yourself.
+
+The intended layout (single Worker, one DO Facet per tenant, mnemo as the MCP-over-HTTP entrypoint):
+
+```toml
+# wrangler.toml (sketch — not yet shipped under deploy/cloudflare/)
+name = "mnemo-mcp-worker"
+main = "dist/worker.js"
+
+[[durable_objects.bindings]]
+name = "MNEMO_TENANT"
+class_name = "MnemoTenantFacet"
+# DO Facet — each instance gets its own SQLite-backed storage
+# matching mnemo's embedded DuckDB-per-agent contract.
+```
+
+What stays Rust-native vs. crosses the JS boundary, the file-format compatibility story (mnemo writes DuckDB; the Workers Facet exposes SQLite — the bench crate quantifies the gap), and which mnemo surfaces require the operator-held HMAC keystore vs. which can run inside the Worker — all in [`docs/src/integrations/cloudflare-workers-deploy.md`](docs/src/integrations/cloudflare-workers-deploy.md). The bench numbers land with the v0.4.3 `mnemo-bench-cf` crate.
+
 ## Development
 
 ```bash

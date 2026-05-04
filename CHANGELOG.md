@@ -2,7 +2,77 @@
 
 All notable changes to Mnemo are documented in this file.
 
-## [Unreleased]
+## [0.4.3] - 2026-05-04
+
+Substrate-anchor release. Three S-effort surfaces: a Cloudflare
+Workers / Durable Object Facets deploy-template *design anchor*
+(net-new market trigger from the 2026-04-30 DO Facets open beta), a
+version-skew matrix expansion to track the 2026-05-01 / 2026-05-02
+MCP client-SDK refresh, and a spec-drift reconciliation note that
+pins the repo description on `main` as canonical against an external
+skill-template anchor. Also lands the load-bearing **breaking change**
+that's been gated for two release cycles: `duckdb` 1.4 → 1.5.2
+(closes [#41](https://github.com/sattyamjjain/mnemo/issues/41) Step 1)
+with a fully idempotent migration runner that incidentally resolves
+the pre-existing Ubuntu DuckDB extension race.
+
+### Added
+
+- **A1 — Cloudflare Workers / Durable Object Facets deploy template anchor.**
+  README `### Cloudflare Workers deploy template` subsection under
+  Deployment, citing the [DO Facets open-beta](https://blog.cloudflare.com/durable-object-facets-dynamic-workers/)
+  (2026-04-30) as the substrate anchor for the v0.4.3 `mnemo-bench-cf`
+  crate. New design note at
+  [`docs/src/integrations/cloudflare-workers-deploy.md`](docs/src/integrations/cloudflare-workers-deploy.md)
+  covering Rust↔WASM↔DO-Facet boundaries, file-format compatibility
+  (DuckDB ↔ SQLite is *not* wire-compatible), operator-held HMAC
+  keystore requirement, and the open-question list (USearch-on-WASM,
+  Tantivy-on-WASM, DuckDB-on-WASM trade-offs).
+  [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md)
+  S1.5 row replaces empty-bench placeholders with a concrete
+  per-tenant-footprint / cold-start / persistence-boundary /
+  audit-replay scenario block. Two new tests: extended marketing-phrase
+  banlist (`tests/readme_no_marketing_phrases.rs` adds `viral`,
+  `game-changing`, `revolutionary`, `wild`, `mind-blowing`, etc.) and
+  `tests/readme_workers_template_link.rs` (anchor-link survival test).
+
+### Changed
+
+- **U1 — version-skew matrix gains MCP-SDK columns + a
+  Cloudflare-substrate annotation.**
+  [`docs/compat/version-skew-matrix.md`](docs/compat/version-skew-matrix.md)
+  now splits server-side and SDK-side rows; new `mcp-python` /
+  `mcp-go` / `mcp-ruby` / `mcp-csharp` columns track the 2026-05-01 /
+  05-02 client-SDK refresh from
+  [github.com/modelcontextprotocol](https://github.com/modelcontextprotocol).
+  The v0.4.3 row carries a Cloudflare-substrate annotation listing
+  both Workers KV+Vectorize *and* DO Facets SQLite as
+  `mnemo-bench-cf` baseline targets (not implementation-of-record —
+  mnemo still ships embedded Rust). New regression test
+  `crates/mnemo-mcp/tests/sdk_matrix_doc_present.rs` fails if the doc
+  is missing or loses any of the four `mcp-*` column headers.
+  `docs/src/integrations/mcp-server.md` gains a "Compatibility note"
+  section linking to the matrix for SDK-skew triage.
+
+- **U2 — spec-drift reconciliation note.**
+  New [`docs/spec-drift-2026-05-04.md`](docs/spec-drift-2026-05-04.md)
+  declares the repo description on `main` canonical (vs. the
+  daily-opportunity-radar skill template's older description) and
+  maps the skill template's surface anchors (semantic + episodic
+  stores, LangGraph adapter, Workers template) to where they live in
+  the actual codebase. `CONTRIBUTING.md` gains a "Spec-drift policy"
+  subsection linking to the note so future contributors landing
+  surface-affecting changes find the policy first.
+
+### Verification trace (2026-05-04)
+
+- `Cargo.toml` workspace.package.version = `"0.4.2"` on `main` ✓
+- README role-filter section live (v0.4.2 A1) ✓
+- README Cloudflare differentiation H2 live (v0.4.2 U2) ✓
+- `tests/readme_no_marketing_phrases.rs` green on `main` ✓
+- All 17 crates published at `0.4.2` on crates.io ✓
+- `mnemo-db@0.4.2` on PyPI ✓
+- `@mndfreek/mnemo-sdk@0.4.2` on npm ✓
 
 ### ⚠️  Breaking — persisted state upgrade required
 

@@ -179,3 +179,25 @@ and the three integration tests under
 
 For the threat model and the full design notes, see the rationale at
 the top of `crates/mnemo-cli/src/safe_spawn.rs`.
+
+## Compatibility note (v0.4.3 — U1)
+
+The MCP wire-protocol version mnemo's server speaks (`2024-11-05`,
+with the [2025-11-25 authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+layered on top) is **independent** of the client SDK version your
+agent uses. SDK refreshes are common and don't require a mnemo-side
+rev unless the spec itself moves.
+
+The current [version-skew matrix](../../../docs/compat/version-skew-matrix.md)
+tracks tested combinations of the four official client SDKs:
+
+- `mcp-python` (refreshed 2026-05-01)
+- `mcp-go` (refreshed 2026-05-01)
+- `mcp-ruby` (refreshed 2026-05-02)
+- `mcp-csharp` (refreshed 2026-05-02)
+
+If your agent hits an SDK-side incompatibility, consult the matrix
+first — most issues land on a row that documents which mnemo cut
+shipped against that SDK pair. The matrix is enforced in CI by
+`crates/mnemo-mcp/tests/sdk_matrix_doc_present.rs`, so the doc itself
+cannot silently disappear ahead of an SDK-bump release.

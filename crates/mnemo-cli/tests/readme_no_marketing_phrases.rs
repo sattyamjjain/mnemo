@@ -14,9 +14,24 @@
 use std::path::Path;
 
 const BANNED_PHRASES: &[&str] = &[
+    // v0.4.2 (U2) — Cloudflare-comparison banned framing.
     "beat Cloudflare",
     "faster than Cloudflare",
     "Cloudflare killer",
+    // v0.4.3 (A1) — extended canonical banned-phrases ledger. The
+    // operator's running policy ("ship one row honestly over five rows
+    // aspirationally") rules out every form of viral / breakthrough /
+    // game-changing framing in the README. Per-claim primary-source
+    // links, honest concessions, and bench numbers are the substrates
+    // we promote.
+    "blow up",
+    "viral",
+    "game-changing",
+    "game changing",
+    "revolutionary",
+    "wild",
+    "mind-blowing",
+    "mind blowing",
 ];
 
 #[test]
