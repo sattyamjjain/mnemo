@@ -35,10 +35,24 @@ auditable, and whose storage survives any specific cloud account**.
 
 | System | Recall p50 | Recall p99 | Notes |
 |---|---|---|---|
-| Cloudflare Agent Memory (Workers KV + Vectorize) | TBD (v0.4.3 bench) | TBD | Edge-cached recall path |
+| Cloudflare Agent Memory (Workers KV + Vectorize) | TBD (v0.4.3 bench) | TBD | Edge-cached recall path; hosted vector index |
+| Cloudflare DO Facets (SQLite-per-DO) | TBD (v0.4.3 bench) | TBD | Per-tenant embedded SQLite — closest analogue to mnemo's per-agent DuckDB; open beta 2026-04-30 ([source](https://blog.cloudflare.com/durable-object-facets-dynamic-workers/)) |
 | mnemo (DuckDB embedded) | ~4ms (LoCoMo nightly) | TBD | Local DuckDB + USearch |
 
-**Honest call:** Cloudflare likely wins this row.
+**Honest call:** Cloudflare KV+Vectorize likely wins on edge throughput. DO Facets SQLite vs DuckDB-per-agent is the substrate-level comparison — same per-tenant embedded shape, different engine.
+
+### S1.5 — DO Facets SQLite-per-DO vs mnemo DuckDB-per-agent (substrate-level)
+
+[Cloudflare Durable Object Facets](https://blog.cloudflare.com/durable-object-facets-dynamic-workers/) (open beta, 2026-04-30) is the closest substrate analogue to mnemo today: each Facet is dynamically loaded with a private SQLite database, the same per-tenant-embedded shape mnemo runs on DuckDB. The comparison sharpens to four concrete axes:
+
+| Axis | DO Facets SQLite-per-DO | mnemo DuckDB-per-agent |
+|---|---|---|
+| Per-tenant footprint | One SQLite file per Facet (managed by Cloudflare) | One `*.mnemo.db` DuckDB file per agent (operator-held) |
+| Cold-start | Facet instantiation is dynamic (paper claim: "load and instantiate dynamically") — TBD measured | DuckDB `Connection::open` against a fresh file: ~1-3ms locally; pre-warmed in mnemo's MCP server | 
+| Persistence boundary | Cloudflare-account-bound — survives Worker version upgrades, but exit requires Cloudflare's export tooling | Operator-held DuckDB file — copy-the-file is the entire export, no platform-specific tooling required |
+| Audit-replay shape | Workers Audit Log + DO event metadata; cryptographic receipt only if the operator builds it | First-class: every `recall(..., with_provenance=true)` returns an HMAC-SHA256 receipt verifiable with `mnemo.provenance.verify_read_provenance` purely offline |
+
+Bench numbers: TBD pending the `mnemo-bench-cf` crate (parked for v0.4.3). The crate will run identical workload against both substrates and quantify cold-start + per-tenant footprint + cross-Facet leak probe + sovereignty round-trip. This row's contract is what the bench harness produces against.
 
 ### S2 — FORGET residual probe
 

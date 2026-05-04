@@ -84,10 +84,12 @@ jobs:
     needs: plan
     if: needs.plan.outputs.to_publish != ''
     runs-on: ubuntu-latest
-    # 11 workspace crates × 12-min crates.io rate-limit spacing ≈ 132 min
-    # worst-case. Pad to 180 so a fresh-version run that has to walk
-    # every crate is not killed by GitHub's job timeout mid-sequence.
-    timeout-minutes: 180
+    # 17 workspace crates × 12-min crates.io rate-limit spacing ≈ 204 min,
+    # plus 30-60s of compile + upload per crate. The v0.4.2 publish hit
+    # the prior 180-min cap (cancelled at 183 min, 10/17 crates done) and
+    # required a manual workflow_dispatch resume. Pad to 300 so a fresh-
+    # version run that has to walk every crate completes in one shot.
+    timeout-minutes: 300
     environment:
       name: crates-io
       url: https://crates.io/crates/mnemo-core

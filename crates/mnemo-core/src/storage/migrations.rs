@@ -217,21 +217,23 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_RELATIONS_TABLE)?;
     conn.execute_batch(CREATE_AGENT_EVENTS_TABLE)?;
     conn.execute_batch(CREATE_CHECKPOINTS_TABLE)?;
-    // Sprint 3 column upgrades — silently ignore if columns already exist
-    for alter_sql in SPRINT3_COLUMN_ALTERS {
-        let _ = conn.execute(alter_sql, []);
-    }
+    // Sprint 3 column upgrades. v0.4.2 (#41 Step 1): switched from
+    // "try ALTER, swallow column-exists error" to schema introspection.
+    // DuckDB 1.5+ aborts the connection's implicit transaction after a
+    // few consecutive `let _ = conn.execute(...)` failures, leaving the
+    // connection unusable. Checking `duckdb_columns` first keeps every
+    // ALTER honest and the connection clean.
+    apply_alters_idempotent(conn, SPRINT3_COLUMN_ALTERS)?;
     conn.execute_batch(CREATE_DELEGATIONS_TABLE)?;
     conn.execute_batch(CREATE_AGENT_PROFILES_TABLE)?;
-    // Sprint 4 column upgrades — silently ignore if columns already exist
-    for alter_sql in SPRINT4_COLUMN_ALTERS {
-        let _ = conn.execute(alter_sql, []);
-    }
-    // Create parent_event_id index if missing
-    let _ = conn.execute(
+    // Sprint 4 column upgrades.
+    apply_alters_idempotent(conn, SPRINT4_COLUMN_ALTERS)?;
+    // Create parent_event_id index if missing — `IF NOT EXISTS` is
+    // first-class, no introspection required.
+    conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_events_parent ON agent_events(parent_event_id)",
         [],
-    );
+    )?;
     // Sprint 8: sync watermarks table
     conn.execute_batch(CREATE_SYNC_METADATA_TABLE)?;
     // v0.3.2: persistence-version stamp.
@@ -239,6 +241,55 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     // v0.3.3: embedding baseline table (z-score outlier detector).
     conn.execute_batch(CREATE_EMBEDDING_BASELINE_TABLE)?;
     stamp_persistence_version(conn)?;
+    Ok(())
+}
+
+/// Parse `ALTER TABLE <name> ADD COLUMN <col> ...` into `(table, col)`.
+/// All migration ALTERs in this file follow that exact shape; anything
+/// else is rejected at compile-test time by [`tests::sprint_alters_match_expected_shape`].
+fn parse_alter_table_add_column(sql: &str) -> Option<(&str, &str)> {
+    let trimmed = sql.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let prefix = "alter table ";
+    let rest = lower.strip_prefix(prefix)?;
+    let after_table_keyword_idx = prefix.len();
+    let table_end = rest.find(' ')?;
+    let table = &trimmed[after_table_keyword_idx..after_table_keyword_idx + table_end];
+    let after_table = &lower[after_table_keyword_idx + table_end..];
+    let add_column = " add column ";
+    let after_add = after_table.strip_prefix(add_column)?;
+    let col_end = after_add.find(' ')?;
+    let col_start_in_full = after_table_keyword_idx + table_end + add_column.len();
+    let col = &trimmed[col_start_in_full..col_start_in_full + col_end];
+    Some((table, col))
+}
+
+/// True when `column` exists on `table` per DuckDB's information_schema.
+fn column_exists(conn: &duckdb::Connection, table: &str, column: &str) -> duckdb::Result<bool> {
+    let mut stmt = conn.prepare(
+        "SELECT 1 FROM information_schema.columns \
+         WHERE lower(table_name) = lower(?) AND lower(column_name) = lower(?) LIMIT 1",
+    )?;
+    let mut rows = stmt.query(duckdb::params![table, column])?;
+    Ok(rows.next()?.is_some())
+}
+
+/// Run a list of `ALTER TABLE ... ADD COLUMN` statements, skipping any
+/// whose column already exists. Returns an error on any *real* failure
+/// (parse error, table missing, type mismatch); column-already-exists
+/// is no longer reachable.
+fn apply_alters_idempotent(conn: &duckdb::Connection, alters: &[&str]) -> duckdb::Result<()> {
+    for sql in alters {
+        let Some((table, column)) = parse_alter_table_add_column(sql) else {
+            return Err(duckdb::Error::ToSqlConversionFailure(
+                format!("migration ALTER did not match expected shape: {sql:?}").into(),
+            ));
+        };
+        if column_exists(conn, table, column)? {
+            continue;
+        }
+        conn.execute(sql, [])?;
+    }
     Ok(())
 }
 
@@ -334,6 +385,39 @@ mod tests {
             read_persistence_version(&conn).unwrap(),
             Some(CURRENT_PERSISTENCE_VERSION)
         );
+    }
+
+    #[test]
+    fn sprint_alters_match_expected_shape() {
+        // v0.4.2 (#41 Step 1): `apply_alters_idempotent` parses
+        // `ALTER TABLE <t> ADD COLUMN <c> ...` to introspect existence.
+        // If a future migration adds a non-matching shape (e.g. a
+        // multi-column ALTER), this test catches it before run-time.
+        for sql in SPRINT3_COLUMN_ALTERS
+            .iter()
+            .chain(SPRINT4_COLUMN_ALTERS.iter())
+        {
+            let parsed = parse_alter_table_add_column(sql);
+            assert!(
+                parsed.is_some(),
+                "ALTER does not match `ALTER TABLE <t> ADD COLUMN <c> ...`: {sql:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn alters_are_idempotent_under_duckdb_152() {
+        // v0.4.2 (#41 Step 1): regression for the duckdb-rs 1.10502
+        // transaction-abort behaviour. Running migrations twice on
+        // the same connection used to leave the connection in an
+        // aborted-transaction state. Now must be a clean no-op.
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+        // And a real query afterwards must succeed.
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM memories").unwrap();
+        let n: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
+        assert_eq!(n, 0);
     }
 
     #[test]
