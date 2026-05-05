@@ -2,6 +2,72 @@
 
 All notable changes to Mnemo are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **A1 (v0.4.4) — Cloudflare Project Think positioning anchor.**
+  README `### Project Think — loop vs. ledger` sub-section inside the
+  existing "Why mnemo when Cloudflare Agent Memory exists?" H2,
+  citing the [Project Think announcement](https://blog.cloudflare.com/project-think/)
+  (2026-05-04, 1 day old at land-time). New companion comparison doc
+  [`docs/comparisons/cloudflare-project-think.md`](docs/comparisons/cloudflare-project-think.md)
+  treating Project Think as the *runtime layer* and mnemo as the
+  *audit-ledger layer* — explicitly **complementary, not substitute**
+  surfaces. The bench harness for *Cloudflare Agent Memory vs mnemo*
+  does NOT re-run for Project Think because the answer is layering,
+  not benchmarking. [`docs/src/integrations/cloudflare-workers-deploy.md`](docs/src/integrations/cloudflare-workers-deploy.md)
+  gains a `## Runtime layer (Project Think)` sub-section linking to
+  the new comparison doc. Two new tests: extended marketing-phrase
+  banlist (`competes with Cloudflare`, `replaces Project Think`,
+  `Project Think killer`, `Workers killer`) and
+  `tests/readme_project_think_link.rs` (primary-source + heading +
+  comparison-doc-link survival).
+
+### Changed
+
+- **U1 (v0.4.4) — Sierra $950M raise applied-agent-layer evidence
+  paragraph in [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md).**
+  One-paragraph *market-evidence, not feature-claim* note citing
+  Sierra's 2026-05-04 raise as concrete evidence the applied-agent
+  layer is well-funded enough to demand the offline-auditable memory
+  substrate mnemo offers.
+- **U1 — corrected v0.4.3 verification trace.** The `## [0.4.3] -
+  2026-05-04` block's original `### Verification trace (2026-05-04)`
+  sub-block was authored before the version-flip commit landed in
+  the same PR — it asserts `Cargo.toml workspace.package.version =
+  "0.4.2"` while the live raw fetch shows `"0.4.3"`. New
+  `### Verification trace (2026-05-05)` sub-block records the
+  corrected state with all artifact-registry checks green; the
+  original trace stays in place as audit history of how the
+  inconsistency arose.
+- **U1 (v0.4.4) — spec-drift reconciliation footer.**
+  [`docs/spec-drift-2026-05-04.md`](docs/spec-drift-2026-05-04.md)
+  gains a `## 2026-05-05 stable-divergence confirmation` footer
+  recording today's check: repo description on `main` unchanged, 14
+  topics unchanged, Phase 6 skill template still anchors the older
+  description — **stable divergence the operator has accepted, not
+  a regression to flap on**.
+
+### Documentation
+
+- **U2 (v0.4.4) — v0.4.3 publish-status doc.** New
+  [`docs/release/v0.4.3-publish-status.md`](docs/release/v0.4.3-publish-status.md)
+  records: cargo-publish job ID + `success` conclusion + 17/17 crates
+  at `0.4.3` on crates.io with published-at timestamps; PyPI
+  `mnemo-db@0.4.3` live; npm `@mndfreek/mnemo-sdk@0.4.3` live. The
+  v0.4.3 publish completed cleanly under the bumped 300-min job
+  timeout — no resume-dance required.
+
+### Tests
+
+- `tests/changelog_has_unreleased_section.rs` — fails the build if
+  `CHANGELOG.md` ever loses its `## [Unreleased]` heading.
+- `tests/release_status_doc_present.rs` — fails the build if
+  `docs/release/v0.4.3-publish-status.md` is missing the canonical
+  `Cargo workspace v0.4.3 publish status` header. Cheap drift guard
+  for the release-day audit habit.
+
 ## [0.4.3] - 2026-05-04
 
 Substrate-anchor release. Three S-effort surfaces: a Cloudflare
@@ -66,6 +132,12 @@ the pre-existing Ubuntu DuckDB extension race.
 
 ### Verification trace (2026-05-04)
 
+> ⚠️ **This trace was authored before the version-flip commit landed
+> in the same PR.** It asserts `Cargo.toml = "0.4.2"` while the live
+> raw fetch shows `"0.4.3"`. The version flip was the *intent* of the
+> PR, not a regression. See the corrected `### Verification trace
+> (2026-05-05)` sub-block below for the post-merge state.
+
 - `Cargo.toml` workspace.package.version = `"0.4.2"` on `main` ✓
 - README role-filter section live (v0.4.2 A1) ✓
 - README Cloudflare differentiation H2 live (v0.4.2 U2) ✓
@@ -73,6 +145,32 @@ the pre-existing Ubuntu DuckDB extension race.
 - All 17 crates published at `0.4.2` on crates.io ✓
 - `mnemo-db@0.4.2` on PyPI ✓
 - `@mndfreek/mnemo-sdk@0.4.2` on npm ✓
+
+### Verification trace (2026-05-05) — corrected post-merge state
+
+Recorded one day after the v0.4.3 cut to capture the published-state
+ground truth. Origin of the correction: today's U1 row.
+
+- `Cargo.toml` workspace.package.version = `"0.4.3"` on `main` ✓
+- `duckdb = "=1.10502.0"` workspace pin live ✓
+- `apply_alters_idempotent` migration runner live in
+  `crates/mnemo-core/src/storage/migrations.rs` ✓
+- README "Cloudflare Workers deploy template" sub-section live
+  (v0.4.3 A1) ✓
+- `tests/readme_workers_template_link.rs` green on `main` ✓
+- `tests/readme_no_marketing_phrases.rs` extended banlist green on
+  `main` ✓
+- `crates/mnemo-mcp/tests/sdk_matrix_doc_present.rs` green on
+  `main` ✓
+- `docs/spec-drift-2026-05-04.md` live (v0.4.3 U2) ✓
+- All 17 crates published at `0.4.3` on crates.io ✓ (cargo-publish
+  job completed `success` under the bumped 300-min cap — see
+  [`docs/release/v0.4.3-publish-status.md`](docs/release/v0.4.3-publish-status.md))
+- `mnemo-db@0.4.3` on PyPI ✓
+- `@mndfreek/mnemo-sdk@0.4.3` on npm ✓
+- 4 dependabot bumps merged after v0.4.3 cut: `actions/setup-node`
+  v4→v6 (#69), `actions/download-artifact` v7→v8 (#70), `toml`
+  0.9→1.1 (#71), `tokenizers` 0.22→0.23 (#72) ✓
 
 ### ⚠️  Breaking — persisted state upgrade required
 

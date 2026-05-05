@@ -32,6 +32,13 @@ const BANNED_PHRASES: &[&str] = &[
     "wild",
     "mind-blowing",
     "mind blowing",
+    // v0.4.4 (A1) — Project Think positioning. The new section is
+    // explicit about loop-vs-ledger being COMPLEMENTARY, not
+    // substitute. Block any drift into adversarial framing:
+    "competes with Cloudflare",
+    "replaces Project Think",
+    "Project Think killer",
+    "Workers killer",
 ];
 
 #[test]

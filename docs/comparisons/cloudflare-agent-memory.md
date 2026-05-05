@@ -132,6 +132,30 @@ producing a tamper-evident audit row?
 - The threat model includes **DPDPA / GDPR subject erasure with audit
   trail preservation** (`forget_subject --strategy redact`).
 
+## Applied-agent-layer market evidence (2026-05-05)
+
+> *Market evidence, not a feature claim.* The point of this section is
+> to record that the demand-side substrate this comparison serves is
+> well-funded enough to require a real auditable-memory layer — not to
+> imply mnemo is endorsed by, used by, or competitive with any specific
+> applied-agent vendor.
+
+[Sierra raised $950M on 2026-05-04](https://www.sierra.ai/) at a
+$10B valuation, the largest applied-agent-layer round disclosed to
+date. Sierra builds tenant-scoped customer-experience agents — the
+exact shape of deployment that needs (a) per-tenant memory isolation,
+(b) HMAC-chained audit trail durability, and (c) offline replay for
+incident review. Mnemo's positioning here is unchanged: an
+applied-agent-layer vendor running on Cloudflare's edge, AWS, or any
+combination still needs a memory ledger whose audit contract survives
+outside any one cloud's account boundary. This raise is read as
+*the demand-side substrate being well-funded*, not as a vendor
+endorsement.
+
+The same axis that this comparison's S3 (chain audit replay) and S5
+(sovereignty round-trip) rows test is what an applied-agent-layer
+deployment of this scale ultimately reaches for.
+
 ## v0.4.3 plan
 
 The `mnemo-bench-cf` crate (deferred from the 2026-05-02 prompt) will:

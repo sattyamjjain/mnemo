@@ -72,8 +72,26 @@ These are the rows that today sit as `TBD (v0.4.3 bench)` in [`docs/comparisons/
 2. **Tantivy on WASM.** Should compile, but compile time + bundle size matter. Measure before committing.
 3. **DuckDB-on-WASM (`@duckdb/duckdb-wasm`).** An alternative to "Rust core writes to Facet SQLite via a `StorageBackend` impl" — the Worker could host a DuckDB-WASM instance per tenant and persist its file to the Facet's SQLite blob storage. Higher perf parity, but two storage engines and a WASM-on-WASM stack. Trade-off worth measuring.
 
+## Runtime layer (Project Think)
+
+[Cloudflare Project Think](https://blog.cloudflare.com/project-think/)
+(2026-05-04) is the *runtime* story for AI agents on Workers + DO
+Facets — the durable agentic loop itself. Even when the operator
+deploys mnemo onto a Workers + DO Facets substrate following this
+template, **the audit-ledger contract is operator-held and survives
+independent of any Worker's lifecycle.** The HMAC chain, the
+provenance signer's keystore, and `mnemo verify` all run outside
+the Project Think runtime boundary by design.
+
+The full layering rationale (where Project Think wins, where mnemo
+wins, how they compose) is in [`docs/comparisons/cloudflare-project-think.md`](../../comparisons/cloudflare-project-think.md).
+Short version: Project Think owns the loop, mnemo owns the
+audit-ledger, the bench harness above does *not* re-run for Project
+Think because the answer is layering, not benchmarking.
+
 ## Cross-references
 
 - Substrate-level comparison: [`docs/comparisons/cloudflare-agent-memory.md`](../../comparisons/cloudflare-agent-memory.md) — the S1.5 row tracks the DO Facets SQLite vs DuckDB substrate axis.
+- Runtime-layer comparison: [`docs/comparisons/cloudflare-project-think.md`](../../comparisons/cloudflare-project-think.md) — loop vs. ledger, layering not substitution.
 - Comparable embedded-memory pitch in README: see the [`## Why mnemo when Cloudflare Agent Memory exists?`](../../../README.md#why-mnemo-when-cloudflare-agent-memory-exists) section, which already concedes edge-recall p50.
-- v0.4.3 carry list: [`CHANGELOG.md`](../../../CHANGELOG.md) — `mnemo-bench-cf` is on the v0.4.3 backlog with the dependency note attached.
+- v0.4.4 carry list: [`CHANGELOG.md`](../../../CHANGELOG.md) — `mnemo-bench-cf` is on the v0.4.4 backlog with the dependency note attached.
