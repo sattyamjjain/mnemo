@@ -221,6 +221,25 @@ documents the differentiation scenario list with empty-bench
 placeholders so the comparison's contract is explicit before the
 numbers land.
 
+### Project Think — loop vs. ledger
+
+Cloudflare extended this story on [2026-05-04](https://blog.cloudflare.com/project-think/)
+with **Project Think**, a runtime story for AI agents built on Workers
++ DO Facets — the *durable agentic loop* itself. Project Think is
+upstream of mnemo's surface: it owns where the agent runs and how the
+loop survives a Worker restart. mnemo owns whether the writes that loop
+emits are cryptographically chained, replayable months later, and
+inspectable without a Cloudflare account.
+
+These are **complementary, not substitute, surfaces.** An operator can
+run their durable loop on Project Think + DO Facets and chain every
+memory write into mnemo's HMAC ledger; the bench crate that compares
+*Cloudflare Agent Memory vs mnemo as a memory store* does not redo
+itself for *Project Think as a runtime vs mnemo as a memory ledger* —
+the latter is a layering question, not a benchmark. See
+[`docs/comparisons/cloudflare-project-think.md`](docs/comparisons/cloudflare-project-think.md)
+for the full layering table and where each side wins.
+
 ## Examples
 
 The `examples/` directory contains working integration examples for all major agent frameworks:

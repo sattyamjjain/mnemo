@@ -86,3 +86,30 @@ actually lives in the codebase today:
 - v0.4.3 carry list: [CHANGELOG.md](../CHANGELOG.md) `[Unreleased]` section
 - Workers design note: [`docs/src/integrations/cloudflare-workers-deploy.md`](src/integrations/cloudflare-workers-deploy.md)
 - LangGraph adapter (today's Python, tomorrow's Rust): [`python/mnemo/langgraph_mcp.py`](../python/mnemo/langgraph_mcp.py)
+
+## 2026-05-05 stable-divergence confirmation
+
+Today's check (one day after this doc's original creation):
+
+- **Repo description on `main`**: unchanged from the 2026-05-04 record
+  above — still "MCP-native embedded memory database for AI agents
+  built in Rust. REMEMBER/RECALL/FORGET/SHARE primitives with hybrid
+  vector search, AES-256-GCM encryption, DuckDB/PostgreSQL backends &
+  SDKs for Python, TypeScript and Go."
+- **Topics on `main`**: unchanged 14-list (`ai-agents, ai-memory,
+  duckdb, embeddings, encryption, llm-tools, mcp, memory-management,
+  model-context-protocol, postgresql, rag, rust, semantic-search,
+  vector-database`). No `cloudflare`, `langgraph`, or `agent-memory`
+  adds despite v0.4.3 landing the Cloudflare DO Facets anchor and
+  v0.4.4 landing the Project Think anchor — operator policy is still
+  "anchor in docs, not topics, until v0.5.0 marketing decision."
+- **Phase 6 skill template**: still anchors the older description.
+  Not consulted for any v0.4.3 / v0.4.4 surface decision.
+- **Verdict**: **stable divergence the operator has accepted.** Not a
+  regression to flap on. This footer is the durable record of that
+  acceptance — future daily-prompt audits should *not* re-open the
+  question without the operator's explicit prompt.
+
+Next confirmation footer arrives if/when (a) the repo description
+changes on `main`, (b) the topics list gains or loses an entry, or
+(c) a v0.5.0 marketing PR explicitly retires this divergence.
