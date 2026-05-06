@@ -4,7 +4,63 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-05-06)
+
+Recorded one day after PR #76 merged so a future operator reading
+`[Unreleased]` can verify the rows below are not in a local-only
+state.
+
+- All three rows below (A1 Project Think anchor, U1 Sierra evidence
+  + corrected v0.4.3 verification trace + spec-drift footer, U2 v0.4.3
+  publish-status doc) shipped on `main` in commit
+  [`2802616`](https://github.com/sattyamjjain/mnemo/commit/280261639837d9cf84e387347b2732c162c93bec)
+  at 2026-05-05T07:40:03Z via [PR #76](https://github.com/sattyamjjain/mnemo/pull/76).
+- v0.4.4 cycle now contains 4 rows (the three above + today's two —
+  see Added/Changed below for U1 MCP 2026 Roadmap and U2 landing-trace
+  + parked-crate inventory).
+- Workspace version unchanged at `0.4.3`. v0.4.4 cuts when a runtime
+  / code surface lands on top of this `[Unreleased]` block, not on
+  every docs-only row land.
+
+### Parked for v0.4.4 backlog
+
+The crates below are referenced by the daily-prompt ledger and the
+`docs/comparisons/` + `docs/src/integrations/` family but have **not
+yet landed on `main`**. Listed here so contributors reading
+`CHANGELOG.md` see the v0.4.4 backlog in one place rather than
+parsing 17 days of prompt history.
+
+- **`mnemo-bench-cf`** (M-effort) — full Cloudflare bench harness
+  baselining mnemo against (a) the hosted Agent Memory KV+Vectorize
+  service and (b) the DO Facets SQLite-per-DO substrate. Strongest
+  v0.4.4 headline candidate. Empty-bench placeholders are tracked
+  in [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md).
+- **`mnemo-langgraph`** (S/M) — LangGraph 1.x checkpoint adapter.
+  Waiting on a fresh ≤7d `langgraph-checkpoint` release; the
+  2026-04-27 release is just past the gate.
+- **`mnemo-purview`** (M-effort) — Microsoft Purview audit-log
+  adapter. No S-shippable subset surfaced yet.
+- **`mnemo-toolhive`** (S) — Stacklok ToolHive Registry sync.
+  Opportunistic; no blocking dependency.
+- **`mnemo-envelope`** + `EnvelopeKind::FetcherAttestation` +
+  agent-vs-human authorship tag (M-effort, chained) — OTel exporter
+  envelope kind. Two follow-ups are blocked on this crate landing
+  first.
+- **`mnemo-aas01`** (M-effort) — OWASP AAS01 detector surface.
+- **`mnemo-mgt`** (M-effort) — SecureAuth Trust Registry adapter.
+- **`bench/locomo` LongMemEval / BEAM extension** (S/M) — track
+  Mem0g 68.4% / MemPalace 96.6% LongMemEval / Hindsight BEAM 10M-tier
+  numbers in the existing `bench/locomo` crate. Source URLs are
+  31-58 days old (outside ≤7d primary-trigger gate); high-value as
+  a v0.4.4 headline alongside `mnemo-bench-cf`.
+
 ### Added
+
+- **A1 (v0.4.4) — Cloudflare Project Think positioning anchor.**
+  README `### Project Think — loop vs. ledger` sub-section inside the
+  existing "Why mnemo when Cloudflare Agent Memory exists?" H2,
+  citing the [Project Think announcement](https://blog.cloudflare.com/project-think/)
+  (2026-05-04, 1 day old at land-time). New companion comparison doc
 
 - **A1 (v0.4.4) — Cloudflare Project Think positioning anchor.**
   README `### Project Think — loop vs. ledger` sub-section inside the
@@ -49,6 +105,32 @@ All notable changes to Mnemo are documented in this file.
   description — **stable divergence the operator has accepted, not
   a regression to flap on**.
 
+- **U1 (v0.4.4, 2026-05-06) — MCP 2026 Roadmap spec-context anchor.**
+  README `### mnemo and the MCP 2026 Roadmap` sub-section inside the
+  existing Access Protocols section, citing the
+  [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/)
+  (published 2026-03-09, 58 days old — *spec-context anchor, not
+  fresh trigger*). Frames mnemo's existing operator-held HMAC
+  keystore + AES-256-GCM at-rest encryption + dual DuckDB/Postgres
+  backends + `mnemo-compliance` crate as the *attestable memory*
+  layer aligned by design with the roadmap's **Enterprise
+  Readiness** priority area — explicitly *not* a roadmap-compliance
+  claim. [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md)
+  gains a `## MCP 2026 Roadmap alignment` section with a four-row
+  priority-area mapping table tagging mnemo as `follower` /
+  `observer` / `observer` / `aligned-by-design` against
+  Transport / Agent Communication / Governance / Enterprise
+  Readiness respectively. One-sentence cross-link from
+  [`docs/comparisons/cloudflare-project-think.md`](docs/comparisons/cloudflare-project-think.md)
+  noting Project Think + the MCP 2026 Roadmap together describe the
+  *runtime + protocol* picture, with mnemo below both as the
+  offline-auditable storage substrate.
+
+- **U1 (2026-05-06) — Access Protocols table version drift fix.**
+  Stale `rmcp 0.14` reference corrected to `rmcp 1.3` to match the
+  workspace dep on `main`. Caught while landing the MCP 2026
+  Roadmap anchor.
+
 ### Documentation
 
 - **U2 (v0.4.4) — v0.4.3 publish-status doc.** New
@@ -59,6 +141,14 @@ All notable changes to Mnemo are documented in this file.
   v0.4.3 publish completed cleanly under the bumped 300-min job
   timeout — no resume-dance required.
 
+- **U2 (v0.4.4, 2026-05-06) — v0.4.3 publish-status reconciliation
+  footer.** [`docs/release/v0.4.3-publish-status.md`](docs/release/v0.4.3-publish-status.md)
+  gains a `## Post-publish reconciliation (2026-05-06)` footer
+  closing the publish-status loop one day after the cut: no
+  downstream regressions surfaced via `cargo audit`, `cargo deny`,
+  or PyPI/npm install-test workflows in the last 24h. v0.4.4
+  `[Unreleased]` cycle now active.
+
 ### Tests
 
 - `tests/changelog_has_unreleased_section.rs` — fails the build if
@@ -67,6 +157,20 @@ All notable changes to Mnemo are documented in this file.
   `docs/release/v0.4.3-publish-status.md` is missing the canonical
   `Cargo workspace v0.4.3 publish status` header. Cheap drift guard
   for the release-day audit habit.
+- **`tests/readme_mcp_roadmap_link.rs`** (v0.4.4 U1, 2026-05-06) —
+  fails the build if README drops the MCP 2026 Roadmap primary-source
+  URL or the `### mnemo and the MCP 2026 Roadmap` heading or the
+  link to `docs/src/integrations/mcp-server.md`. Anchor-survival
+  guard.
+- **`tests/readme_no_marketing_phrases.rs`** (v0.4.4 U1, 2026-05-06)
+  — banlist extended with `MCP 2026 leader`, `compliant with MCP
+  2026`, `MCP 2026 ready`, `roadmap-compliant` so the new spec-context
+  anchor cannot drift into compliance-overclaim framing.
+- **`tests/changelog_has_landing_trace_section.rs`** (v0.4.4 U2,
+  2026-05-06) — fails the build if the `## [Unreleased]` block ever
+  loses its `### Landing trace` heading or if that heading does not
+  contain a hex commit-sha-prefix matching `[0-9a-f]{7,40}`. Forces
+  every future docs-only land to record an on-`main` commit pointer.
 
 ## [0.4.3] - 2026-05-04
 

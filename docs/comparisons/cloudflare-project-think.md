@@ -124,6 +124,12 @@ the stacking pattern above — not a benchmark.
 - The `cloudflare-workers-deploy.md` design note's "Runtime layer
   (Project Think)" sub-section links here for the layering rationale.
 
+Project Think and the [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/)
+together describe the *runtime + protocol* picture; mnemo sits below
+both as the offline-auditable storage substrate. See the four-priority
+mapping in [`../src/integrations/mcp-server.md`](../src/integrations/mcp-server.md)
+§"MCP 2026 Roadmap alignment".
+
 ## Sources
 
 - Cloudflare Project Think announcement — https://blog.cloudflare.com/project-think/ (2026-05-04)

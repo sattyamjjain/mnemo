@@ -39,6 +39,15 @@ const BANNED_PHRASES: &[&str] = &[
     "replaces Project Think",
     "Project Think killer",
     "Workers killer",
+    // v0.4.4 (U1) — MCP 2026 Roadmap anchor. The README + design-doc
+    // reference is explicitly a *spec-context anchor*, not a
+    // compliance claim. mnemo is "aligned-by-design with Enterprise
+    // Readiness" — one priority of four — not roadmap-compliant.
+    // Block compliance-overclaim drift before it ships:
+    "MCP 2026 leader",
+    "compliant with MCP 2026",
+    "MCP 2026 ready",
+    "roadmap-compliant",
 ];
 
 #[test]

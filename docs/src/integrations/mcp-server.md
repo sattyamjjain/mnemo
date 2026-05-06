@@ -201,3 +201,25 @@ first — most issues land on a row that documents which mnemo cut
 shipped against that SDK pair. The matrix is enforced in CI by
 `crates/mnemo-mcp/tests/sdk_matrix_doc_present.rs`, so the doc itself
 cannot silently disappear ahead of an SDK-bump release.
+
+## MCP 2026 Roadmap alignment (v0.4.4 — U1)
+
+The [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/)
+(published 2026-03-09 by lead maintainer David Soria Parra)
+reorganises the protocol's direction around four priority areas. The
+honest mnemo stance against each is below — *spec-context anchor, not
+compliance claim*.
+
+| MCP 2026 priority | What it covers | mnemo stance |
+|---|---|---|
+| **Transport Evolution and Scalability** | Stateless `Streamable HTTP`, `.well-known` server-discovery metadata, multi-tenant gateway behavior | **Follower.** mnemo speaks MCP via the [`rmcp = "1.3"`](https://crates.io/crates/rmcp) workspace dep. SEPs land in `rmcp` first; mnemo upgrades when they're stable, not before. |
+| **Agent Communication** | Tasks-primitive lifecycle gaps; agent ↔ agent semantics outside the tool/resource layer | **Observer.** mnemo's `mnemo.delegate` + ACL/permission model is the existing surface; further coupling to a Tasks primitive waits on the SEP outcome. |
+| **Governance Maturation** | Contributor ladder + WG delegation for the spec itself | **Observer.** Not a downstream surface mnemo participates in; we follow the spec the WGs ship. |
+| **Enterprise Readiness** | Audit trails, SSO-integrated auth, gateway behavior, configuration portability | **Aligned-by-design.** Operator-held HMAC keystore (`keystore_path` in the manifest), AES-256-GCM at-rest content encryption (`MNEMO_ENCRYPTION_KEY`), `mnemo-compliance` crate's [DPDPA](dpdpa-mannsetu.md) consent-token-per-write surface, dual DuckDB / PostgreSQL backend portability, and the role-aware tool filter (v0.4.2 §"Role-aware tool filter") together form the *attestable memory* layer regulated-workflow buyers can defend today — independent of any one cloud's audit boundary. |
+
+The honest framing: mnemo claims **alignment-by-design with one of
+four priorities**, not roadmap compliance. The other three priorities
+are spec-evolution work where mnemo follows `rmcp`'s implementation
+of the SEPs as they're written. Buyers reading the roadmap should
+hear "mnemo's existing audit story already serves the Enterprise
+Readiness ask," not "mnemo is MCP-2026-ready."
