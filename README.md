@@ -55,10 +55,16 @@ Your AI agent now has persistent memory with 10 MCP tools:
 
 | Protocol | Crate | Use Case |
 |----------|-------|----------|
-| **MCP** (stdio) | `mnemo-mcp` | AI agent integration via rmcp 0.14 |
+| **MCP** (stdio) | `mnemo-mcp` | AI agent integration via rmcp 1.3 |
 | **REST** (HTTP) | `mnemo-rest` | Web clients, dashboards, OTLP ingest |
 | **gRPC** | `mnemo-grpc` | High-performance service-to-service (11 RPCs) |
 | **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
+
+### mnemo and the MCP 2026 Roadmap
+
+The [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/) (published 2026-03-09 by lead maintainer David Soria Parra) reorganises the protocol's direction around four priority areas: **Transport Evolution and Scalability**, **Agent Communication**, **Governance Maturation**, and **Enterprise Readiness**. mnemo's existing surfaces — operator-held HMAC keystore, AES-256-GCM at-rest content encryption, dual DuckDB / PostgreSQL backends, and the `mnemo-compliance` crate — sit under the **Enterprise Readiness** priority area as an *attestable memory* layer regulated-workflow buyers can defend today.
+
+This is a spec-context anchor, not a compliance claim. The roadmap's Transport Evolution work (stateless Streamable HTTP + `.well-known` server discovery) is upstream of mnemo and tracked via the `rmcp = "1.3"` workspace dep — mnemo follows `rmcp`'s SEP implementation as it lands rather than racing the spec. See [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md) §"MCP 2026 Roadmap alignment" for the four-priority-area mapping table.
 
 ## SDKs
 
