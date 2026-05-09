@@ -156,6 +156,44 @@ The same axis that this comparison's S3 (chain audit replay) and S5
 (sovereignty round-trip) rows test is what an applied-agent-layer
 deployment of this scale ultimately reaches for.
 
+## Read-side composition: ARGUS provenance auditing (2026-05-09)
+
+> *Composition anchor, not a compliance claim.* This section records
+> a complementary research artifact whose read-side analysis pairs
+> naturally with mnemo's write-side envelope chain. mnemo does NOT
+> claim to be "ARGUS-compliant" or "prompt-injection-proof" — those
+> phrasings are explicitly banned by `tests/readme_no_marketing_phrases.rs`.
+
+[ARGUS](https://arxiv.org/abs/2605.03378) (arXiv 2605.03378, submitted
+2026-05-05) introduces a *read-side* decision-auditing model for
+LLM-based agents. The paper traces each model decision back to the
+context items that influenced it, with explicit handling for
+context-aware prompt-injection adversaries. The audit runs
+post-hoc — given a recorded decision and the provenance of the
+context that fed it, ARGUS reconstructs the influence path and
+flags the decision when context-aware injection is suspected.
+
+mnemo provides the *write-side* complement that ARGUS-style auditing
+needs underneath:
+
+| Audit need | mnemo surface |
+|---|---|
+| Reconstruct what context each decision saw | RECALL with `with_provenance=true` returns an HMAC-SHA256 receipt naming the cited records; offline-verifiable months later |
+| Reconstruct exact context state at decision time | Bitemporal graph + `as_of` point-in-time queries replay the substrate as it existed at decision time |
+| Distinguish trusted from poisoned context | `quarantine_reason` field + memory-poisoning detector quarantines flagged content; envelope chain records who quarantined and when |
+| Detect context-aware injection adversaries post-hoc | Append-only audit log + envelope chain integrity verification (`mnemo verify`) provides the immutable substrate ARGUS reads from |
+| Write-side authorship forensics | Per-record `source_type` + `created_by` + envelope chain identifies write-side actor on every memory record |
+
+The two layers compose without coupling: mnemo records the substrate
+honestly and offline-verifiably, ARGUS audits the read path against
+that substrate. Neither replaces the other; together they cover both
+sides of the provenance question. See [`../research/argus-2605.03378.md`](../research/argus-2605.03378.md)
+for a longer research-anchor note.
+
+**Explicit non-overlap:** mnemo does not implement ARGUS's read-side
+auditing model. mnemo's job is to make the substrate auditable; the
+read-side audit policy is a separate layer.
+
 ## v0.4.3 plan
 
 The `mnemo-bench-cf` crate (deferred from the 2026-05-02 prompt) will:
