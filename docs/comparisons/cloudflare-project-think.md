@@ -130,6 +130,14 @@ both as the offline-auditable storage substrate. See the four-priority
 mapping in [`../src/integrations/mcp-server.md`](../src/integrations/mcp-server.md)
 §"MCP 2026 Roadmap alignment".
 
+Anthropic's [Dreams Research Preview](https://platform.claude.com/docs/en/managed-agents/dreams)
+(2026-05-06) extends this stack with a *curator* layer on top: Project
+Think runs the durable loop, the MCP 2026 Roadmap defines the protocol
+direction, Dreams decides what to keep / forget / consolidate, and
+mnemo records the substrate state with offline-verifiable audit. See
+[`anthropic-dreams.md`](anthropic-dreams.md) for the curator-action ↔
+substrate-primitive layering table.
+
 ## Sources
 
 - Cloudflare Project Think announcement — https://blog.cloudflare.com/project-think/ (2026-05-04)

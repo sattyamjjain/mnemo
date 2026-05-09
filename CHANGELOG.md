@@ -56,6 +56,27 @@ parsing 17 days of prompt history.
 
 ### Added
 
+- **U1 (v0.4.4, 2026-05-09) — Anthropic Dreams Research Preview substrate
+  anchor.** README `### Memory curation interop (Dreams, Routines, and
+  substrate primitives)` sub-section inside Key Features, citing the
+  [Dreams Research Preview docs](https://platform.claude.com/docs/en/managed-agents/dreams)
+  (surfaced 2026-05-06 at Code w/ Claude SF, 3 days old at land-time)
+  and the companion [Routines doc](https://code.claude.com/docs/en/routines).
+  New companion comparison doc
+  [`docs/comparisons/anthropic-dreams.md`](docs/comparisons/anthropic-dreams.md)
+  with curator-action ↔ substrate-primitive layering table; explicit
+  non-overlap callout (Dreams owns *what to curate*, mnemo owns *how
+  to durably store with audit trail*). One-sentence cross-link from
+  [`docs/comparisons/cloudflare-project-think.md`](docs/comparisons/cloudflare-project-think.md)
+  noting Project Think (runtime) + MCP 2026 Roadmap (protocol) +
+  Dreams (curator) together describe the runtime + protocol + curator
+  picture, with mnemo as the offline-auditable substrate underneath.
+  **Honest framing:** the Dreams API is Research Preview behind a
+  Request-access form; **mnemo does NOT today ship an Anthropic-API
+  adapter.** A `mnemo-dreams` adapter crate is plausible if/when the
+  API exits Research Preview but is explicitly NOT on the v0.4.x
+  backlog.
+
 - **A1 (v0.4.4) — Cloudflare Project Think positioning anchor.**
   README `### Project Think — loop vs. ledger` sub-section inside the
   existing "Why mnemo when Cloudflare Agent Memory exists?" H2,
@@ -149,6 +170,23 @@ parsing 17 days of prompt history.
   or PyPI/npm install-test workflows in the last 24h. v0.4.4
   `[Unreleased]` cycle now active.
 
+- **U2 (v0.4.4, 2026-05-09) — ARGUS provenance composition anchor.**
+  [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md)
+  gains a `## Read-side composition: ARGUS provenance auditing
+  (2026-05-09)` section pairing mnemo's *write-side* HMAC envelope
+  chain with [arXiv 2605.03378](https://arxiv.org/abs/2605.03378)'s
+  *read-side* decision-auditing model for context-aware prompt
+  injection (submitted 2026-05-05, 4 days old at land-time). New
+  companion research-anchor doc
+  [`docs/research/argus-2605.03378.md`](docs/research/argus-2605.03378.md)
+  walking through what ARGUS does, where mnemo fits, and what this
+  note is explicitly NOT (not an implementation, not a compliance
+  claim, not a benchmark). Composition-anchor framing throughout —
+  compositional-security overclaim phrasings (`prompt-injection-proof`,
+  `provenance-guaranteed`, `ARGUS-compliant`,
+  `injection-resistant by construction`) banned by the extended
+  marketing-phrase test below.
+
 ### Tests
 
 - `tests/changelog_has_unreleased_section.rs` — fails the build if
@@ -171,6 +209,21 @@ parsing 17 days of prompt history.
   loses its `### Landing trace` heading or if that heading does not
   contain a hex commit-sha-prefix matching `[0-9a-f]{7,40}`. Forces
   every future docs-only land to record an on-`main` commit pointer.
+- **`tests/readme_dreams_link.rs`** (v0.4.4 U1, 2026-05-09) — fails
+  the build if README drops the Anthropic Dreams Research Preview
+  primary-source URL, the `### Memory curation interop` heading, the
+  link to `docs/comparisons/anthropic-dreams.md`, or the literal
+  `Research Preview` honesty disclaimer.
+- **`tests/research_doc_argus_present.rs`** (v0.4.4 U2, 2026-05-09)
+  — fails the build if `docs/research/argus-2605.03378.md` is
+  missing the arXiv URL or the `Composition anchor, not a compliance
+  claim` standing-rule disclaimer.
+- **`tests/readme_no_marketing_phrases.rs`** (v0.4.4 U1+U2,
+  2026-05-09) — banlist extended with five Dreams overclaim phrasings
+  (`Dreams replacement`, `dream-compatible`, `Dreams-ready`,
+  `Dreams competitor`, `curator killer`) and four compositional-security
+  overclaim phrasings (`prompt-injection-proof`, `provenance-guaranteed`,
+  `ARGUS-compliant`, `injection-resistant by construction`).
 
 ## [0.4.3] - 2026-05-04
 

@@ -48,6 +48,26 @@ const BANNED_PHRASES: &[&str] = &[
     "compliant with MCP 2026",
     "MCP 2026 ready",
     "roadmap-compliant",
+    // v0.4.4 (2026-05-09 U1) — Anthropic Dreams Research Preview
+    // substrate anchor. Dreams API is Research Preview behind a
+    // Request-access form; mnemo ships NO Anthropic-API adapter
+    // today. The README paragraph is substrate-level interop only.
+    // Block adapter-overclaim drift before it ships:
+    "Dreams replacement",
+    "dream-compatible",
+    "Dreams-ready",
+    "Dreams competitor",
+    "curator killer",
+    // v0.4.4 (2026-05-09 U2) — ARGUS provenance composition anchor.
+    // ARGUS is a research artifact (arXiv 2605.03378), not a spec
+    // and not a product. mnemo's HMAC envelope chain is a
+    // *write-side* complement, not a guarantee against any class of
+    // injection by construction. Block compositional-security
+    // overclaim drift:
+    "prompt-injection-proof",
+    "provenance-guaranteed",
+    "ARGUS-compliant",
+    "injection-resistant by construction",
 ];
 
 #[test]

@@ -199,6 +199,12 @@ _, _ = client.Share(mnemo.ShareInput{MemoryID: result.ID, TargetAgentID: "audito
 - **mnemo doctor + Grafana dashboard** — typed `DoctorReport` + `DoctorFix` recommendations and a committed `dashboards/mnemo-grafana.json` (schemaVersion 39) covering recall p50/p99, tool-catalog drift, HMAC continuity, code-mode token reduction. New in v0.4.1.
 - **MCP role-aware tool filter** — manifest `[role_filter]` block with `caller_roles`, `default = "allow_all" | "deny_all"`, per-tool `allow` / `deny` maps (deny wins), and an `McpRoleDenied` audit row on every blocked call. Aligned with the [2025-11-25 MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). Omitting the block keeps pre-v0.4.2 behaviour byte-for-byte. New in v0.4.2.
 
+### Memory curation interop (Dreams, Routines, and substrate primitives)
+
+Anthropic's [Dreams Research Preview](https://platform.claude.com/docs/en/managed-agents/dreams) (surfaced 2026-05-06 at Code w/ Claude SF) is a managed-agent feature that "lets Claude reflect on past sessions to curate an agent's memory and surface new insights." Its companion [Routines doc](https://code.claude.com/docs/en/routines) describes the long-horizon agents that *consume* curated memory. mnemo's REMEMBER / RECALL / FORGET / SHARE primitives, envelope provenance, and AES-256-GCM at-rest encryption are the substrate any such curator reads from and writes through — Dreams owns *what to curate*, mnemo owns *how to durably store with audit trail*. The two surfaces are complementary, not substitute.
+
+**Honest framing:** the Dreams API itself is a Research Preview behind a Request-access form, and **mnemo does NOT today ship an Anthropic-API adapter**. Today's anchor is substrate-level interop documentation, not integration. A `mnemo-dreams` adapter crate is plausible if/when the API exits Research Preview, but is explicitly NOT in scope for v0.4.x. See [`docs/comparisons/anthropic-dreams.md`](docs/comparisons/anthropic-dreams.md) for the curator-action ↔ mnemo-primitive layering table.
+
 ## Why mnemo when Cloudflare Agent Memory exists?
 
 Cloudflare announced Agent Memory GA during [Agents Week (2026-04-30)](https://www.cloudflare.com/agents-week/updates/),
