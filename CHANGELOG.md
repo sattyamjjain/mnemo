@@ -170,6 +170,33 @@ parsing 17 days of prompt history.
   or PyPI/npm install-test workflows in the last 24h. v0.4.4
   `[Unreleased]` cycle now active.
 
+- **U1 (v0.4.4, 2026-05-10) — DELEGATE-52 outcome-diffing primitive
+  anchor.** New
+  [`docs/research/delegate52-2604.15597.md`](docs/research/delegate52-2604.15597.md)
+  treating the DELEGATE-52 delegation-corruption result
+  ([arXiv 2604.15597](https://arxiv.org/abs/2604.15597), Hacker News
+  front 2026-05-09) as a *write-side substrate* anchor: mnemo's
+  append-only event log + snapshots capture the plan / input / trace
+  / output tetrad an outcome-diff replay tool reconstructs at audit
+  time. The doc walks through (a) what DELEGATE-52 measures (25%
+  baseline silent corruption rate on long delegated workflows),
+  (b) the three trust walls (intent / action / outcome) and where
+  mnemo lives (Wall 3), (c) the operator recipe for getting
+  outcome-diff-ready against mnemo today without a new crate, and
+  (d) the explicit non-overlap callout (mnemo provides the
+  substrate, the diffing policy is the auditor's job).
+  README "Why mnemo when Cloudflare Agent Memory exists?" gains
+  one paragraph anchoring the outcome-diffing primitive in v0.4.4.
+  [`docs/comparisons/anthropic-dreams.md`](docs/comparisons/anthropic-dreams.md)
+  gains a one-line cross-reference distinguishing curation (Dreams)
+  from outcome diffing (DELEGATE-52). Two new doc-only fixture rows
+  in [`docs/tests/example_recalls.md`](docs/tests/example_recalls.md)
+  exercising the reconstruction-from-events path: (1) primary-agent
+  plan capture via REMEMBER with `metadata.role="plan"`, (2)
+  full-tetrad reconstruction via `RECALL { thread_id, as_of,
+  with_provenance=true }`. **No behavioural change to the binary**
+  — the fixtures specify substrate calls operators can make today.
+
 - **U2 (v0.4.4, 2026-05-09) — ARGUS provenance composition anchor.**
   [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md)
   gains a `## Read-side composition: ARGUS provenance auditing
@@ -224,6 +251,20 @@ parsing 17 days of prompt history.
   `Dreams competitor`, `curator killer`) and four compositional-security
   overclaim phrasings (`prompt-injection-proof`, `provenance-guaranteed`,
   `ARGUS-compliant`, `injection-resistant by construction`).
+- **`tests/research_doc_delegate52_present.rs`** (v0.4.4 UPDATE-1,
+  2026-05-10) — fails the build if
+  `docs/research/delegate52-2604.15597.md` is missing the arXiv URL,
+  the `Composition anchor, not a compliance claim` standing-rule
+  disclaimer, or the load-bearing `plan / input / trace / output
+  tetrad` phrasing.
+- **`tests/example_recalls_doc_present.rs`** (v0.4.4 UPDATE-1,
+  2026-05-10) — fails the build if `docs/tests/example_recalls.md`
+  is missing either fixture-row heading or the link back to the
+  DELEGATE-52 research-anchor.
+- **`tests/readme_no_marketing_phrases.rs`** (v0.4.4 UPDATE-1,
+  2026-05-10) — banlist extended with three DELEGATE-52 overclaim
+  phrasings (`DELEGATE-52-resistant`, `outcome-corruption-proof`,
+  `delegation-safe by construction`).
 
 ## [0.4.3] - 2026-05-04
 

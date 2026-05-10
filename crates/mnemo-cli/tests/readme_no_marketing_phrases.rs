@@ -68,6 +68,16 @@ const BANNED_PHRASES: &[&str] = &[
     "provenance-guaranteed",
     "ARGUS-compliant",
     "injection-resistant by construction",
+    // v0.4.4 (2026-05-10 UPDATE-1) — DELEGATE-52 outcome-diffing
+    // anchor. The DELEGATE-52 paper (arXiv 2604.15597) measures a
+    // 25% baseline silent-corruption rate; mnemo's append-only event
+    // log is the *substrate* an external diffing tool reads from,
+    // not a guarantee against any DELEGATE-52 outcome class. The
+    // research doc + example_recalls fixtures explicitly cite these
+    // overclaim phrasings as banned; this test enforces it:
+    "DELEGATE-52-resistant",
+    "outcome-corruption-proof",
+    "delegation-safe by construction",
 ];
 
 #[test]

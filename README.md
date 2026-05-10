@@ -233,6 +233,19 @@ documents the differentiation scenario list with empty-bench
 placeholders so the comparison's contract is explicit before the
 numbers land.
 
+Outcome diffing — reconstructing the artifact's full provenance from
+append-only events — is the third trust wall in production agent
+systems (alongside aligned-by-training intent and policy-mediated
+action). The DELEGATE-52 delegation-corruption result
+([arXiv 2604.15597](https://arxiv.org/abs/2604.15597), surfaced on
+Hacker News 2026-05-09) puts a 25% baseline on the corruption rate
+this layer needs to detect. mnemo's append-only event log + snapshot
+substrate is the layer that lets a downstream auditor reconstruct any
+artifact's full plan / input / trace / output tetrad and diff against
+what the primary agent's plan asked for —
+see [`docs/research/delegate52-2604.15597.md`](docs/research/delegate52-2604.15597.md)
+for the operator recipe and the explicit non-overlap callout.
+
 ### Project Think — loop vs. ledger
 
 Cloudflare extended this story on [2026-05-04](https://blog.cloudflare.com/project-think/)
