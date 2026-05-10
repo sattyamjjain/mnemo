@@ -108,10 +108,20 @@ Operators wanting to experiment ahead of GA can pre-stage by:
 3. When the API ships, a thin adapter crate translates Dreams calls
    into the operations they were already manually issuing.
 
+## Outcome-diffing primitive (cross-reference)
+
+Curation chooses *what* to keep, forget, or consolidate; outcome diffing
+asks *whether* the artifact the agent finally produced matches the
+agent's stated plan. The latter is its own substrate question — see
+[`../research/delegate52-2604.15597.md`](../research/delegate52-2604.15597.md)
+for the plan / input / trace / output tetrad mnemo's append-only log
+captures, and the operator recipe for getting outcome-diff-ready today.
+
 ## Sources
 
 - Anthropic Dreams Research Preview docs — https://platform.claude.com/docs/en/managed-agents/dreams (surfaced at Code w/ Claude SF, 2026-05-06; verified live 2026-05-09)
 - Anthropic Routines doc — https://code.claude.com/docs/en/routines (companion long-horizon agent context, 2026-05-06)
 - mnemo memory-store comparison: [`cloudflare-agent-memory.md`](cloudflare-agent-memory.md)
 - mnemo runtime-layer comparison: [`cloudflare-project-think.md`](cloudflare-project-think.md)
+- mnemo outcome-diffing primitive: [`../research/delegate52-2604.15597.md`](../research/delegate52-2604.15597.md)
 - v0.4.4 carry list: [`../../CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased]` § *Parked for v0.4.4 backlog* (no `mnemo-dreams` entry — explicitly out of scope)
