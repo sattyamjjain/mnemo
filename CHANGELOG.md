@@ -170,6 +170,35 @@ parsing 17 days of prompt history.
   or PyPI/npm install-test workflows in the last 24h. v0.4.4
   `[Unreleased]` cycle now active.
 
+- **(v0.4.4, 2026-05-17) — `bench/locomo/grep_vs_vector_replay` bin
+  scaffold.** New `[[bin]]` target in
+  [`bench/locomo`](bench/locomo/) that routes a LongMemEval-shaped
+  slice through `mnemo.recall` in three modes — `vector_only`
+  (`strategy="semantic"`), `bm25_only` (`strategy="lexical"`), and
+  `rrf_hybrid` (`strategy="auto"`) — and emits a Markdown table to
+  `bench/locomo/results/grep_vs_vector_<date>.md`. Reproduces the Sen
+  et al. arXiv:2605.15184 experiment design ("grep vs vector
+  retrieval inside agent harnesses") on mnemo's own substrate.
+
+  **Scope honest:** runs end-to-end against the bundled 45-record
+  synthesized `longmemeval_m.jsonl` with `NoopEmbedding` (zero
+  vectors, vector-only mode is degenerate by design — the wiring is
+  the point) and a deterministic exact-substring smoke metric. The
+  full 116-question LongMemEval slice + GPT-judge-scored official
+  metric require an embedder + API key and are gated behind the same
+  secrets ledger as
+  [#44](https://github.com/sattyamjjain/mnemo/issues/44). Per-query
+  failures (e.g. Tantivy BM25 parser rejecting apostrophes) are
+  counted as misses in the accuracy column with an explicit
+  failures-column in the markdown so the reader can tell substrate
+  recall apart from parser strictness. New
+  [`bench/locomo/README.md`](bench/locomo/README.md) documents both
+  the smoke path and the gated full path.
+
+  Pairs with the docs companion in PR-B (RetrievalMode typed enum +
+  HarnessAware variant) that lands the rest of the arXiv:2605.15184
+  anchor.
+
 - **U1 (v0.4.4, 2026-05-10) — DELEGATE-52 outcome-diffing primitive
   anchor.** New
   [`docs/research/delegate52-2604.15597.md`](docs/research/delegate52-2604.15597.md)
