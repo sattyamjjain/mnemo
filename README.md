@@ -233,6 +233,19 @@ documents the differentiation scenario list with empty-bench
 placeholders so the comparison's contract is explicit before the
 numbers land.
 
+Retrieval-strategy framing matters here too: [arXiv 2605.15184](https://arxiv.org/abs/2605.15184)
+(Sen et al., May 2026) measured BM25 keyword retrieval outperforming
+pure vector retrieval on its experiment-1 corpus inside an agent
+harness. mnemo's documented default — hybrid RRF over BM25 + vector
++ graph + recency — is already hedged against the vector-first
+default the paper questioned. v0.4.4 adds a typed
+`RetrievalMode::HarnessAware { harness, format }` variant that lets
+the response envelope be reshaped per agent harness (Claude Code,
+Codex, Gemini CLI, Chronos, generic) without changing which records
+the substrate retrieves. See
+[`docs/research/grep-vs-vector-2605.15184.md`](docs/research/grep-vs-vector-2605.15184.md)
+for the composition anchor + the explicit non-overclaim disclaimer.
+
 Outcome diffing — reconstructing the artifact's full provenance from
 append-only events — is the third trust wall in production agent
 systems (alongside aligned-by-training intent and policy-mediated

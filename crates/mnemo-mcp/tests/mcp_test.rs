@@ -173,6 +173,7 @@ async fn test_engine_recall_via_server_engine() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();

@@ -97,6 +97,7 @@ pub async fn send_message(
         as_of: None,
         explain: None,
         with_provenance: None,
+        mode: None,
     };
     let resp = engine
         .recall(recall)

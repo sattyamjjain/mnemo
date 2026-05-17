@@ -245,6 +245,7 @@ impl MnemoService for MnemoGrpcServer {
             as_of: req.as_of,
             explain: req.explain,
             with_provenance: None,
+            mode: None,
         };
 
         let result = self

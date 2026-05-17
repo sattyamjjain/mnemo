@@ -270,6 +270,7 @@ fn build_recall(query: &str, strategy: &str, limit: usize) -> RecallRequest {
         as_of: None,
         explain: None,
         with_provenance: None,
+        mode: None,
     }
 }
 
