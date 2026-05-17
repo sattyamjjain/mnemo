@@ -10,6 +10,10 @@ description = "LoCoMo authenticated nightly runner with cross-judge variance ban
 name = "mnemo-locomo"
 path = "src/main.rs"
 
+[[bin]]
+name = "grep_vs_vector_replay"
+path = "src/bin/grep_vs_vector_replay.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }
