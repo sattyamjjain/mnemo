@@ -4,6 +4,70 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-05-17)
+
+v0.4.4 cut today. Next cycle's accumulator opens here. PR-A of the
+v0.4.4 cut (bench scaffold) landed in commit
+[`cde9f68`](https://github.com/sattyamjjain/mnemo/commit/cde9f68f859856192243c5cec037d65b382b5085);
+PR-B of the v0.4.4 cut (RetrievalMode typed enum + 5 HarnessAware
+adapters + arXiv:2605.15184 research-anchor doc + workspace bump)
+follows in this branch.
+
+## [0.4.4] - 2026-05-17
+
+Substrate-anchor release. Twelve days of `[Unreleased]` accumulator
+(2026-05-05 → 2026-05-17) shipping the four substrate-composition
+anchors of the cycle (Dreams curator, ARGUS read-side audit,
+DELEGATE-52 outcome-diff, MCP 2026 Roadmap Enterprise-Readiness)
+plus today's two-PR ship:
+
+- **PR-A (bench scaffold)** — new `[[bin]] grep_vs_vector_replay` in
+  `bench/locomo` routing a LongMemEval-shaped slice through
+  `mnemo.recall` in three modes (`vector_only` / `bm25_only` /
+  `rrf_hybrid`) and emitting a Markdown table per run. Reproduces
+  the Sen et al. arXiv:2605.15184 experiment design against mnemo's
+  own substrate. Operator-runnable today against the bundled
+  45-record `longmemeval_m.jsonl`; the gated 116-question slice +
+  GPT-judge-scored official metric require the same secrets as
+  [#44](https://github.com/sattyamjjain/mnemo/issues/44).
+- **PR-B (RetrievalMode typed enum)** — new `mnemo_core::retrieval`
+  module landing `RetrievalMode` typed enum (`VectorOnly` / `Bm25Only`
+  / `HybridRrf` / `Graph` / `HarnessAware { harness, format }`) + 5
+  starter `HarnessAware` adapters (`ClaudeCodeEnvelope`,
+  `CodexEnvelope`, `GeminiCliEnvelope`, `ChronosEnvelope`,
+  `GenericEnvelope`). `RecallRequest.mode: Option<RetrievalMode>` is
+  added as an **additive** field — the legacy
+  `RecallRequest.strategy: Option<String>` stays in place and SDKs
+  (Python / TypeScript / Go) continue to work unchanged. New
+  research-anchor doc at
+  [`docs/research/grep-vs-vector-2605.15184.md`](docs/research/grep-vs-vector-2605.15184.md).
+  README "Why mnemo" gains a paragraph framing the
+  `HarnessAware` lever against the paper's envelope-format finding.
+
+### What this release is NOT
+
+- Not a breaking change for SDK callers — `strategy: Option<String>`
+  is preserved; new `mode` field is additive.
+- Not a stability claim on the 5 `HarnessAware` adapter envelope
+  contents — each adapter is a starter implementation; pin the
+  v0.4.4 minor version if relying on a specific shape.
+- Not an implementation of any external paper's retrieval / audit /
+  curation model. The four research anchors that accumulated in
+  `[Unreleased]` since 2026-05-05 (Dreams, ARGUS, DELEGATE-52,
+  arXiv:2605.15184) all carry explicit composition-anchor
+  disclaimers in their respective doc files.
+- Not a GPT-judge-scored bench result. The `grep_vs_vector_replay`
+  bin produces a deterministic exact-substring smoke metric today;
+  the official LongMemEval metric stays gated behind #44.
+
+### Added (cycle highlights)
+
+- `mnemo_core::retrieval::RetrievalMode` typed enum + 5
+  `HarnessAware` adapters.
+- `bench/locomo/src/bin/grep_vs_vector_replay.rs` runnable scaffold
+  bin (PR-A; landed in cycle commit `cde9f68`).
+- `docs/research/grep-vs-vector-2605.15184.md` composition anchor.
+
 ### Landing trace (2026-05-06)
 
 Recorded one day after PR #76 merged so a future operator reading

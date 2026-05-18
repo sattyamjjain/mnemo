@@ -78,6 +78,15 @@ const BANNED_PHRASES: &[&str] = &[
     "DELEGATE-52-resistant",
     "outcome-corruption-proof",
     "delegation-safe by construction",
+    // v0.4.4 (2026-05-17) — arXiv 2605.15184 grep-vs-vector anchor.
+    // The paper measures BM25 outperforming vector on its experiment-1
+    // corpus; mnemo's hybrid-RRF default is already hedged, but the
+    // anchor is a composition note, not a claim that mnemo is the
+    // "best" retriever for any harness. Block adversarial framing:
+    "grep killer",
+    "vector retrieval is dead",
+    "RAG killer",
+    "harness-perfect",
 ];
 
 #[test]

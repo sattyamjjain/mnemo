@@ -89,6 +89,7 @@ async fn test_full_lifecycle() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .expect("recall should succeed");
@@ -151,6 +152,7 @@ async fn test_full_lifecycle() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .expect("recall should succeed");
@@ -250,6 +252,7 @@ async fn test_multiple_memories_with_filtering() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -275,6 +278,7 @@ async fn test_multiple_memories_with_filtering() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -300,6 +304,7 @@ async fn test_multiple_memories_with_filtering() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -326,6 +331,7 @@ async fn test_multiple_memories_with_filtering() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -420,6 +426,7 @@ async fn test_access_count_increments() {
                 as_of: None,
                 explain: None,
                 with_provenance: None,
+                mode: None,
             })
             .await
             .unwrap();
@@ -865,6 +872,7 @@ async fn test_exact_recall_strategy() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -1102,6 +1110,7 @@ async fn test_quarantined_excluded_from_recall() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -1218,6 +1227,7 @@ async fn test_recall_scope_filter() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -1245,6 +1255,7 @@ async fn test_recall_scope_filter() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -1305,6 +1316,7 @@ async fn test_recall_multi_type_filter() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -1807,6 +1819,7 @@ async fn test_hybrid_with_graph_signal() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -1895,6 +1908,7 @@ async fn test_sync_push_pull() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -2100,6 +2114,7 @@ async fn test_permission_safe_ann() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -2210,6 +2225,7 @@ async fn test_as_of_point_in_time() {
             as_of: Some(t_between.clone()),
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -2237,6 +2253,7 @@ async fn test_as_of_point_in_time() {
             as_of: Some(t_after_both.clone()),
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -2266,6 +2283,7 @@ async fn test_as_of_point_in_time() {
             as_of: Some(t_after_delete.clone()),
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();
@@ -2319,6 +2337,7 @@ async fn test_event_integrity_verification() {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         })
         .await
         .unwrap();

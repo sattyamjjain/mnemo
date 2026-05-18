@@ -842,6 +842,7 @@ async fn run_eval(cli: &Cli, args: &EvalArgs) -> Result<(), Box<dyn std::error::
             } else {
                 None
             },
+            mode: None,
         };
         let t0 = Instant::now();
         let resp = engine.recall(recall).await?;

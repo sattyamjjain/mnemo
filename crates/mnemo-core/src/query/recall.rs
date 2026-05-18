@@ -52,6 +52,13 @@ pub struct RecallRequest {
     /// the recall hot-path overhead at zero for callers that don't
     /// need verifiable receipts.
     pub with_provenance: Option<bool>,
+    /// v0.4.4 — typed retrieval mode. When `Some`, takes precedence
+    /// over the legacy `strategy` field (which stays in place for
+    /// backwards compatibility). When `None`, the engine falls back
+    /// to parsing `strategy` exactly as in v0.4.3. See
+    /// [`crate::retrieval::RetrievalMode`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<crate::retrieval::RetrievalMode>,
 }
 
 impl RecallRequest {
@@ -74,6 +81,7 @@ impl RecallRequest {
             as_of: None,
             explain: None,
             with_provenance: None,
+            mode: None,
         }
     }
 }
@@ -179,8 +187,15 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         .unwrap_or_else(|| engine.default_agent_id.clone());
     super::validate_agent_id(&agent_id)?;
 
-    // Determine strategy
-    let strategy = request.strategy.as_deref().unwrap_or("auto");
+    // Determine strategy. v0.4.4: prefer the typed
+    // `mode: Option<RetrievalMode>` field when set; fall back to the
+    // legacy `strategy: Option<String>` field otherwise. Backwards
+    // compatible — SDKs that only marshal `strategy` continue to work.
+    let strategy = if let Some(ref mode) = request.mode {
+        mode.to_strategy_str()
+    } else {
+        request.strategy.as_deref().unwrap_or("auto")
+    };
 
     // Compute query embedding (needed for semantic/hybrid/auto)
     let query_embedding = engine.embedding.embed(&request.query).await?;

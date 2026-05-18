@@ -1,6 +1,6 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-05-04 for the v0.4.3 cut.
+> Updated 2026-05-17 for the v0.4.4 cut.
 
 The matrix below pins which downstream and upstream versions are tested
 together for each `mnemo` workspace release. Bumping any cell requires a
@@ -11,15 +11,33 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.4.3** (planned) | 1.3 | 0.26 | 2.21 | **1.10502.0** ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize **+** DO Facets SQLite ³ |
+| **0.4.4** (2026-05-17) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.4.3 (2026-05-04) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.2 (2026-05-03) | 1.3 | 0.26 | 2.21 | 1.4 | 0.8.2 | 0.8 | Workers KV+Vectorize (anchor only) |
 
 ## SDK side (Python / TypeScript / Go + MCP SDKs)
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.4.3** (planned) | 0.4.3 | 0.4.3 | 0.4.3 | 1.13.x (2026-05-01) | 0.31.x (2026-05-01) | 0.5.x (2026-05-02) | 0.4.x (2026-05-02) |
+| **0.4.4** (2026-05-17) | 0.4.4 | 0.4.4 | 0.4.4 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.4.3 (2026-05-04) | 0.4.3 | 0.4.3 | 0.4.3 | 1.13.x (2026-05-01) | 0.31.x (2026-05-01) | 0.5.x (2026-05-02) | 0.4.x (2026-05-02) |
 | 0.4.2 (2026-05-03) | 0.4.2 | 0.4.2 | 0.4.2 | 1.12.x | 0.30.x | 0.4.x | 0.3.x |
+
+## v0.4.4 retrieval surface (new in this release)
+
+| Feature | Where it lives | API shape |
+|---|---|---|
+| `RetrievalMode` typed enum | [`crates/mnemo-core/src/retrieval.rs`](../../crates/mnemo-core/src/retrieval.rs) | 5 variants: `VectorOnly` / `Bm25Only` / `HybridRrf` / `Graph` / `HarnessAware { harness, format }` |
+| Backwards-compat dispatch | [`crates/mnemo-core/src/query/recall.rs`](../../crates/mnemo-core/src/query/recall.rs) — `execute()` prefers `mode` over legacy `strategy` string | `RecallRequest.mode: Option<RetrievalMode>` (additive); `RecallRequest.strategy: Option<String>` unchanged |
+| 5 starter `HarnessAware` adapters | `retrieval.rs` — `ClaudeCodeEnvelope`, `CodexEnvelope`, `GeminiCliEnvelope`, `ChronosEnvelope`, `GenericEnvelope` | `trait HarnessEnvelope { fn shape(&self, hits: &[ScoredMemory]) -> String; }` |
+| Research anchor | [`docs/research/grep-vs-vector-2605.15184.md`](../research/grep-vs-vector-2605.15184.md) | Composition anchor, not implementation claim |
+| Bench scaffold | [`bench/locomo/src/bin/grep_vs_vector_replay.rs`](../../bench/locomo/src/bin/grep_vs_vector_replay.rs) | Routes LongMemEval-shaped slice through 3 modes; smoke metric only (gated full run = #44) |
+
+**SDK callers are NOT affected by v0.4.4.** The Python / TypeScript /
+Go SDKs continue to marshal `strategy: string` and continue to work
+unchanged — the new `mode` field is purely additive on
+`RecallRequest`. SDK migration to a typed `mode` field is a v0.5.x
+follow-up.
 
 ## History
 
