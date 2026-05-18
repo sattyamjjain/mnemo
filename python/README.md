@@ -36,7 +36,7 @@ client.forget([result["id"]])
 | `MnemoMemoryToolServer` | Anthropic `memory_20250818` 6-op handler. `pip install 'mnemo-db[anthropic-memory-tool]'` |
 | `MnemoLettaShared` | Letta-style Conversations adapter for shared agent memory |
 | `S3Workspace` / `CloudflareR2Workspace` | OpenAI Agents SDK GA snapshot store backends. `pip install 'mnemo-db[openai-sandbox-s3]'` or `[openai-sandbox-r2]` |
-| `MnemoAgentMemory` (OpenAI), `Mem0Compat`, `ASMDCheckpointer` (LangGraph), 12 more | Drop-in framework integrations. Install the matching extra. |
+| `MnemoAgentMemory` (OpenAI), `Mem0Compat`, `MnemoCheckpointer` (LangGraph 1.x — `ASMDCheckpointer` is the back-compat alias), 12 more | Drop-in framework integrations. Install the matching extra. |
 
 ## Optional extras
 

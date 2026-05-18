@@ -33,9 +33,9 @@ __all__.append("MnemoMCPConfig")
 
 # Optional framework integrations (fail gracefully if deps not installed)
 try:
-    from mnemo.checkpointer import ASMDCheckpointer
+    from mnemo.checkpointer import ASMDCheckpointer, MnemoCheckpointer
 
-    __all__.append("ASMDCheckpointer")
+    __all__.extend(["ASMDCheckpointer", "MnemoCheckpointer"])
 except ImportError:
     pass
 

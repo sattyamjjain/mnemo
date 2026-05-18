@@ -4,14 +4,47 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-05-17)
+### Landing trace (2026-05-18)
 
-v0.4.4 cut today. Next cycle's accumulator opens here. PR-A of the
-v0.4.4 cut (bench scaffold) landed in commit
+v0.4.4 cut shipped 2026-05-17; this `[Unreleased]` accumulator opens
+the v0.4.5 cycle. PR-A of v0.4.4 landed in commit
 [`cde9f68`](https://github.com/sattyamjjain/mnemo/commit/cde9f68f859856192243c5cec037d65b382b5085);
-PR-B of the v0.4.4 cut (RetrievalMode typed enum + 5 HarnessAware
-adapters + arXiv:2605.15184 research-anchor doc + workspace bump)
-follows in this branch.
+PR-B (RetrievalMode typed enum + 5 HarnessAware adapters +
+arXiv:2605.15184 anchor + workspace bump) merged 2026-05-18 in
+commit [`2a7b619`](https://github.com/sattyamjjain/mnemo/commit/2a7b6199a650af90c0922ef4bd4af64a98872e7f).
+
+### Added
+
+- **(2026-05-18) — LangGraph 1.x checkpoint adapter wrap-up.**
+  `python/mnemo/checkpointer.py` adds **`MnemoCheckpointer`** as the
+  canonical class name; the legacy `ASMDCheckpointer` is preserved
+  as a back-compat alias so existing `from mnemo.checkpointer
+  import ASMDCheckpointer` imports continue to work. The module
+  docstring now documents the LangGraph 1.x ``BaseCheckpointSaver``
+  surface coverage explicitly: primaries (`get_tuple`, `put`,
+  `delete_thread`) are implemented; `list` + `put_writes` are stubs
+  with the contract recorded in the docstring. New tests in
+  [`python/tests/test_langgraph_checkpointer.py`](python/tests/test_langgraph_checkpointer.py)
+  cover put→get_tuple round-trip, thread isolation, branch round-trip,
+  delete_thread, stub-method contracts, and the back-compat-alias
+  identity (`ASMDCheckpointer is MnemoCheckpointer`). Tests use a
+  `_FakeMnemoClient` shim so the suite does NOT spawn the mnemo
+  binary. New
+  [`examples/langgraph_checkpointer.py`](examples/langgraph_checkpointer.py)
+  shows a 5-line `StateGraph` + `MnemoCheckpointer` integration.
+  [`python/README.md`](python/README.md) integrations table swaps
+  `ASMDCheckpointer` → `MnemoCheckpointer` with the back-compat
+  alias annotated inline. `mnemo.availability` registers both names
+  so the soft-import probe surfaces either.
+
+  **Honest scope:** this wrap-up closes the parked
+  `mnemo-langgraph` v0.4.4-backlog item via the existing Python
+  adapter; **no new Rust crate ships** because LangGraph is
+  Python-only and a Rust `crates/mnemo-langgraph/` shell would have
+  no downstream consumer. The Python adapter's `list` +
+  `put_writes` stubs are unchanged — the v0.4.4-backlog inventory
+  is moved from "ship the crate" to "implement `list` + per-thread
+  `put_writes` enumeration" as a v0.5.x follow-up.
 
 ## [0.4.4] - 2026-05-17
 
@@ -99,9 +132,14 @@ parsing 17 days of prompt history.
   service and (b) the DO Facets SQLite-per-DO substrate. Strongest
   v0.4.4 headline candidate. Empty-bench placeholders are tracked
   in [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md).
-- **`mnemo-langgraph`** (S/M) — LangGraph 1.x checkpoint adapter.
-  Waiting on a fresh ≤7d `langgraph-checkpoint` release; the
-  2026-04-27 release is just past the gate.
+- **`mnemo-langgraph` Rust crate — RETIRED 2026-05-18.** The parked
+  item was a Rust shell that would have had no downstream consumer.
+  The functionally-equivalent Python adapter (now canonical name
+  `MnemoCheckpointer`, back-compat alias `ASMDCheckpointer`) covers
+  LangGraph 1.x's `BaseCheckpointSaver` interface in `python/mnemo/checkpointer.py`.
+  Remaining work (implement the stub `list` + `put_writes` methods)
+  is rebased to a v0.5.x follow-up — see today's `[Unreleased]`
+  Added entry above.
 - **`mnemo-purview`** (M-effort) — Microsoft Purview audit-log
   adapter. No S-shippable subset surfaced yet.
 - **`mnemo-toolhive`** (S) — Stacklok ToolHive Registry sync.

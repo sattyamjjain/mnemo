@@ -1,16 +1,38 @@
 """LangGraph checkpoint integration for Mnemo.
 
-Provides ASMDCheckpointer that implements LangGraph's BaseCheckpointSaver
-interface, backed by Mnemo's checkpoint/branch/merge system.
+Provides `MnemoCheckpointer` (canonical name as of v0.4.5) and its
+back-compat alias `ASMDCheckpointer`, both implementing LangGraph's
+`BaseCheckpointSaver` interface (1.x API surface — `get_tuple` /
+`put` / `list` / `put_writes` / `delete_thread`), backed by Mnemo's
+checkpoint / branch / merge system.
+
+`MnemoCheckpointer` is the documented name in v0.4.5+. `ASMDCheckpointer`
+remains exported as an alias so existing imports continue to work
+unchanged. Pick the new name in new code.
 
 Usage::
 
     from mnemo import MnemoClient
-    from mnemo.checkpointer import ASMDCheckpointer
+    from mnemo.checkpointer import MnemoCheckpointer
 
-    checkpointer = ASMDCheckpointer(db_path="agent.mnemo.db")
-    # Use with LangGraph:
+    checkpointer = MnemoCheckpointer(db_path="agent.mnemo.db")
+    # Use with LangGraph 1.x:
     # graph = create_graph().compile(checkpointer=checkpointer)
+
+LangGraph 1.x interface coverage:
+
+- ``get_tuple(config)``    — implemented; returns a CheckpointTuple
+                              for the (thread_id, checkpoint_id, branch)
+                              addressed by ``config``.
+- ``put(config, …)``        — implemented; persists a checkpoint into
+                              Mnemo's branch-aware checkpoint store.
+- ``put_writes(config, …)`` — stub no-op; intermediate writes are not
+                              independently persisted today.
+- ``list(config, …)``       — stub empty iterator; enumerating
+                              checkpoints across threads is not yet
+                              wired through ``MnemoClient``.
+- ``delete_thread(config)`` — implemented via ``forget`` over the
+                              thread's memory records.
 """
 
 from __future__ import annotations
@@ -28,12 +50,19 @@ from langgraph.checkpoint.base import (
 from mnemo import MnemoClient
 
 
-class ASMDCheckpointer(BaseCheckpointSaver):
+class MnemoCheckpointer(BaseCheckpointSaver):
     """LangGraph-compatible checkpoint saver backed by Mnemo.
 
-    This bridges LangGraph's checkpoint interface with Mnemo's
-    checkpoint/branch/merge system, providing persistent state
-    management with git-like branching.
+    Bridges LangGraph's 1.x ``BaseCheckpointSaver`` interface to
+    Mnemo's checkpoint / branch / merge system, giving operators
+    persistent agent state with git-like branching, a verifiable
+    HMAC audit chain on every write, and offline-replayable
+    point-in-time recall.
+
+    Canonical name as of v0.4.5. The earlier name
+    :class:`ASMDCheckpointer` is preserved as an alias for
+    back-compatibility — see the alias defined at the bottom of this
+    module.
     """
 
     def __init__(
@@ -132,3 +161,13 @@ class ASMDCheckpointer(BaseCheckpointSaver):
             self.client.forget([thread_id])
         except Exception:
             pass
+
+
+# v0.4.5 — back-compat alias for the legacy class name. Existing imports
+# (``from mnemo.checkpointer import ASMDCheckpointer``) continue to work
+# unchanged. The canonical name is :class:`MnemoCheckpointer`; pick that
+# in new code.
+ASMDCheckpointer = MnemoCheckpointer
+
+
+__all__ = ["MnemoCheckpointer", "ASMDCheckpointer"]
