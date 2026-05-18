@@ -82,6 +82,7 @@ def native_build_hint() -> str:
 # lazy try-except lattice.
 _ADAPTER_MODULES: tuple[tuple[str, str], ...] = (
     ("MnemoClient", "mnemo._mnemo"),
+    ("MnemoCheckpointer", "mnemo.checkpointer"),
     ("ASMDCheckpointer", "mnemo.checkpointer"),
     ("MnemoAgentMemory", "mnemo.openai_agents"),
     ("Mem0Compat", "mnemo.mem0_compat"),
