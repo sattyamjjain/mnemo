@@ -36,7 +36,7 @@ Add to your MCP client configuration (e.g. Claude Desktop, Cursor, etc.):
 
 ### 3. Use it
 
-Your AI agent now has persistent memory with 10 MCP tools:
+Your AI agent now has persistent memory with 12 MCP tools:
 
 | Tool | Description |
 |------|-------------|
@@ -50,6 +50,8 @@ Your AI agent now has persistent memory with 10 MCP tools:
 | `mnemo.replay` | Replay events from a checkpoint |
 | `mnemo.delegate` | Delegate scoped, time-bounded permissions to another agent |
 | `mnemo.verify` | Verify SHA-256 hash chain integrity |
+| `mnemo.attention_state.put` | v0.4.5 — Store an opaque attention-state blob keyed by `(agent_id, prefix_hash)` (anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226); only registered when the server is built with `MnemoServer::with_attention_state(...)`) |
+| `mnemo.attention_state.get` | v0.4.5 — Look up an attention-state blob by `(agent_id, prefix_hash)`; returns `null` on miss |
 
 ## Access Protocols
 
@@ -420,7 +422,7 @@ What stays Rust-native vs. crosses the JS boundary, the file-format compatibilit
 ## Development
 
 ```bash
-# Run all tests (132 tests: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
+# Run all tests (376 tests at v0.4.5: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
 cargo test --all
 
 # Run tests for a specific crate
