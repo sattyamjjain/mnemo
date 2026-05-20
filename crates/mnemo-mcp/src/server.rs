@@ -8,6 +8,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 
+use mnemo_attention_state::AttentionStateStore;
 use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
@@ -19,6 +20,7 @@ use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
 
+use crate::tools::attention_state::{AttentionStateGetInput, AttentionStatePutInput};
 use crate::tools::branch::BranchInput;
 use crate::tools::checkpoint::CheckpointInput;
 use crate::tools::delegate::DelegateInput;
@@ -40,6 +42,12 @@ pub struct MnemoServer {
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
     activity_tracker: Option<Arc<AtomicU64>>,
+    /// v0.4.5 — optional attention-state-memory store. When set, the
+    /// `mnemo.attention_state.put` and `mnemo.attention_state.get`
+    /// MCP tools dispatch into it. When unset, both tools return a
+    /// spec-shaped error result ("attention_state store not
+    /// attached").
+    attention_state: Option<Arc<dyn AttentionStateStore>>,
 }
 
 impl MnemoServer {
@@ -61,11 +69,23 @@ impl MnemoServer {
             engine,
             tool_router: Self::tool_router(),
             activity_tracker: None,
+            attention_state: None,
         }
     }
 
     pub fn with_activity_tracker(mut self, tracker: Arc<AtomicU64>) -> Self {
         self.activity_tracker = Some(tracker);
+        self
+    }
+
+    /// v0.4.5 — attach an attention-state-memory store
+    /// ([`mnemo_attention_state::AttentionStateStore`]). When set, the
+    /// `mnemo.attention_state.put` + `.get` MCP tools dispatch into it;
+    /// when unset, both tools return a spec-shaped error result rather
+    /// than panicking. Anchored on
+    /// [arXiv:2605.18226](https://arxiv.org/abs/2605.18226).
+    pub fn with_attention_state(mut self, store: Arc<dyn AttentionStateStore>) -> Self {
+        self.attention_state = Some(store);
         self
     }
 
@@ -708,6 +728,101 @@ impl MnemoServer {
                         .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
                 )]))
             }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.attention_state.put",
+        description = "v0.4.5 — Store a precomputed attention-state blob under (agent_id, prefix_hash). Anchored on arXiv:2605.18226 (Context Memorization). The blob is opaque to mnemo; producer is responsible for format + model compatibility. Returns the assigned record id and its SHA-256 digest. Returns an error result if the server was not built with `MnemoServer::with_attention_state`."
+    )]
+    async fn attention_state_put(
+        &self,
+        Parameters(input): Parameters<AttentionStatePutInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let store = match &self.attention_state {
+            Some(s) => s.clone(),
+            None => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "attention_state store not attached; build the server with MnemoServer::with_attention_state".to_string(),
+                )]));
+            }
+        };
+        let state_blob = match hex::decode(input.state_blob_hex.as_str()) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid state_blob_hex (expected hex): {e}"
+                ))]));
+            }
+        };
+        match store
+            .put(
+                input.agent_id,
+                input.prefix_hash,
+                state_blob,
+                input.model,
+                input.ttl_seconds,
+            )
+            .await
+        {
+            Ok(rec) => {
+                let response = serde_json::json!({
+                    "id": rec.id.to_string(),
+                    "agent_id": rec.agent_id,
+                    "prefix_hash": rec.prefix_hash,
+                    "model": rec.model,
+                    "blob_sha256_hex": rec.blob_sha256_hex,
+                    "ttl_seconds": rec.ttl_seconds,
+                    "created_at": rec.created_at,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.attention_state.get",
+        description = "v0.4.5 — Look up the most-recent attention-state record for (agent_id, prefix_hash). Returns the typed record (with the blob hex-encoded) or `null` on miss. Returns an error result if the server was not built with `MnemoServer::with_attention_state`. Anchored on arXiv:2605.18226."
+    )]
+    async fn attention_state_get(
+        &self,
+        Parameters(input): Parameters<AttentionStateGetInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let store = match &self.attention_state {
+            Some(s) => s.clone(),
+            None => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "attention_state store not attached; build the server with MnemoServer::with_attention_state".to_string(),
+                )]));
+            }
+        };
+        match store.get(&input.agent_id, &input.prefix_hash).await {
+            Ok(Some(rec)) => {
+                let response = serde_json::json!({
+                    "id": rec.id.to_string(),
+                    "agent_id": rec.agent_id,
+                    "prefix_hash": rec.prefix_hash,
+                    "model": rec.model,
+                    "state_blob_hex": hex::encode(&rec.state_blob),
+                    "blob_sha256_hex": rec.blob_sha256_hex,
+                    "ttl_seconds": rec.ttl_seconds,
+                    "created_at": rec.created_at,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text(
+                "null".to_string(),
+            )])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
         }
     }

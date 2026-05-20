@@ -87,6 +87,14 @@ const BANNED_PHRASES: &[&str] = &[
     "vector retrieval is dead",
     "RAG killer",
     "harness-perfect",
+    // v0.4.5 (2026-05-20) — arXiv 2605.18226 Context Memorization
+    // substrate anchor. mnemo ships the STORE; the producer +
+    // consumer of attention-state blobs are out of scope. Block
+    // compliance-overclaim drift:
+    "Context-Memorization-compliant",
+    "attention-state-compatible",
+    "KV-cache-portable",
+    "prefix-cache by construction",
 ];
 
 #[test]

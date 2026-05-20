@@ -4,32 +4,128 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-05-18)
+### Landing trace (2026-05-20)
 
-v0.4.4 cut shipped 2026-05-17; this `[Unreleased]` accumulator opens
-the v0.4.5 cycle. PR-A of v0.4.4 landed in commit
-[`cde9f68`](https://github.com/sattyamjjain/mnemo/commit/cde9f68f859856192243c5cec037d65b382b5085);
-PR-B (RetrievalMode typed enum + 5 HarnessAware adapters +
-arXiv:2605.15184 anchor + workspace bump) merged 2026-05-18 in
-commit [`2a7b619`](https://github.com/sattyamjjain/mnemo/commit/2a7b6199a650af90c0922ef4bd4af64a98872e7f).
+v0.4.5 cut today (workspace 0.4.4 → 0.4.5). Next cycle's accumulator
+opens here. PR for v0.4.5 (new `mnemo-attention-state` crate +
+`mnemo.attention_state.{put,get}` MCP tools + arXiv:2605.18226 anchor)
+follows in this branch; the prior v0.4.4 land was commit
+[`2a7b619`](https://github.com/sattyamjjain/mnemo/commit/2a7b6199a650af90c0922ef4bd4af64a98872e7f)
+(2026-05-18).
+
+## [0.4.5] - 2026-05-20
+
+Substrate-anchor release. Net-new v0.4.5 surface: an attention-state
+memory store, anchored on the
+[arXiv 2605.18226 Context Memorization](https://arxiv.org/abs/2605.18226)
+result (Okoshi et al., Institute of Science Tokyo + Imperial College
+London, surfaced 2026-05-19). The paper names "a lightweight,
+lookup-based memory of precomputed attention states" as the
+substrate prefix-augmented inference reaches for; v0.4.5 ships that
+substrate without claiming to implement the full Context
+Memorization mechanism (the producer + consumer are external — see
+the honest scope below).
 
 ### Added
 
-- **(2026-05-18) — LangGraph 1.x checkpoint adapter wrap-up.**
-  `python/mnemo/checkpointer.py` adds **`MnemoCheckpointer`** as the
-  canonical class name; the legacy `ASMDCheckpointer` is preserved
-  as a back-compat alias so existing `from mnemo.checkpointer
-  import ASMDCheckpointer` imports continue to work. The module
-  docstring now documents the LangGraph 1.x ``BaseCheckpointSaver``
-  surface coverage explicitly: primaries (`get_tuple`, `put`,
-  `delete_thread`) are implemented; `list` + `put_writes` are stubs
-  with the contract recorded in the docstring. New tests in
+- **New `crates/mnemo-attention-state` workspace crate.** Typed
+  `AttentionStateStore` trait + `InMemoryAttentionStateStore`
+  reference implementation + serializable `AttentionStateRecord`
+  envelope (id / agent_id / prefix_hash / model / state_blob /
+  blob_sha256_hex / ttl_seconds / created_at). Six unit tests cover
+  put → get round-trip, get-miss, put-overwrites-existing,
+  SHA-256-matches-input, agent-scoping-isolates-writes,
+  delete_for_agent-removes-only-that-agents-records.
+
+- **2 new MCP tools** on `MnemoServer`: `mnemo.attention_state.put`
+  and `mnemo.attention_state.get`. Tools dispatch into the store
+  when `MnemoServer::with_attention_state(...)` is configured at
+  startup; **unconfigured calls return a spec-shaped error result,
+  not a panic.** Blobs travel hex-encoded on the JSON-RPC wire to
+  keep transport string-safe. Three integration tests in
+  `crates/mnemo-mcp/tests/attention_state_tools.rs` exercise the
+  store contract through the same `AttentionStateStore` trait the
+  tools dispatch into.
+
+- **New research-anchor doc**
+  [`docs/research/context-memorization-2605.18226.md`](docs/research/context-memorization-2605.18226.md)
+  documenting what the paper measures, where mnemo fits (store
+  only), what this anchor is explicitly NOT (not a Context
+  Memorization implementation, not an inference-runtime
+  integration, not a RECALL fast-path, not a stability claim on
+  blob format, not encrypted-at-rest at the storage trait, not a
+  benchmark), the operator recipe for putting the substrate to
+  work today, and the v0.4.4 vs v0.4.5 layering (RetrievalMode
+  HarnessAware vs the new orthogonal attention-state store).
+
+- **README "Attention-state-memory substrate (v0.4.5)" subsection**
+  under Access Protocols with primary-source link to arXiv 2605.18226
+  + pointer to the new crate + pointer to the new MCP tools +
+  explicit honest framing of producer / consumer scope.
+
+- **`tests/readme_no_marketing_phrases.rs` banlist extended** with
+  four Context-Memorization overclaim phrasings:
+  `Context-Memorization-compliant`, `attention-state-compatible`,
+  `KV-cache-portable`, `prefix-cache by construction`.
+
+### Changed
+
+- **Workspace version 0.4.4 → 0.4.5.** Cargo.toml workspace +
+  internal-crate dep pins; python/pyproject.toml; sdks/typescript
+  package.json; sdks/go mnemo.go (`Version` const + package
+  doc-comment); python/mnemo/__init__.py `__version__`. Regression
+  tests bumped: `cargo_pkg_version_matches_v0_4_5` (renamed from
+  `_v0_4_4`) + `test_v0_4_5_pinned` (renamed from `_v0_4_4_pinned`).
+
+- **`mnemo-mcp` adds `hex = { workspace = true }` dependency.** The
+  new MCP tool methods hex-encode / hex-decode the state blob at
+  the JSON-RPC wire boundary.
+
+### Honest scope — what's NOT in v0.4.5
+
+- **NOT a Context Memorization implementation.** mnemo does not
+  extract prefix attention states from any inference runtime. The
+  producer is out of scope.
+- **NOT an inference-runtime integration.** mnemo does not wire to
+  vLLM, TGI, Triton, or any specific runtime. The mechanism is
+  transport-agnostic.
+- **NOT a RECALL fast-path.** Existing semantic + BM25 + graph +
+  recency hybrid retrieval does NOT consult the attention-state
+  store. Substrates sit orthogonal. Future v0.5.x row may explore
+  the composition.
+- **NOT a stability claim on the blob format.** The
+  `AttentionStateRecord` schema is starter; pin v0.4.5 minor if
+  relying on byte-level layout.
+- **NOT encrypted-at-rest at the storage trait.** The in-memory
+  reference store holds bytes as `Vec<u8>`. Encryption is the
+  operator's responsibility at the tool / engine layer using the
+  existing `mnemo-core::encryption::ContentEncryption` helper.
+- **NOT a persistent backend.** v0.4.5 ships only
+  `InMemoryAttentionStateStore`. A DuckDB / PostgreSQL backend is
+  a future minor.
+- **NOT a benchmark.** No bench harness compares attention-state
+  lookup cost vs prefix recomputation.
+
+### Also-landed in this cycle
+
+- **(2026-05-18) — LangGraph 1.x checkpoint adapter wrap-up**
+  shipped 2026-05-18 in commit
+  [`0cf6f39`](https://github.com/sattyamjjain/mnemo/commit/0cf6f3939c92cbe494eb8b1118faf9595b74f427)
+  before today's substrate row. `python/mnemo/checkpointer.py` adds
+  **`MnemoCheckpointer`** as the canonical class name; the legacy
+  `ASMDCheckpointer` is preserved as a back-compat alias so existing
+  `from mnemo.checkpointer import ASMDCheckpointer` imports continue
+  to work. The module docstring now documents the LangGraph 1.x
+  ``BaseCheckpointSaver`` surface coverage explicitly: primaries
+  (`get_tuple`, `put`, `delete_thread`) are implemented; `list` +
+  `put_writes` are stubs with the contract recorded in the
+  docstring. New tests in
   [`python/tests/test_langgraph_checkpointer.py`](python/tests/test_langgraph_checkpointer.py)
-  cover put→get_tuple round-trip, thread isolation, branch round-trip,
-  delete_thread, stub-method contracts, and the back-compat-alias
-  identity (`ASMDCheckpointer is MnemoCheckpointer`). Tests use a
-  `_FakeMnemoClient` shim so the suite does NOT spawn the mnemo
-  binary. New
+  cover put→get_tuple round-trip, thread isolation, branch
+  round-trip, delete_thread, stub-method contracts, and the
+  back-compat-alias identity (`ASMDCheckpointer is MnemoCheckpointer`).
+  Tests use a `_FakeMnemoClient` shim so the suite does NOT spawn
+  the mnemo binary. New
   [`examples/langgraph_checkpointer.py`](examples/langgraph_checkpointer.py)
   shows a 5-line `StateGraph` + `MnemoCheckpointer` integration.
   [`python/README.md`](python/README.md) integrations table swaps
@@ -37,13 +133,13 @@ commit [`2a7b619`](https://github.com/sattyamjjain/mnemo/commit/2a7b6199a650af90
   alias annotated inline. `mnemo.availability` registers both names
   so the soft-import probe surfaces either.
 
-  **Honest scope:** this wrap-up closes the parked
+  **Honest scope:** the wrap-up closed the parked
   `mnemo-langgraph` v0.4.4-backlog item via the existing Python
-  adapter; **no new Rust crate ships** because LangGraph is
-  Python-only and a Rust `crates/mnemo-langgraph/` shell would have
-  no downstream consumer. The Python adapter's `list` +
+  adapter; **no new Rust crate shipped** because LangGraph is
+  Python-only and a Rust `crates/mnemo-langgraph/` shell would
+  have no downstream consumer. The Python adapter's `list` +
   `put_writes` stubs are unchanged — the v0.4.4-backlog inventory
-  is moved from "ship the crate" to "implement `list` + per-thread
+  was moved from "ship the crate" to "implement `list` + per-thread
   `put_writes` enumeration" as a v0.5.x follow-up.
 
 ## [0.4.4] - 2026-05-17

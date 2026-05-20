@@ -60,6 +60,12 @@ Your AI agent now has persistent memory with 10 MCP tools:
 | **gRPC** | `mnemo-grpc` | High-performance service-to-service (11 RPCs) |
 | **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
 
+### Attention-state-memory substrate (v0.4.5)
+
+mnemo v0.4.5 ships an [attention-state-memory substrate](docs/research/context-memorization-2605.18226.md) anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226) (Context Memorization). Two new MCP tools — `mnemo.attention_state.put` and `mnemo.attention_state.get` — store and retrieve opaque attention-state blobs keyed by `(agent_id, prefix_hash)`. The substrate is implemented in [`crates/mnemo-attention-state`](crates/mnemo-attention-state) with a typed `AttentionStateStore` trait + an `InMemoryAttentionStateStore` reference impl.
+
+**Honest scope:** mnemo ships the *store*. The producer (inference runtime that extracts prefix states) and the consumer (re-injection on the next generation) are out of scope; the substrate's blob format, model compatibility, and quantization sensitivity are the producer's responsibility. Tools are registered only when `MnemoServer::with_attention_state(...)` is configured at startup; unconfigured calls return a spec-shaped error result, not a panic. See the [research anchor](docs/research/context-memorization-2605.18226.md) for the operator recipe + the explicit non-overclaim disclaimers.
+
 ### mnemo and the MCP 2026 Roadmap
 
 The [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/) (published 2026-03-09 by lead maintainer David Soria Parra) reorganises the protocol's direction around four priority areas: **Transport Evolution and Scalability**, **Agent Communication**, **Governance Maturation**, and **Enterprise Readiness**. mnemo's existing surfaces — operator-held HMAC keystore, AES-256-GCM at-rest content encryption, dual DuckDB / PostgreSQL backends, and the `mnemo-compliance` crate — sit under the **Enterprise Readiness** priority area as an *attestable memory* layer regulated-workflow buyers can defend today.
