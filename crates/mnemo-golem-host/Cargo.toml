@@ -1,0 +1,27 @@
+[package]
+name = "mnemo-golem-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Wasmtime host runner for the mnemo-golem-wit WASM component (v0.4.6 vertical slice of golemcloud/golem-ai#21). Supplies host imports backed by an mnemo_core::MnemoEngine."
+
+[dependencies]
+mnemo-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# wasmtime is the WASM-component runtime. Pinned to the stable v27
+# component-model release that the cargo-component v0.21 toolchain
+# emits artifacts compatible with.
+wasmtime = { version = "27.0", features = ["component-model"] }
+wasmtime-wasi = "27.0"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+tempfile = { workspace = true }

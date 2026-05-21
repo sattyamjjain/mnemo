@@ -1,0 +1,25 @@
+[package]
+name = "mnemo-golem-wit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WASM-component WIT bindings for the mnemo.golem-vector provider (v0.4.6 vertical slice of golemcloud/golem-ai#21). Built with cargo-component; runs under the mnemo-golem-host wasmtime runner."
+
+# A WIT-bindings crate is a cdylib (the actual WASM component) plus a
+# regular Rust library so the bindings types can be re-exported to the
+# host crate without duplicating the schemars.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.44", features = ["bitflags"] }
+
+[package.metadata.component]
+package = "mnemo:golem-vector"
+
+[package.metadata.component.target]
+path = "wit"
+world = "golem-vector-provider"
+
+[package.metadata.component.dependencies]

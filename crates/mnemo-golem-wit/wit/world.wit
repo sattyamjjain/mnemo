@@ -1,0 +1,84 @@
+// v0.4.6 — Vertical-slice subset of the golem:vector@1.0.0 WIT
+// (golemcloud/golem-ai#21). Three functions: upsert-vector,
+// search-vectors, delete-vectors. The shape mirrors the upstream
+// contract for the load-bearing path; the remaining ~27 functions
+// across Collections / Search-Extended / Analytics / Namespaces /
+// Connection interfaces are deferred to a v0.5.x follow-up — see
+// docs/research/golem-vector-wit-provider.md for the layering
+// rationale and the per-function gap list.
+
+package mnemo:golem-vector@0.1.0;
+
+interface vectors {
+    type id = string;
+    type dense-vector = list<f32>;
+
+    record search-result {
+        id: id,
+        score: f32,
+    }
+
+    variant vector-error {
+        not-found,
+        invalid-params(string),
+        unsupported-feature(string),
+        provider-error(string),
+    }
+
+    /// Upsert a single dense vector under (collection, id). Replaces
+    /// any existing record with the same id under the same collection.
+    upsert-vector: func(
+        collection: string,
+        id: id,
+        vector: dense-vector,
+    ) -> result<_, vector-error>;
+
+    /// Search the collection by cosine similarity to `query`. Returns
+    /// up to `limit` ranked hits.
+    search-vectors: func(
+        collection: string,
+        query: dense-vector,
+        limit: u32,
+    ) -> result<list<search-result>, vector-error>;
+
+    /// Delete vectors by id under the named collection. Returns the
+    /// number of records actually removed (ids that did not exist
+    /// are silently skipped).
+    delete-vectors: func(
+        collection: string,
+        ids: list<id>,
+    ) -> result<u32, vector-error>;
+}
+
+/// Host imports the component calls into to perform the actual
+/// storage operation. The `mnemo-golem-host` crate provides these,
+/// backed by an `mnemo_core::MnemoEngine`. A different host (Golem
+/// itself, an in-memory test rig, …) can supply different bindings.
+///
+/// Errors are stringly-typed at the host boundary because the host's
+/// concrete error type (`mnemo_core::error::Error`) does not cross
+/// the WASM ABI cleanly; the component wraps them as
+/// `vector-error::provider-error(string)` at the export layer.
+interface host {
+    host-upsert: func(
+        collection: string,
+        id: string,
+        vector: list<f32>,
+    ) -> result<_, string>;
+
+    host-search: func(
+        collection: string,
+        query: list<f32>,
+        limit: u32,
+    ) -> result<list<tuple<string, f32>>, string>;
+
+    host-delete: func(
+        collection: string,
+        ids: list<string>,
+    ) -> result<u32, string>;
+}
+
+world golem-vector-provider {
+    import host;
+    export vectors;
+}

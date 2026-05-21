@@ -95,6 +95,15 @@ const BANNED_PHRASES: &[&str] = &[
     "attention-state-compatible",
     "KV-cache-portable",
     "prefix-cache by construction",
+    // v0.4.6 (2026-05-21) — golem:vector WIT provider host-runner
+    // anchor. mnemo ships 3 of 30 upstream WIT functions + the
+    // host-runner architecture; the wasmtime-loader wiring is
+    // deferred. Block adversarial framing:
+    "Golem-durable by construction",
+    "golem:vector-compliant",
+    "Qdrant killer",
+    "Pinecone killer",
+    "WIT-component-perfect",
 ];
 
 #[test]
