@@ -4,14 +4,107 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-05-20)
+### Landing trace (2026-05-21)
 
-v0.4.5 cut today (workspace 0.4.4 → 0.4.5). Next cycle's accumulator
-opens here. PR for v0.4.5 (new `mnemo-attention-state` crate +
-`mnemo.attention_state.{put,get}` MCP tools + arXiv:2605.18226 anchor)
-follows in this branch; the prior v0.4.4 land was commit
-[`2a7b619`](https://github.com/sattyamjjain/mnemo/commit/2a7b6199a650af90c0922ef4bd4af64a98872e7f)
-(2026-05-18).
+v0.4.6 cut today (workspace 0.4.5 → 0.4.6). Next cycle's accumulator
+opens here. The v0.4.5 land was commit
+[`7370bc0`](https://github.com/sattyamjjain/mnemo/commit/7370bc046c9f6f35621f6637540fa7e12ada1110)
+(2026-05-21 admin-merge of yesterday's PR #86).
+
+## [0.4.6] - 2026-05-21
+
+Substrate-anchor release. Net-new v0.4.6 surface: a vertical-slice
+implementation of the [`golem:vector@1.0.0`](https://github.com/golemcloud/golem-ai/issues/21)
+WIT contract, two-crate host-runner architecture, with mnemo-core
+on the host side because the engine's C++ deps (DuckDB + USearch)
+cannot compile to `wasm32-wasip2`.
+
+### Added
+
+- **New `crates/mnemo-golem-wit` workspace crate.** WIT-bindings
+  crate built with `cargo-component v0.21.1`. Implements 3 of 30
+  upstream functions — `upsert-vector`, `search-vectors`,
+  `delete-vectors` — each delegating to a host import. Compiles
+  cleanly to `wasm32-wasip2`; the release artifact is ~73K at
+  `target/wasm32-wasip1/release/mnemo_golem_wit.wasm`. WIT
+  package is `mnemo:golem-vector@0.1.0` (namespaced under
+  `mnemo:` to signal the subset, not the full upstream contract).
+
+- **New `crates/mnemo-golem-host` workspace crate.** Rust host
+  crate that owns an `Arc<MnemoEngine>` and supplies the WIT host
+  imports. Ships:
+  - `trait MnemoGolemProvider` — async Rust shape of the three
+    host imports.
+  - `struct MnemoGolemHost { engine }` — backs the trait with
+    mnemo's `remember` / `recall` (semantic top-K) / `forget`
+    (HardDelete) operations; maps the WIT `collection` parameter
+    to mnemo's `agent_id` namespace.
+  - **5 integration tests**: put → search round-trip,
+    collection-scoping isolates writes, delete-removes-only-targeted-ids,
+    upsert-rejects-empty-vector, search-rejects-empty-query.
+  - **End-to-end example** at
+    `examples/golem_agent_round_trip.rs` showing REMEMBER →
+    RECALL → DELETE through a real `MnemoEngine` (3 upserts + 1
+    search + 1 delete + 1 post-delete search).
+
+- **New research-anchor doc**
+  [`docs/research/golem-vector-wit-provider.md`](docs/research/golem-vector-wit-provider.md)
+  documenting the architectural reality (DuckDB / USearch ↛ WASM),
+  the two-crate host-runner split, the WIT subset shipped today,
+  the wasmtime-component-loader wiring step explicitly deferred
+  to v0.5.x, the per-function gap list (6 Collections + 8
+  Vectors-extended + 5 Search-Extended + 3 Analytics + 5
+  Namespaces + 4 Connection = **27 deferred**, **3 shipped** = 30
+  upstream contract), and the explicit non-overclaim disclaimers
+  (NOT a Golem-durability claim, NOT a multi-provider abstraction,
+  NOT a real embedder integration, NOT a bounty-claimable
+  submission for the full contract).
+
+- **README "mnemo as a golem:vector provider (v0.4.6)" subsection**
+  under Access Protocols with primary-source link to
+  golemcloud/golem-ai#21 + pointer to both new crates + pointer to
+  the research anchor + explicit honest framing of the deferred
+  wasmtime wiring.
+
+- **`tests/readme_no_marketing_phrases.rs` banlist extended** with
+  five golem:vector overclaim phrasings: `Golem-durable by
+  construction`, `golem:vector-compliant`, `Qdrant killer`,
+  `Pinecone killer`, `WIT-component-perfect`.
+
+### Changed
+
+- **Workspace version 0.4.5 → 0.4.6.** `Cargo.toml` workspace +
+  internal-crate dep pins; python/pyproject.toml; sdks/typescript
+  package.json; sdks/go mnemo.go (`Version` const + package
+  doc-comment); python/mnemo/__init__.py `__version__`. Regression
+  tests bumped: `cargo_pkg_version_matches_v0_4_6` (renamed from
+  `_v0_4_5`) + `test_v0_4_6_pinned` (renamed from `_v0_4_5_pinned`).
+
+- **Workspace member list extended** with two new entries:
+  `crates/mnemo-golem-wit` and `crates/mnemo-golem-host`.
+
+### Honest scope — what's NOT in v0.4.6
+
+- **NOT the full golem:vector contract.** 3 of 30 functions
+  shipped; 27 deferred to v0.5.x with the per-interface rationale
+  in the research doc.
+- **NOT the wasmtime-component-loader wiring.** The Rust trait +
+  mnemo-core integration ship today; the
+  `wasmtime::component::Linker` + bindgen host bindings + async
+  trampoline step is documented as a v0.5.x row.
+- **NOT a Golem-durability claim.** Component runs on Golem the
+  same way any guest does; mnemo does not introspect Golem's
+  checkpoint protocol.
+- **NOT a multi-provider abstraction.** mnemo is one provider;
+  routing across Qdrant / Pinecone / Milvus / pgvector is out of
+  scope.
+- **NOT a real embedder integration.** Vectors arrive
+  pre-computed via the WIT; today's slice uses `NoopEmbedding` for
+  the test setup and demonstrates the wiring, not the embedder.
+- **NOT a bounty-claimable submission for the full upstream
+  contract.** The vertical slice + host-runner scaffold is the
+  bounty's first deliverable shape; a v0.5.x follow-up closes the
+  remaining 27 functions to be bounty-claimable.
 
 ## [0.4.5] - 2026-05-20
 

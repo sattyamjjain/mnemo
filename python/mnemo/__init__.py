@@ -12,7 +12,7 @@ Example::
     memories = client.recall("user preferences")
 """
 
-__version__ = "0.4.5"
+__version__ = "0.4.6"
 __all__: list[str] = []
 
 # The native PyO3 extension is optional at import time — users who only need
