@@ -36,7 +36,7 @@ Add to your MCP client configuration (e.g. Claude Desktop, Cursor, etc.):
 
 ### 3. Use it
 
-Your AI agent now has persistent memory with 10 MCP tools:
+Your AI agent now has persistent memory with 12 MCP tools:
 
 | Tool | Description |
 |------|-------------|
@@ -50,6 +50,8 @@ Your AI agent now has persistent memory with 10 MCP tools:
 | `mnemo.replay` | Replay events from a checkpoint |
 | `mnemo.delegate` | Delegate scoped, time-bounded permissions to another agent |
 | `mnemo.verify` | Verify SHA-256 hash chain integrity |
+| `mnemo.attention_state.put` | v0.4.5 — Store an opaque attention-state blob keyed by `(agent_id, prefix_hash)` (anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226); only registered when the server is built with `MnemoServer::with_attention_state(...)`) |
+| `mnemo.attention_state.get` | v0.4.5 — Look up an attention-state blob by `(agent_id, prefix_hash)`; returns `null` on miss |
 
 ## Access Protocols
 
@@ -59,6 +61,12 @@ Your AI agent now has persistent memory with 10 MCP tools:
 | **REST** (HTTP) | `mnemo-rest` | Web clients, dashboards, OTLP ingest |
 | **gRPC** | `mnemo-grpc` | High-performance service-to-service (11 RPCs) |
 | **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
+
+### Attention-state-memory substrate (v0.4.5)
+
+mnemo v0.4.5 ships an [attention-state-memory substrate](docs/research/context-memorization-2605.18226.md) anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226) (Context Memorization). Two new MCP tools — `mnemo.attention_state.put` and `mnemo.attention_state.get` — store and retrieve opaque attention-state blobs keyed by `(agent_id, prefix_hash)`. The substrate is implemented in [`crates/mnemo-attention-state`](crates/mnemo-attention-state) with a typed `AttentionStateStore` trait + an `InMemoryAttentionStateStore` reference impl.
+
+**Honest scope:** mnemo ships the *store*. The producer (inference runtime that extracts prefix states) and the consumer (re-injection on the next generation) are out of scope; the substrate's blob format, model compatibility, and quantization sensitivity are the producer's responsibility. Tools are registered only when `MnemoServer::with_attention_state(...)` is configured at startup; unconfigured calls return a spec-shaped error result, not a panic. See the [research anchor](docs/research/context-memorization-2605.18226.md) for the operator recipe + the explicit non-overclaim disclaimers.
 
 ### mnemo and the MCP 2026 Roadmap
 
@@ -414,7 +422,7 @@ What stays Rust-native vs. crosses the JS boundary, the file-format compatibilit
 ## Development
 
 ```bash
-# Run all tests (132 tests: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
+# Run all tests (376 tests at v0.4.5: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
 cargo test --all
 
 # Run tests for a specific crate

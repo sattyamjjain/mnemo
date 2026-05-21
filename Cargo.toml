@@ -18,12 +18,13 @@ members = [
     "crates/mnemo-md-sync",
     "crates/mnemo-cma",
     "crates/mnemo-baseline",
+    "crates/mnemo-attention-state",
     "bench/locomo",
     "python",
 ]
 
 [workspace.package]
-version = "0.4.4"
+version = "0.4.5"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"
@@ -100,11 +101,12 @@ pgvector = { version = "0.8.2", features = ["sqlx"] }
 # `version` MUST be present alongside `path` for `cargo publish` to accept
 # these. Path is used for local dev; version is what gets baked into the
 # published crate's manifest. Bump alongside `workspace.package.version`.
-mnemo-core = { path = "crates/mnemo-core", version = "0.4.4" }
-mnemo-mcp = { path = "crates/mnemo-mcp", version = "0.4.4" }
-mnemo-postgres = { path = "crates/mnemo-postgres", version = "0.4.4" }
-mnemo-rest = { path = "crates/mnemo-rest", version = "0.4.4" }
-mnemo-admin = { path = "crates/mnemo-admin", version = "0.4.4" }
-mnemo-pgwire = { path = "crates/mnemo-pgwire", version = "0.4.4" }
-mnemo-grpc = { path = "crates/mnemo-grpc", version = "0.4.4" }
-mnemo-graph = { path = "crates/mnemo-graph", version = "0.4.4" }
+mnemo-core = { path = "crates/mnemo-core", version = "0.4.5" }
+mnemo-mcp = { path = "crates/mnemo-mcp", version = "0.4.5" }
+mnemo-postgres = { path = "crates/mnemo-postgres", version = "0.4.5" }
+mnemo-rest = { path = "crates/mnemo-rest", version = "0.4.5" }
+mnemo-admin = { path = "crates/mnemo-admin", version = "0.4.5" }
+mnemo-pgwire = { path = "crates/mnemo-pgwire", version = "0.4.5" }
+mnemo-grpc = { path = "crates/mnemo-grpc", version = "0.4.5" }
+mnemo-graph = { path = "crates/mnemo-graph", version = "0.4.5" }
+mnemo-attention-state = { path = "crates/mnemo-attention-state", version = "0.4.5" }

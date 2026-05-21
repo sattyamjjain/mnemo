@@ -1,7 +1,7 @@
 // Package mnemo is the Go SDK for Mnemo — MCP-native memory database for
 // AI agents.
 //
-// Package version: 0.4.4
+// Package version: 0.4.5
 package mnemo
 
 import (
@@ -15,7 +15,7 @@ import (
 
 // Version is the SDK version. Kept in lockstep with the Cargo workspace
 // `workspace.package.version` and `python/pyproject.toml` `version`.
-const Version = "0.4.4"
+const Version = "0.4.5"
 
 // ClientOptions configures the Mnemo MCP client.
 type ClientOptions struct {

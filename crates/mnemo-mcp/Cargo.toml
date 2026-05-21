@@ -7,6 +7,7 @@ description = "MCP server interface for Mnemo memory database"
 
 [dependencies]
 mnemo-core = { workspace = true }
+mnemo-attention-state = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -15,6 +16,8 @@ schemars = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
+mnemo-attention-state = { workspace = true }
