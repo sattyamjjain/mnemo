@@ -77,6 +77,13 @@ pub struct RecallParams {
     pub hybrid_weights: Option<String>,
     pub rrf_k: Option<f32>,
     pub explain: Option<bool>,
+    /// v0.4.7 — opt-in current-fact resolver. Set the metadata key
+    /// to scope fact identity by (typical: `fact_id`). When set,
+    /// the response returns the most-recent write per fact group.
+    pub current_fact_key: Option<String>,
+    /// v0.4.7 — include the supersession chain in the response.
+    /// Honored only when `current_fact_key` is also set.
+    pub current_fact_include_chain: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -212,6 +219,12 @@ pub async fn recall_handler(
         explain: params.explain,
         with_provenance: None,
         mode: None,
+        current_fact_resolver: params.current_fact_key.map(|fact_key| {
+            mnemo_core::query::current_fact_resolver::CurrentFactResolverConfig {
+                fact_key,
+                include_supersession_chain: params.current_fact_include_chain.unwrap_or(false),
+            }
+        }),
     };
 
     let response = engine.recall(request).await?;

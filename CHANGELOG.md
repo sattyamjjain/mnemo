@@ -4,12 +4,121 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-05-21)
+### Landing trace (2026-05-22)
 
-v0.4.6 cut today (workspace 0.4.5 → 0.4.6). Next cycle's accumulator
-opens here. The v0.4.5 land was commit
-[`7370bc0`](https://github.com/sattyamjjain/mnemo/commit/7370bc046c9f6f35621f6637540fa7e12ada1110)
-(2026-05-21 admin-merge of yesterday's PR #86).
+v0.4.7 cut today (workspace 0.4.6 → 0.4.7). Next cycle's accumulator
+opens here. The v0.4.6 land was commit
+[`69a8ca6`](https://github.com/sattyamjjain/mnemo/commit/69a8ca66d6b888a77908c4f8dc09b91d1dd654f8)
+(2026-05-21 admin-merge of yesterday's PR #87).
+
+## [0.4.7] - 2026-05-22
+
+Interference bench scenario + current-fact resolver recall mode
+(MINTEval-anchored). Adds an opt-in post-processor over the standard
+recall result set that groups candidates by a caller-chosen
+`fact_key` (typical: `"fact_id"`) and keeps the most-recent write
+per group, with the older versions optionally returned as a
+supersession chain. Default read path is unchanged.
+
+### Added
+
+- **New `mnemo_core::query::current_fact_resolver` module.** Carries
+  `CurrentFactResolverConfig { fact_key, include_supersession_chain }`
+  + `resolve()` + `ResolverOutput { kept, superseded }`. The resolver
+  groups by JSON metadata pointer, picks the record with the latest
+  `updated_at` (ties → higher score → higher UUID v7), and returns
+  the older entries as a `SupersededRecord` chain. Records missing
+  the `fact_key` pass through untouched. **6 unit tests**: most-recent
+  wins, supersession chain when enabled, records-without-fact-key
+  pass through, multi-group resolution, empty-candidate-set,
+  integer fact-id support.
+
+- **New `RecallRequest.current_fact_resolver: Option<CurrentFactResolverConfig>`
+  field.** Backwards-compatible additive field on the existing
+  request struct. When `Some`, the engine dispatches the resolver
+  AFTER the normal hybrid recall completes. **The default read path
+  is unchanged.**
+
+- **New `RecallResponse.superseded: Option<Vec<SupersededRecord>>`
+  field.** Surfaces the supersession chain when the resolver was
+  enabled with `include_supersession_chain = true` AND any
+  candidates were actually dropped. `SupersededRecord` carries
+  `{id, fact_id, superseded_by, superseded_at, prior_updated_at}`
+  so an auditor can reconstruct the timeline.
+
+- **MCP `recall` tool param `current_fact_resolver`.** New
+  `RecallCurrentFactResolverInput { fact_key, include_supersession_chain }`
+  in [`crates/mnemo-mcp/src/tools/recall.rs`](crates/mnemo-mcp/src/tools/recall.rs)
+  threaded through the MCP tool dispatch. The MCP response JSON
+  carries a top-level `superseded` field when the chain is present.
+
+- **REST recall query params** `current_fact_key` +
+  `current_fact_include_chain` on `GET /v1/memories`. Wires
+  through to the resolver config without changing the default
+  query semantics.
+
+- **New `bench/locomo/src/bin/interference.rs`** — MINTEval-shaped
+  scenario. For each `K ∈ {1, 3, 5, 10}`, seeds 50 distractor
+  facts + revises a target fact `K + 1` times under the same
+  `fact_id`, then queries via both the default read path and the
+  resolver arm. Reports current-fact-accuracy@K + supersession-chain
+  length per K, p50 latency for each arm. Writes
+  `bench/locomo/results/interference_<YYYY-MM-DD>.md`. Anchored
+  on [arXiv:2605.18565](https://arxiv.org/abs/2605.18565) in the
+  module doc-comment.
+
+- **README "Memory under interference — current-fact resolver
+  (v0.4.7)" subsection** under Access Protocols with primary-source
+  link + pointer to the resolver module + pointer to the bench
+  scenario + explicit "not a contradiction detector / not a
+  write-side guard" disclaimers.
+
+- **`bench/locomo/README.md`** gains a row for the new `interference`
+  bin alongside the existing `mnemo-locomo` + `grep_vs_vector_replay`
+  rows.
+
+- **`tests/readme_no_marketing_phrases.rs` banlist extended** with
+  four MINTEval overclaim phrasings: `MINTEval-compliant`,
+  `interference-proof`, `supersession-perfect`, `MINTEval-resistant`.
+
+### Changed
+
+- **Workspace version 0.4.6 → 0.4.7.** Cargo.toml workspace +
+  internal-crate dep pins; python/pyproject.toml;
+  sdks/typescript/package.json; sdks/go/mnemo.go (`Version` const
+  + package doc-comment); python/mnemo/__init__.py `__version__`.
+  Regression tests bumped: `cargo_pkg_version_matches_v0_4_7`
+  (renamed from `_v0_4_6`) + `test_v0_4_7_pinned` (renamed from
+  `_v0_4_6_pinned`).
+
+- **~20 RecallRequest construction sites** across mnemo-core,
+  mnemo-grpc, mnemo-pgwire, mnemo-rest, mnemo-letta, mnemo-mcp
+  tests, integration tests, benches, bench/locomo bins, and
+  mnemo-cli updated to set `current_fact_resolver: None` (matches
+  the additive-field pattern from v0.4.4's `mode` addition).
+
+### Honest scope — what's NOT in v0.4.7
+
+- **NOT a contradiction detector.** Two records with the same
+  `fact_key` value are treated as versions of one fact; the
+  resolver does NOT inspect content semantics. The operator picks
+  `fact_key` to mean what they want.
+- **NOT a write-side guard.** The resolver only re-ranks reads;
+  contradictory writes are accepted by the existing engine path
+  unchanged. Operators wanting write-side conflict prevention use
+  the existing `crate::query::conflict` module.
+- **NOT a gRPC proto extension.** The new field is wired through
+  Rust + MCP + REST today. The gRPC proto and pgwire SQL surface
+  carry `current_fact_resolver: None` as a padding default; the
+  full grpc proto bump is deferred to v0.5.x.
+- **NOT a faithful MINTEval reproduction.** The bench bin uses a
+  synthetic distractor corpus + deterministic exact-content
+  scoring. The official MINTEval metric (GPT-judge over a curated
+  benchmark corpus) is gated behind the same secrets as
+  [#44](https://github.com/sattyamjjain/mnemo/issues/44).
+- **NOT a re-ranker for the underlying retrieval.** The resolver
+  runs over whatever candidates the underlying `RetrievalMode`
+  produced. It does not re-issue a query.
 
 ## [0.4.6] - 2026-05-21
 

@@ -59,6 +59,16 @@ pub struct RecallRequest {
     /// [`crate::retrieval::RetrievalMode`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<crate::retrieval::RetrievalMode>,
+    /// v0.4.7 — opt-in current-fact resolver. When `Some`, the
+    /// engine runs a post-processor over the standard recall result
+    /// set that groups candidates by `cfg.fact_key` and keeps the
+    /// most-recent write per group. See
+    /// [`crate::query::current_fact_resolver`] for the contract +
+    /// the MINTEval arXiv:2605.18565 anchor. Default `None` keeps
+    /// the read path unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_fact_resolver:
+        Option<crate::query::current_fact_resolver::CurrentFactResolverConfig>,
 }
 
 impl RecallRequest {
@@ -82,8 +92,25 @@ impl RecallRequest {
             explain: None,
             with_provenance: None,
             mode: None,
+            current_fact_resolver: None,
         }
     }
+}
+
+/// v0.4.7 — one entry of the supersession chain returned when the
+/// current-fact resolver is enabled with
+/// [`CurrentFactResolverConfig::include_supersession_chain`][crate::query::current_fact_resolver::CurrentFactResolverConfig::include_supersession_chain]
+/// set to `true`. Carries the prior fact version's id + the
+/// timestamps so an auditor can reconstruct the timeline.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SupersededRecord {
+    pub id: Uuid,
+    pub fact_id: String,
+    pub superseded_by: Uuid,
+    /// Timestamp of the winning current record.
+    pub superseded_at: String,
+    /// Timestamp of the older record being marked superseded.
+    pub prior_updated_at: String,
 }
 
 /// Per-signal score contributions for a single recall hit.
@@ -112,6 +139,13 @@ pub struct RecallResponse {
     /// See [`crate::provenance`].
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub provenance: Option<crate::provenance::ReadProvenance>,
+    /// v0.4.7 — older fact-versions dropped by the current-fact
+    /// resolver, in newest-superseded → oldest order. Present iff
+    /// the caller set
+    /// [`CurrentFactResolverConfig::include_supersession_chain`][crate::query::current_fact_resolver::CurrentFactResolverConfig::include_supersession_chain]
+    /// to `true` AND the resolver actually dropped any candidates.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub superseded: Option<Vec<SupersededRecord>>,
 }
 
 impl RecallResponse {
@@ -120,6 +154,7 @@ impl RecallResponse {
             memories,
             total,
             provenance: None,
+            superseded: None,
         }
     }
 }
@@ -502,7 +537,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     scored_memories.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     scored_memories.truncate(limit);
 
-    let total = scored_memories.len();
+    let _total_pre_resolver = scored_memories.len();
 
     // Touch accessed memories
     for (record, _) in &scored_memories {
@@ -558,6 +593,26 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             scored
         })
         .collect();
+
+    // v0.4.7 — opt-in current-fact resolver post-process. Runs only
+    // when the caller set `request.current_fact_resolver`. The
+    // resolver groups by `cfg.fact_key`, keeps the most-recent
+    // write per group, and (optionally) returns the older versions
+    // as a supersession chain. See
+    // [`crate::query::current_fact_resolver`] for the MINTEval
+    // arXiv:2605.18565 anchor + the contract.
+    let (memories, superseded_chain) = if let Some(ref cfg) = request.current_fact_resolver {
+        let out = crate::query::current_fact_resolver::resolve(cfg, memories);
+        let chain = if cfg.include_supersession_chain && !out.superseded.is_empty() {
+            Some(out.superseded)
+        } else {
+            None
+        };
+        (out.kept, chain)
+    } else {
+        (memories, None)
+    };
+    let total = memories.len();
 
     // Emit MemoryRead event with hash chain linking (fire-and-forget)
     let now = chrono::Utc::now().to_rfc3339();
@@ -630,6 +685,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         memories,
         total,
         provenance,
+        superseded: superseded_chain,
     })
 }
 

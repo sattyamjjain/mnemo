@@ -104,6 +104,14 @@ const BANNED_PHRASES: &[&str] = &[
     "Qdrant killer",
     "Pinecone killer",
     "WIT-component-perfect",
+    // v0.4.7 (2026-05-22) — MINTEval / current-fact resolver. The
+    // resolver is a post-process over recall results; it is NOT a
+    // contradiction detector and NOT a write-side guard. Block
+    // compliance-overclaim drift:
+    "MINTEval-compliant",
+    "interference-proof",
+    "supersession-perfect",
+    "MINTEval-resistant",
 ];
 
 #[test]

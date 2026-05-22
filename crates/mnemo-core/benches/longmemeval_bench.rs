@@ -140,6 +140,7 @@ fn build_recall(query: &str, with_provenance: Option<bool>) -> RecallRequest {
         explain: None,
         with_provenance,
         mode: None,
+        current_fact_resolver: None,
     }
 }
 

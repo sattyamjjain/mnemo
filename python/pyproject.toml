@@ -9,7 +9,7 @@ build-backend = "maturin"
 # the PyPI distribution name moves. Users do `pip install mnemo-db`
 # then `from mnemo import MnemoClient`.
 name = "mnemo-db"
-version = "0.4.6"
+version = "0.4.7"
 description = "MCP-native memory database for AI agents"
 readme = "README.md"
 license = { text = "Apache-2.0" }

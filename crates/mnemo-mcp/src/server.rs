@@ -243,13 +243,22 @@ impl MnemoServer {
         request.rrf_k = input.rrf_k;
         request.as_of = input.as_of;
         request.explain = input.explain;
+        request.current_fact_resolver = input.current_fact_resolver.map(|c| {
+            mnemo_core::query::current_fact_resolver::CurrentFactResolverConfig {
+                fact_key: c.fact_key,
+                include_supersession_chain: c.include_supersession_chain.unwrap_or(false),
+            }
+        });
 
         match self.engine.recall(request).await {
             Ok(response) => {
-                let result = serde_json::json!({
+                let mut result = serde_json::json!({
                     "memories": response.memories,
-                    "total": response.total
+                    "total": response.total,
                 });
+                if let Some(superseded) = response.superseded.as_ref() {
+                    result["superseded"] = serde_json::to_value(superseded).unwrap_or_default();
+                }
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&result)
                         .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),

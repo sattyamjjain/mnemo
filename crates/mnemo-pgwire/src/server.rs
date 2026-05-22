@@ -189,6 +189,7 @@ async fn handle_query(
                 explain: None,
                 with_provenance: None,
                 mode: None,
+                current_fact_resolver: None,
             };
 
             let response = engine.recall(request).await?;

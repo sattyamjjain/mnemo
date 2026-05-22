@@ -15,7 +15,7 @@ import (
 
 // Version is the SDK version. Kept in lockstep with the Cargo workspace
 // `workspace.package.version` and `python/pyproject.toml` `version`.
-const Version = "0.4.6"
+const Version = "0.4.7"
 
 // ClientOptions configures the Mnemo MCP client.
 type ClientOptions struct {
