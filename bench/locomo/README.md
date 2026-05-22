@@ -6,6 +6,7 @@ Authenticated nightly benchmark crate for `mnemo`. Two bins today:
 |---|---|---|
 | `mnemo-locomo` | Full LoCoMo dialogue-grounded recall (overall + temporal + multi-session + open-domain) with cross-judge variance bands (GPT-5.1 + Claude-3.7-Sonnet) | Gated dataset + judge API keys (see `.github/workflows/locomo-nightly.yml`); falls back to `MockJudge` for deterministic local runs |
 | `grep_vs_vector_replay` | Three-mode (`vector_only` / `bm25_only` / `rrf_hybrid`) recall replay against a LongMemEval-shaped slice, exact-substring smoke metric | Runnable today on the bundled 45-record synthesized slice with no API key; gated GPT-judge-scored run requires the same secrets as [#44](https://github.com/sattyamjjain/mnemo/issues/44) |
+| `interference` | **v0.4.7** — MINTEval-shaped interference scenario (arXiv:2605.18565). Revises a target fact K∈{1,3,5,10} times, queries via the v0.4.7 current-fact resolver, reports current-fact-accuracy@K + supersession-chain length per K. Default vs resolver arms. | Runnable today on a synthetic distractor pool; the official MINTEval GPT-judge scoring is gated behind [#44](https://github.com/sattyamjjain/mnemo/issues/44). See [`src/bin/interference.rs`](src/bin/interference.rs). |
 
 ## `mnemo-locomo` (v0.4.1 P0-1)
 

@@ -2,6 +2,7 @@ pub mod branch;
 pub mod causality;
 pub mod checkpoint;
 pub mod conflict;
+pub mod current_fact_resolver;
 pub mod event_builder;
 pub mod forget;
 pub mod lifecycle;

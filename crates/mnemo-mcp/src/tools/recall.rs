@@ -43,4 +43,26 @@ pub struct RecallInput {
     /// with the per-signal contributions (vector, bm25, graph, recency) and
     /// the final RRF rank.
     pub explain: Option<bool>,
+    /// v0.4.7 — opt-in current-fact resolver. When set, the engine
+    /// post-processes the recall result set: candidates sharing the
+    /// same value under `fact_key` (a metadata JSON pointer the
+    /// operator chose to scope fact identity by — typical
+    /// convention is `"fact_id"`) are grouped, and only the
+    /// most-recent write per group is kept. When
+    /// `include_supersession_chain = true`, older fact-versions
+    /// are returned in the response's `superseded` field. Anchored
+    /// on arXiv:2605.18565 (MINTEval). Default `None` leaves the
+    /// read path unchanged.
+    pub current_fact_resolver: Option<RecallCurrentFactResolverInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecallCurrentFactResolverInput {
+    /// JSON metadata key used to group candidates by fact identity.
+    /// Operator-chosen — typical convention is `"fact_id"`. Records
+    /// missing this key are passed through untouched.
+    pub fact_key: String,
+    /// When `true`, the response carries the older fact-versions
+    /// in its `superseded` field. Defaults to `false`.
+    pub include_supersession_chain: Option<bool>,
 }

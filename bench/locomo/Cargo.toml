@@ -14,6 +14,10 @@ path = "src/main.rs"
 name = "grep_vs_vector_replay"
 path = "src/bin/grep_vs_vector_replay.rs"
 
+[[bin]]
+name = "interference"
+path = "src/bin/interference.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }
