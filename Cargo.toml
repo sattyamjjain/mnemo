@@ -51,7 +51,7 @@ hex = "0.4"
 # underlying DuckDB engine: 1.10502.0 wraps DuckDB 1.5.2 (year 1,
 # month 05, patch 02). See https://github.com/duckdb/duckdb-rs/releases.
 # Tracked at #41 (Step 1 — bump; Step 2 — DuckLake opt-in deferred to v0.5.x).
-duckdb = { version = "=1.10502.0", features = ["bundled"] }
+duckdb = { version = "=1.10503.1", features = ["bundled"] }
 
 # Vector index
 usearch = "2.21"
