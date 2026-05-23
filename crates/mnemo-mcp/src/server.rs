@@ -249,6 +249,14 @@ impl MnemoServer {
                 include_supersession_chain: c.include_supersession_chain.unwrap_or(false),
             }
         });
+        request.orientation_cache = input.orientation_cache.map(|o| {
+            mnemo_core::query::orientation_cache::OrientationCacheConfig {
+                namespace: o.namespace,
+                token_budget: o.token_budget,
+                include_in_response: o.include_in_response.unwrap_or(true),
+                distill: o.distill.unwrap_or(true),
+            }
+        });
 
         match self.engine.recall(request).await {
             Ok(response) => {
@@ -258,6 +266,10 @@ impl MnemoServer {
                 });
                 if let Some(superseded) = response.superseded.as_ref() {
                     result["superseded"] = serde_json::to_value(superseded).unwrap_or_default();
+                }
+                if let Some(orientation) = response.orientation_cache.as_ref() {
+                    result["orientation_cache"] =
+                        serde_json::to_value(orientation).unwrap_or_default();
                 }
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&result)

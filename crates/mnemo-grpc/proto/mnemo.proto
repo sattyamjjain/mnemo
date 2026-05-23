@@ -87,6 +87,42 @@ message RecallRequest {
   optional string as_of = 12;
   /// When true, each ScoredMemory carries a score_breakdown.
   optional bool explain = 13;
+  /// v0.4.8 — opt-in orientation cache. PEEK-anchored
+  /// (arXiv:2605.19932). When set AND the server has an
+  /// OrientationCacheStore attached, the recall maintains a
+  /// per-namespace constant-token "context map" and returns a
+  /// bounded rendering in `RecallResponse.orientation_cache`.
+  optional OrientationCacheRequest orientation_cache = 14;
+}
+
+message OrientationCacheRequest {
+  /// Operator-chosen namespace label. When omitted, derived from
+  /// (org_id, agent_id).
+  optional string namespace = 1;
+  /// Maximum rendered tokens. Defaults to 512 when omitted.
+  optional uint32 token_budget = 2;
+  /// Include the rendered map in the response. Defaults to true.
+  optional bool include_in_response = 3;
+  /// Run the Distiller and update the in-process store. Defaults
+  /// to true; set to false for read-only inspection.
+  optional bool distill = 4;
+}
+
+message OrientationCacheResponse {
+  string namespace = 1;
+  repeated OrientationEntry entities = 2;
+  repeated OrientationEntry constants = 3;
+  repeated OrientationEntry schemas = 4;
+  uint32 token_estimate = 5;
+  uint32 budget = 6;
+  uint64 hit_count = 7;
+}
+
+message OrientationEntry {
+  string key = 1;
+  string value = 2;
+  uint32 freq = 3;
+  uint32 token_estimate = 4;
 }
 
 message ScoreBreakdown {
@@ -100,6 +136,7 @@ message ScoreBreakdown {
 message RecallResponse {
   repeated ScoredMemory memories = 1;
   uint32 total = 2;
+  optional OrientationCacheResponse orientation_cache = 3;
 }
 
 message ScoredMemory {

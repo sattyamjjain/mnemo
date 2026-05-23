@@ -28,6 +28,11 @@ pub struct SelectQuery {
     pub limit: usize,
     /// OFFSET clause
     pub offset: usize,
+    /// v0.4.8 — opt-in orientation-cache hint, set when the query
+    /// contains the SQL comment directive `/*+ orientation_cache */`.
+    /// When `true` the pgwire server attaches a default
+    /// `OrientationCacheConfig` to the underlying `RecallRequest`.
+    pub orientation_cache: bool,
 }
 
 /// A parsed INSERT statement.
@@ -77,6 +82,8 @@ fn parse_select(sql: &str) -> ParsedStatement {
         query_text: None,
         limit: 50,
         offset: 0,
+        orientation_cache: upper.contains("/*+ ORIENTATION_CACHE")
+            || upper.contains("/*+ORIENTATION_CACHE"),
     };
 
     // Extract LIMIT

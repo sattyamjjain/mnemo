@@ -207,6 +207,9 @@ impl MnemoClient {
             as_of: None,
             explain,
             with_provenance,
+            mode: None,
+            current_fact_resolver: None,
+            orientation_cache: None,
         };
 
         let response = self

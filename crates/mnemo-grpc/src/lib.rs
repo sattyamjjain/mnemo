@@ -227,6 +227,14 @@ impl MnemoService for MnemoGrpcServer {
             Some(req.hybrid_weights)
         };
 
+        let orientation_cache_cfg = req.orientation_cache.map(|o| {
+            mnemo_core::query::orientation_cache::OrientationCacheConfig {
+                namespace: o.namespace,
+                token_budget: o.token_budget,
+                include_in_response: o.include_in_response.unwrap_or(true),
+                distill: o.distill.unwrap_or(true),
+            }
+        });
         let core_req = CoreRecallRequest {
             query: req.query,
             agent_id: req.agent_id,
@@ -247,6 +255,7 @@ impl MnemoService for MnemoGrpcServer {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: orientation_cache_cfg,
         };
 
         let result = self
@@ -283,7 +292,50 @@ impl MnemoService for MnemoGrpcServer {
 
         let total = result.total as u32;
 
-        Ok(Response::new(ProtoRecallResponse { memories, total }))
+        let orientation_cache = result
+            .orientation_cache
+            .map(|r| proto::OrientationCacheResponse {
+                namespace: r.namespace,
+                entities: r
+                    .entities
+                    .into_iter()
+                    .map(|e| proto::OrientationEntry {
+                        key: e.key,
+                        value: e.value,
+                        freq: e.freq,
+                        token_estimate: e.token_estimate,
+                    })
+                    .collect(),
+                constants: r
+                    .constants
+                    .into_iter()
+                    .map(|e| proto::OrientationEntry {
+                        key: e.key,
+                        value: e.value,
+                        freq: e.freq,
+                        token_estimate: e.token_estimate,
+                    })
+                    .collect(),
+                schemas: r
+                    .schemas
+                    .into_iter()
+                    .map(|e| proto::OrientationEntry {
+                        key: e.key,
+                        value: e.value,
+                        freq: e.freq,
+                        token_estimate: e.token_estimate,
+                    })
+                    .collect(),
+                token_estimate: r.token_estimate,
+                budget: r.budget,
+                hit_count: r.hit_count,
+            });
+
+        Ok(Response::new(ProtoRecallResponse {
+            memories,
+            total,
+            orientation_cache,
+        }))
     }
 
     // -- Forget ------------------------------------------------------------

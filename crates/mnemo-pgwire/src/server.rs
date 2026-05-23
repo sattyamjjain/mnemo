@@ -170,6 +170,11 @@ async fn handle_query(
                 .agent_id
                 .unwrap_or_else(|| config.default_agent_id.clone());
 
+            let orientation_cache_cfg = if q.orientation_cache {
+                Some(mnemo_core::query::orientation_cache::OrientationCacheConfig::new())
+            } else {
+                None
+            };
             let request = mnemo_core::query::recall::RecallRequest {
                 agent_id: Some(agent_id),
                 query: q.query_text.unwrap_or_default(),
@@ -190,6 +195,7 @@ async fn handle_query(
                 with_provenance: None,
                 mode: None,
                 current_fact_resolver: None,
+                orientation_cache: orientation_cache_cfg,
             };
 
             let response = engine.recall(request).await?;

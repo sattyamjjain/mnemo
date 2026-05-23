@@ -69,6 +69,17 @@ pub struct RecallRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_fact_resolver:
         Option<crate::query::current_fact_resolver::CurrentFactResolverConfig>,
+    /// v0.4.8 — opt-in orientation cache. When `Some` AND the
+    /// engine has an
+    /// [`OrientationCacheStore`][crate::query::orientation_cache::OrientationCacheStore]
+    /// attached, the engine maintains a per-namespace, constant-token
+    /// "context map" updated from each recall hit, and returns a
+    /// bounded rendering in
+    /// [`RecallResponse::orientation_cache`]. PEEK-anchored
+    /// (arXiv:2605.19932). Default `None` keeps the read path
+    /// unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation_cache: Option<crate::query::orientation_cache::OrientationCacheConfig>,
 }
 
 impl RecallRequest {
@@ -93,6 +104,7 @@ impl RecallRequest {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         }
     }
 }
@@ -146,6 +158,14 @@ pub struct RecallResponse {
     /// to `true` AND the resolver actually dropped any candidates.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub superseded: Option<Vec<SupersededRecord>>,
+    /// v0.4.8 — bounded, namespace-scoped orientation map rendered
+    /// after the recall ran. Present iff the caller set
+    /// [`RecallRequest::orientation_cache`] AND the engine has an
+    /// [`OrientationCacheStore`][crate::query::orientation_cache::OrientationCacheStore]
+    /// attached AND the config did not set `include_in_response =
+    /// false`. PEEK-anchored (arXiv:2605.19932).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub orientation_cache: Option<crate::query::orientation_cache::RenderedContextMap>,
 }
 
 impl RecallResponse {
@@ -155,6 +175,7 @@ impl RecallResponse {
             total,
             provenance: None,
             superseded: None,
+            orientation_cache: None,
         }
     }
 }
@@ -614,6 +635,33 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     };
     let total = memories.len();
 
+    // v0.4.8 — opt-in orientation cache. Runs only when the caller
+    // set `request.orientation_cache` AND the engine has an
+    // `OrientationCacheStore` attached. Per-namespace map is
+    // updated from the hits + a bounded rendering is returned. See
+    // [`crate::query::orientation_cache`] for the PEEK
+    // arXiv:2605.19932 anchor + the contract.
+    let orientation_rendered = match (
+        request.orientation_cache.as_ref(),
+        engine.orientation_cache_store.as_ref(),
+    ) {
+        (Some(cfg), Some(store)) => {
+            let ns = crate::query::orientation_cache::resolve_namespace(
+                cfg,
+                &agent_id,
+                request.org_id.as_deref(),
+            );
+            let rendered =
+                crate::query::orientation_cache::update_and_render(store, cfg, &ns, &memories);
+            if cfg.include_in_response {
+                Some(rendered)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
     // Emit MemoryRead event with hash chain linking (fire-and-forget)
     let now = chrono::Utc::now().to_rfc3339();
     let event_content_hash = compute_content_hash(&request.query, &agent_id, &now);
@@ -686,6 +734,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         total,
         provenance,
         superseded: superseded_chain,
+        orientation_cache: orientation_rendered,
     })
 }
 
