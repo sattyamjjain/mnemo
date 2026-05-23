@@ -112,6 +112,16 @@ const BANNED_PHRASES: &[&str] = &[
     "interference-proof",
     "supersession-perfect",
     "MINTEval-resistant",
+    // v0.4.8 (2026-05-23) — PEEK / orientation cache. The cache is
+    // a heuristic post-process over recall results; it is NOT a
+    // learned summariser, NOT a context-window extender, NOT a
+    // write-side consolidator, and NOT persisted across restarts.
+    // Block adversarial framing:
+    "PEEK-compliant",
+    "PEEK-perfect",
+    "context-window-extender",
+    "infinite-context",
+    "orientation-perfect",
 ];
 
 #[test]

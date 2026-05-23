@@ -54,6 +54,32 @@ pub struct RecallInput {
     /// on arXiv:2605.18565 (MINTEval). Default `None` leaves the
     /// read path unchanged.
     pub current_fact_resolver: Option<RecallCurrentFactResolverInput>,
+    /// v0.4.8 — opt-in orientation cache. When set AND the server
+    /// has an `OrientationCacheStore` attached, the recall maintains
+    /// a per-namespace, constant-token "context map" updated from
+    /// each recall hit and returns a bounded rendering in the
+    /// response's `orientation_cache` field. PEEK-anchored
+    /// (arXiv:2605.19932). Default `None` leaves the read path
+    /// unchanged.
+    pub orientation_cache: Option<RecallOrientationCacheInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecallOrientationCacheInput {
+    /// Operator-chosen namespace label. When omitted, the server
+    /// derives one from `(org_id, agent_id)`, falling back to
+    /// `"__global__"`.
+    pub namespace: Option<String>,
+    /// Maximum rendered tokens. Defaults to 512.
+    pub token_budget: Option<u32>,
+    /// When `true` (default), the rendered map is returned in the
+    /// response. Set to `false` to update the in-process store
+    /// without growing the response payload (warm-up calls).
+    pub include_in_response: Option<bool>,
+    /// When `true` (default), the Distiller runs over recall hits
+    /// and updates the in-process map. Set to `false` for
+    /// read-only inspection.
+    pub distill: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

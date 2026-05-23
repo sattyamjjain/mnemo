@@ -100,6 +100,7 @@ fn recall_latency(c: &mut Criterion) {
                     with_provenance: None,
                     mode: None,
                     current_fact_resolver: None,
+                    orientation_cache: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -205,6 +206,7 @@ fn hybrid_recall_latency(c: &mut Criterion) {
                     with_provenance: None,
                     mode: None,
                     current_fact_resolver: None,
+                    orientation_cache: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -269,6 +271,7 @@ fn graph_traversal_latency(c: &mut Criterion) {
                     with_provenance: None,
                     mode: None,
                     current_fact_resolver: None,
+                    orientation_cache: None,
                 };
                 engine.recall(request).await.unwrap();
             });

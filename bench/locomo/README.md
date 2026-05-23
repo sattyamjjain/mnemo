@@ -1,12 +1,13 @@
 # `mnemo-locomo-bench`
 
-Authenticated nightly benchmark crate for `mnemo`. Two bins today:
+Authenticated nightly benchmark crate for `mnemo`. Four bins today:
 
 | Bin | What it measures | Authentication |
 |---|---|---|
 | `mnemo-locomo` | Full LoCoMo dialogue-grounded recall (overall + temporal + multi-session + open-domain) with cross-judge variance bands (GPT-5.1 + Claude-3.7-Sonnet) | Gated dataset + judge API keys (see `.github/workflows/locomo-nightly.yml`); falls back to `MockJudge` for deterministic local runs |
 | `grep_vs_vector_replay` | Three-mode (`vector_only` / `bm25_only` / `rrf_hybrid`) recall replay against a LongMemEval-shaped slice, exact-substring smoke metric | Runnable today on the bundled 45-record synthesized slice with no API key; gated GPT-judge-scored run requires the same secrets as [#44](https://github.com/sattyamjjain/mnemo/issues/44) |
 | `interference` | **v0.4.7** — MINTEval-shaped interference scenario (arXiv:2605.18565). Revises a target fact K∈{1,3,5,10} times, queries via the v0.4.7 current-fact resolver, reports current-fact-accuracy@K + supersession-chain length per K. Default vs resolver arms. | Runnable today on a synthetic distractor pool; the official MINTEval GPT-judge scoring is gated behind [#44](https://github.com/sattyamjjain/mnemo/issues/44). See [`src/bin/interference.rs`](src/bin/interference.rs). |
+| `orientation` | **v0.4.8** — PEEK-shaped repeated-context scenario (arXiv:2605.19932). Issues K∈{3,6,10,15} related recall calls per trial against a shared synthetic context, compares hybrid-only vs orientation-cache token cost, asserts top-1 parity. Heuristic Distiller, NoopEmbedding by design. | Runnable today on a synthetic context pool with no API key; calibrating per-call token cost against `tiktoken-rs` is a follow-up. See [`src/bin/orientation.rs`](src/bin/orientation.rs). |
 
 ## `mnemo-locomo` (v0.4.1 P0-1)
 

@@ -7,6 +7,7 @@ pub mod event_builder;
 pub mod forget;
 pub mod lifecycle;
 pub mod merge;
+pub mod orientation_cache;
 pub mod poisoning;
 pub mod recall;
 pub mod reflection;
@@ -81,6 +82,14 @@ pub struct MnemoEngine {
     /// receipt. `None` keeps the recall hot-path overhead at zero.
     /// Attach via [`MnemoEngine::with_provenance_signer`].
     pub provenance_signer: Option<Arc<crate::provenance::ProvenanceSigner>>,
+    /// v0.4.8 — when set, every `recall(req)` with
+    /// `req.orientation_cache == Some(_)` updates this in-process,
+    /// namespace-scoped, constant-token "context map" and returns a
+    /// bounded rendering alongside the top-k. PEEK-anchored
+    /// (arXiv:2605.19932). `None` keeps the recall hot-path
+    /// overhead at zero. Attach via
+    /// [`MnemoEngine::with_orientation_cache_store`].
+    pub orientation_cache_store: Option<Arc<orientation_cache::OrientationCacheStore>>,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -112,6 +121,7 @@ impl MnemoEngine {
             procedural_importance_floor: DEFAULT_PROCEDURAL_IMPORTANCE_FLOOR,
             poisoning_policy: poisoning::PoisoningPolicy::default(),
             provenance_signer: None,
+            orientation_cache_store: None,
         }
     }
 
@@ -170,6 +180,21 @@ impl MnemoEngine {
 
     pub fn with_event_embeddings(mut self) -> Self {
         self.embed_events = true;
+        self
+    }
+
+    /// v0.4.8 — attach a per-engine orientation-cache store. Recall
+    /// calls that set
+    /// [`RecallRequest::orientation_cache`][crate::query::recall::RecallRequest::orientation_cache]
+    /// will update + render the namespace-scoped, constant-token
+    /// context map. See
+    /// [`crate::query::orientation_cache`] for the contract +
+    /// the PEEK arXiv:2605.19932 anchor.
+    pub fn with_orientation_cache_store(
+        mut self,
+        store: Arc<orientation_cache::OrientationCacheStore>,
+    ) -> Self {
+        self.orientation_cache_store = Some(store);
         self
     }
 

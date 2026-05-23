@@ -84,6 +84,26 @@ pub struct RecallParams {
     /// v0.4.7 — include the supersession chain in the response.
     /// Honored only when `current_fact_key` is also set.
     pub current_fact_include_chain: Option<bool>,
+    /// v0.4.8 — opt-in orientation cache. When `true` AND the
+    /// engine has an `OrientationCacheStore` attached, the recall
+    /// updates a per-namespace, constant-token "context map" and
+    /// returns a bounded rendering in
+    /// `response.orientation_cache`. PEEK-anchored
+    /// (arXiv:2605.19932).
+    pub orientation_cache: Option<bool>,
+    /// v0.4.8 — explicit namespace label. When omitted, the engine
+    /// derives one from `(org_id, agent_id)`.
+    pub orientation_namespace: Option<String>,
+    /// v0.4.8 — token budget for the rendered map. Defaults to
+    /// 512 when omitted.
+    pub orientation_token_budget: Option<u32>,
+    /// v0.4.8 — include the rendered map in the response.
+    /// Defaults to `true` when omitted.
+    pub orientation_include_in_response: Option<bool>,
+    /// v0.4.8 — run the Distiller and update the in-process store.
+    /// Defaults to `true` when omitted; set to `false` for warm-up
+    /// or inspection calls that should not mutate the map.
+    pub orientation_distill: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -225,6 +245,18 @@ pub async fn recall_handler(
                 include_supersession_chain: params.current_fact_include_chain.unwrap_or(false),
             }
         }),
+        orientation_cache: if params.orientation_cache.unwrap_or(false) {
+            Some(
+                mnemo_core::query::orientation_cache::OrientationCacheConfig {
+                    namespace: params.orientation_namespace.clone(),
+                    token_budget: params.orientation_token_budget,
+                    include_in_response: params.orientation_include_in_response.unwrap_or(true),
+                    distill: params.orientation_distill.unwrap_or(true),
+                },
+            )
+        } else {
+            None
+        },
     };
 
     let response = engine.recall(request).await?;

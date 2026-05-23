@@ -91,6 +91,7 @@ async fn test_full_lifecycle() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .expect("recall should succeed");
@@ -155,6 +156,7 @@ async fn test_full_lifecycle() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .expect("recall should succeed");
@@ -256,6 +258,7 @@ async fn test_multiple_memories_with_filtering() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -283,6 +286,7 @@ async fn test_multiple_memories_with_filtering() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -310,6 +314,7 @@ async fn test_multiple_memories_with_filtering() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -338,6 +343,7 @@ async fn test_multiple_memories_with_filtering() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -434,6 +440,7 @@ async fn test_access_count_increments() {
                 with_provenance: None,
                 mode: None,
                 current_fact_resolver: None,
+                orientation_cache: None,
             })
             .await
             .unwrap();
@@ -881,6 +888,7 @@ async fn test_exact_recall_strategy() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -1120,6 +1128,7 @@ async fn test_quarantined_excluded_from_recall() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -1238,6 +1247,7 @@ async fn test_recall_scope_filter() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -1267,6 +1277,7 @@ async fn test_recall_scope_filter() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -1329,6 +1340,7 @@ async fn test_recall_multi_type_filter() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -1833,6 +1845,7 @@ async fn test_hybrid_with_graph_signal() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -1923,6 +1936,7 @@ async fn test_sync_push_pull() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -2130,6 +2144,7 @@ async fn test_permission_safe_ann() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -2242,6 +2257,7 @@ async fn test_as_of_point_in_time() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -2271,6 +2287,7 @@ async fn test_as_of_point_in_time() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -2302,6 +2319,7 @@ async fn test_as_of_point_in_time() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();
@@ -2357,6 +2375,7 @@ async fn test_event_integrity_verification() {
             with_provenance: None,
             mode: None,
             current_fact_resolver: None,
+            orientation_cache: None,
         })
         .await
         .unwrap();

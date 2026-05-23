@@ -4,12 +4,155 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-05-22)
+### Landing trace (2026-05-23)
 
-v0.4.7 cut today (workspace 0.4.6 → 0.4.7). Next cycle's accumulator
-opens here. The v0.4.6 land was commit
-[`69a8ca6`](https://github.com/sattyamjjain/mnemo/commit/69a8ca66d6b888a77908c4f8dc09b91d1dd654f8)
-(2026-05-21 admin-merge of yesterday's PR #87).
+v0.4.8 cut today (workspace 0.4.7 → 0.4.8). Next cycle's accumulator
+opens here. The v0.4.7 land was commit
+[`df84482`](https://github.com/sattyamjjain/mnemo/commit/df84482)
+(2026-05-22 admin-merge of PR #88 — MINTEval interference scenario
++ current-fact resolver).
+
+## [0.4.8] - 2026-05-23
+
+PEEK-anchored orientation cache (constant-token "context map")
+recall mode. Adds an opt-in post-processor over the standard recall
+result set that maintains a per-namespace, fixed-token-budget map of
+entities + `UPPER_SNAKE` constants + fenced schema fragments
+distilled from each hit, and returns a bounded rendering alongside
+`top-k`. Default read path is unchanged.
+
+### Added
+
+- **New `mnemo_core::query::orientation_cache` module.** Carries
+  `OrientationCacheConfig { namespace, token_budget,
+  include_in_response, distill }` + `OrientationCacheStore`
+  (in-process `Arc<RwLock<HashMap<namespace, ContextMap>>>`) +
+  `RenderedContextMap { namespace, entities, constants, schemas,
+  token_estimate, budget, hit_count }` + a heuristic `distill()`
+  + a priority-evictor `evict_to_budget()` + a one-shot
+  `update_and_render()` driver. The Distiller extracts
+  capitalized noun phrases (entities), `UPPER_SNAKE = value`
+  / `UPPER_SNAKE: value` pairs (constants), and fenced ```` ``` ````
+  blocks + `CREATE TABLE` / `interface` / `type` / `struct`
+  declarations (schemas). The Evictor scores entries by
+  `freq × recency × (1 - token_share)` and drops the lowest
+  until under budget. **8 unit tests** cover entity / constant /
+  schema extraction, namespace derivation + override, bounded
+  rendering, eviction at small budget, namespace isolation,
+  read-only config, and budget invariance across many updates.
+
+- **New `RecallRequest.orientation_cache: Option<OrientationCacheConfig>`
+  field.** Backwards-compatible additive field. When `Some` AND
+  the engine has an `OrientationCacheStore` attached via
+  `MnemoEngine::with_orientation_cache_store()`, the engine
+  updates the per-namespace map from each hit and (when
+  `include_in_response = true`) returns the bounded rendering in
+  the response.
+
+- **New `RecallResponse.orientation_cache: Option<RenderedContextMap>`
+  field.** Surfaces the bounded map when the cache is enabled
+  AND the config did not set `include_in_response = false`.
+
+- **New `MnemoEngine.orientation_cache_store` +
+  `with_orientation_cache_store()` builder.** Per-engine attach
+  point for the in-process namespace-keyed store. Mirrors the
+  existing `with_cache` / `with_encryption` pattern.
+
+- **MCP `recall` tool param `orientation_cache`.** New
+  `RecallOrientationCacheInput { namespace, token_budget,
+  include_in_response, distill }` in
+  [`crates/mnemo-mcp/src/tools/recall.rs`](crates/mnemo-mcp/src/tools/recall.rs)
+  threaded through the MCP tool dispatch. The MCP response JSON
+  carries a top-level `orientation_cache` field when the rendered
+  map is present.
+
+- **REST recall query params** `orientation_cache`,
+  `orientation_namespace`, `orientation_token_budget`,
+  `orientation_include_in_response`, `orientation_distill` on
+  `GET /v1/memories`. Wires through to the config without
+  changing the default query semantics.
+
+- **gRPC `OrientationCacheRequest` + `OrientationCacheResponse` +
+  `OrientationEntry`** added to `mnemo.proto`. New optional
+  `RecallRequest.orientation_cache` field (proto field 14) +
+  new optional `RecallResponse.orientation_cache` field (proto
+  field 3). Wired in `crates/mnemo-grpc/src/lib.rs` recall
+  handler.
+
+- **pgwire `/*+ orientation_cache */` SQL hint comment.** The
+  parser sets `SelectQuery.orientation_cache = true` when the
+  query contains this directive; the server then attaches a
+  default `OrientationCacheConfig::new()` to the underlying
+  `RecallRequest`. Minimal first-cut surface (no namespace /
+  budget overrides through SQL yet — REST / MCP / gRPC carry the
+  full config knobs).
+
+- **New `bench/locomo/src/bin/orientation.rs`** — PEEK-shaped
+  repeated-context scenario. For each `K ∈ {3, 6, 10, 15}`, seeds
+  30 shared-context facts referencing a fixed cast + issues `K`
+  related recall calls per trial, comparing hybrid-only vs
+  orientation-cache arms. Reports p50 payload tokens per call +
+  p50 latency + top-1 hit parity. Writes
+  `bench/locomo/results/orientation_<YYYY-MM-DD>.md`. Anchored
+  on [arXiv:2605.19932](https://arxiv.org/abs/2605.19932) in
+  the module doc-comment.
+
+- **README "Repeated-context recall — orientation cache (v0.4.8)"
+  subsection** under Access Protocols with primary-source link +
+  pointer to the module + pointer to the bench scenario +
+  explicit "not a learned summariser / not a context-window
+  extender / not persisted" disclaimers.
+
+- **`bench/locomo/README.md`** gains a row for the new
+  `orientation` bin alongside the existing three.
+
+### Changed
+
+- **Workspace version 0.4.7 → 0.4.8.** Cargo.toml workspace +
+  internal-crate dep pins; python/pyproject.toml;
+  sdks/typescript/package.json; sdks/go/mnemo.go (`Version`
+  const); python/mnemo/__init__.py `__version__`. Regression
+  tests bumped: `cargo_pkg_version_matches_v0_4_8` (renamed from
+  `_v0_4_7`) + `test_v0_4_8_pinned` (renamed from
+  `_v0_4_7_pinned`).
+
+- **~30 RecallRequest construction sites** across mnemo-core
+  (engine + benches + integration tests), mnemo-grpc,
+  mnemo-pgwire, mnemo-rest, mnemo-letta, mnemo-mcp tests,
+  mnemo-cli, python/src/lib.rs, and bench/locomo bins updated
+  to set `orientation_cache: None` (matches the additive-field
+  pattern from v0.4.4's `mode` addition and v0.4.7's
+  `current_fact_resolver` addition).
+
+### Honest scope — what's NOT in v0.4.8
+
+- **NOT a write-side memory consolidator.** The cache only
+  summarises hits as they pass through recall; it does not
+  rewrite, compact, or persist any memory record on disk.
+- **NOT a learned summariser.** The Distiller is heuristic by
+  choice — regex-free pure-Rust extraction of capitalized
+  entities, `UPPER_SNAKE` constants, and fenced/declared schemas.
+  An LLM-backed Distiller variant is parked for v0.5.x; treat the
+  extracted entries as pointers, not paraphrases.
+- **NOT a context-window extender.** The rendered map fits inside
+  the recall response payload and is bounded by the caller's
+  `token_budget` (default 512). The cache does not bypass any
+  model context limit.
+- **NOT a faithful PEEK reproduction.** PEEK uses a learned
+  prefix encoder and a write-side update path. This module
+  adopts the *orientation map + constant-token budget* shape
+  only. The bench measures the *shape* of the savings, not the
+  absolute number PEEK reports.
+- **NOT persisted.** The store is in-process
+  (`Arc<RwLock<HashMap<..>>>`). Restart drops it. Persistence
+  to DuckDB / Postgres is a v0.5.x knob.
+- **Token estimate is `(len / 4)`-heuristic, not `tiktoken-rs`.**
+  Calibration against a real tokenizer is a follow-up for
+  production sizing decisions.
+- **pgwire surface is minimal.** Only the boolean hint
+  `/*+ orientation_cache */` is parsed; namespace + budget
+  overrides through SQL are deferred. Full-config knobs travel
+  through MCP / REST / gRPC today.
 
 ## [0.4.7] - 2026-05-22
 
