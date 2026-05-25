@@ -22,6 +22,10 @@ path = "src/bin/interference.rs"
 name = "orientation"
 path = "src/bin/orientation.rs"
 
+[[bin]]
+name = "auto_dreamer_consolidation"
+path = "src/bin/auto_dreamer_consolidation.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }

@@ -1,6 +1,6 @@
 # `mnemo-locomo-bench`
 
-Authenticated nightly benchmark crate for `mnemo`. Four bins today:
+Authenticated nightly benchmark crate for `mnemo`. Five bins today:
 
 | Bin | What it measures | Authentication |
 |---|---|---|
@@ -8,6 +8,7 @@ Authenticated nightly benchmark crate for `mnemo`. Four bins today:
 | `grep_vs_vector_replay` | Three-mode (`vector_only` / `bm25_only` / `rrf_hybrid`) recall replay against a LongMemEval-shaped slice, exact-substring smoke metric | Runnable today on the bundled 45-record synthesized slice with no API key; gated GPT-judge-scored run requires the same secrets as [#44](https://github.com/sattyamjjain/mnemo/issues/44) |
 | `interference` | **v0.4.7** — MINTEval-shaped interference scenario (arXiv:2605.18565). Revises a target fact K∈{1,3,5,10} times, queries via the v0.4.7 current-fact resolver, reports current-fact-accuracy@K + supersession-chain length per K. Default vs resolver arms. | Runnable today on a synthetic distractor pool; the official MINTEval GPT-judge scoring is gated behind [#44](https://github.com/sattyamjjain/mnemo/issues/44). See [`src/bin/interference.rs`](src/bin/interference.rs). |
 | `orientation` | **v0.4.8** — PEEK-shaped repeated-context scenario (arXiv:2605.19932). Issues K∈{3,6,10,15} related recall calls per trial against a shared synthetic context, compares hybrid-only vs orientation-cache token cost, asserts top-1 parity. Heuristic Distiller, NoopEmbedding by design. | Runnable today on a synthetic context pool with no API key; calibrating per-call token cost against `tiktoken-rs` is a follow-up. See [`src/bin/orientation.rs`](src/bin/orientation.rs). |
+| `auto_dreamer_consolidation` | **v0.4.8** — Auto-Dreamer-style offline consolidation scenario. Ingests a multi-session trajectory, runs `run_decay_pass` + `run_consolidation` offline, reports `active_bank_ratio` and held-out `recall_pre` / `recall_post`. Asserts Auto-Dreamer's "smaller active bank, equal-or-better recall" axis. | Runnable today on a synthetic multi-session pool with no API key; LLM-summarizer arm is gated behind [#44](https://github.com/sattyamjjain/mnemo/issues/44). See [`src/bin/auto_dreamer_consolidation.rs`](src/bin/auto_dreamer_consolidation.rs). |
 
 ## `mnemo-locomo` (v0.4.1 P0-1)
 
@@ -81,9 +82,46 @@ The fourth existing strategy `"graph"` is intentionally omitted from
 this bin — it requires a relation graph the LongMemEval-shaped data
 does not carry. A graph-aware comparison is a follow-up.
 
+## Auto-Dreamer offline consolidation — `auto_dreamer_consolidation`
+
+Added 2026-05-25. Mirrors Auto-Dreamer's "smaller active bank,
+equal-or-better recall" axis against mnemo's existing
+`run_decay_pass` + `run_consolidation` path
+([`crates/mnemo-core/src/query/lifecycle.rs`](../../crates/mnemo-core/src/query/lifecycle.rs)).
+The bin seeds `S` sessions × `F` facts each with one needle per
+session, backdates older sessions so the offline decay pass marks
+them `Archived` / `Forgotten` deterministically, snapshots the
+active bank + held-out recall pre, runs the offline pass, and
+re-snapshots post. Emits a Markdown report
+(`bench/locomo/results/auto_dreamer_<YYYY-MM-DD>.md`) plus a JSON
+summary (`auto_dreamer_<YYYY-MM-DD>.json`) carrying
+`active_bank_ratio`, `recall_pre`, `recall_post` so the headline is
+citable in the README.
+
+### Run
+
+```bash
+cargo run --release --bin auto_dreamer_consolidation -p mnemo-locomo-bench
+# defaults: 8 sessions × 25 facts × 5 trials,
+# archive_threshold=0.40, forget_threshold=0.10, min_cluster_size=3.
+# Tunable: --sessions, --facts-per-session, --trials,
+# --archive-threshold, --forget-threshold, --min-cluster-size.
+```
+
+### What this bin does NOT do
+
+Documented in detail in the bin's module-level rustdoc; the short
+version: not a faithful Auto-Dreamer reproduction (mnemo's
+`run_consolidation` clusters by tag overlap, not an LLM
+summarizer); not the `criterion` crate (the same structured-report
+pattern the other `bench/locomo` bins use); not a real embedder
+run (`NoopEmbedding` so the wiring is self-contained);
+single-agent, single-scope.
+
 ## Cross-references
 
 - bin module rustdoc: [`src/bin/grep_vs_vector_replay.rs`](src/bin/grep_vs_vector_replay.rs)
 - existing criterion bench (latency only): [`crates/mnemo-core/benches/longmemeval_bench.rs`](../../crates/mnemo-core/benches/longmemeval_bench.rs)
 - gated-secrets backlog: [#44](https://github.com/sattyamjjain/mnemo/issues/44)
 - arXiv:2605.15184 reference: [`docs/research/grep-vs-vector-2605.15184.md`](../../docs/research/grep-vs-vector-2605.15184.md) — (TBA in companion docs PR)
+- reflection / consolidation modules: [`crates/mnemo-core/src/query/reflection.rs`](../../crates/mnemo-core/src/query/reflection.rs), [`crates/mnemo-core/src/query/lifecycle.rs`](../../crates/mnemo-core/src/query/lifecycle.rs)
