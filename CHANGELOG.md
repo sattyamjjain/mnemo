@@ -4,32 +4,62 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-05-25)
+### Landing trace (2026-05-26)
 
-Auto-Dreamer-shaped offline consolidation bench. New scenario at
-[`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs)
-exercises the engine's existing
-[`mnemo_core::query::lifecycle::run_decay_pass`](crates/mnemo-core/src/query/lifecycle.rs)
-+ [`run_consolidation`](crates/mnemo-core/src/query/lifecycle.rs)
-path end-to-end on a synthetic multi-session trajectory (8 sessions ×
-25 facts × 5 trials by default) and reports the two axes Auto-Dreamer
-headlines as its claim: `active_bank_ratio = post / pre` (expects
-`< 1.0`) and held-out `recall_post >= recall_pre`. Emits a Markdown
-report (`bench/locomo/results/auto_dreamer_<YYYY-MM-DD>.md`) plus a
-JSON summary (`auto_dreamer_<YYYY-MM-DD>.json`) carrying
-`active_bank_ratio`, `recall_pre`, `recall_post`, and the offline-pass
-elapsed time, so the headline is citable in the README.
+v0.4.9 cut today (workspace 0.4.8 → 0.4.9). Next cycle's accumulator
+opens here. The Auto-Dreamer offline-consolidation bench landed as
+commit
+[`c34039c`](https://github.com/sattyamjjain/mnemo/commit/c34039c83d5fd313201c62fa10f24187786466f0)
+(2026-05-26 admin-merge of PR #96); the embedding-backend selection
+bench + SLA-aware recommender is the headline feature of this cut.
 
-Anchored on Anthropic's Auto-Dreamer / "Auto Dream" offline-consolidation
-description — mnemo's reflection module
-([`crates/mnemo-core/src/query/reflection.rs`](crates/mnemo-core/src/query/reflection.rs))
-already calls out Auto-Dream compatibility; this bin is the bench-side
-companion. **No new public API surface** — the bin only consumes
-existing `mnemo_core::query::lifecycle::*` APIs. The default read path
-is unchanged. See the bin module rustdoc for the full "what this bin is
-NOT" block (not a faithful Auto-Dreamer reproduction; not the
-`criterion` crate; `NoopEmbedding` makes the vector lane degenerate by
-design; single-agent, single-scope).
+## [0.4.9] - 2026-05-26
+
+Embedding-backend selection bench + SLA-aware recommender +
+Auto-Dreamer-shaped offline consolidation bench. **Measurement and
+recommendation only** — no retrieval-default change, no RRF-weights
+change, no managed-cloud default. The embedded-first wedge stays.
+
+### Added
+
+- **New `bench/embeddings` crate (criterion + lib +
+  `mnemo bench embeddings --slo-ms <N>` CLI subcommand).** Anchored
+  on [arXiv:2605.23618](https://arxiv.org/abs/2605.23618) (GE2 vs
+  local encoders — quality + latency). For every *configured*
+  backend (Noop + a bench-local hashing baseline always;
+  `OpenAiEmbedding` if `OPENAI_API_KEY` is set; `OnnxEmbedding` if
+  `MNEMO_ONNX_MODEL_PATH` is set AND `mnemo-core` is built with the
+  `onnx` feature), the bench measures nDCG@10, recall@10, p50/p95
+  single-vector embed latency, and throughput at batch sizes
+  1 / 8 / 32 on a 50-document / 10-query labeled fixture checked
+  into `bench/embeddings/data/`. The recommender picks the
+  **highest-nDCG backend whose p95 ≤ the SLO** and reports the
+  explicit nDCG gap vs the absolute best-quality backend. No new
+  production embedding backend was added — the bench-local
+  `hashing-baseline` is a lexical floor that lives in
+  `bench/embeddings/src/lib.rs`, not in `mnemo-core`. See
+  [`bench/embeddings/README.md`](bench/embeddings/README.md) for
+  the full "what this bench is NOT" block.
+
+- **New `Command::Bench(BenchCommand)` clap variant on the `mnemo`
+  binary.** Dispatches `mnemo bench embeddings --slo-ms <N>` to
+  `mnemo_embeddings_bench::run_all` + `recommend` + `render_table`.
+  No other CLI shape changes; existing subcommands
+  (`baseline`, `mcp-server`, `eval`) are untouched.
+
+- **Auto-Dreamer-shaped offline consolidation bench**
+  ([`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs)).
+  Exercises the engine's existing
+  [`mnemo_core::query::lifecycle::run_decay_pass`](crates/mnemo-core/src/query/lifecycle.rs)
+  + [`run_consolidation`](crates/mnemo-core/src/query/lifecycle.rs)
+  path end-to-end on a synthetic multi-session trajectory (8 sessions ×
+  25 facts × 5 trials by default) and reports
+  `active_bank_ratio = post / pre` (expects `< 1.0`) and held-out
+  `recall_post >= recall_pre`. Emits a Markdown report
+  (`bench/locomo/results/auto_dreamer_<YYYY-MM-DD>.md`) plus a JSON
+  summary (`auto_dreamer_<YYYY-MM-DD>.json`) carrying
+  `active_bank_ratio`, `recall_pre`, `recall_post`, and the
+  offline-pass elapsed time. No new public API surface.
 
 ### Landing trace (2026-05-23)
 

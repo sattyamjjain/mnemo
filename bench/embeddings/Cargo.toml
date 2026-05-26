@@ -1,0 +1,28 @@
+[package]
+name = "mnemo-embeddings-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Embedding-backend selection benchmark — quality (recall@10, nDCG@10) + latency (p50, p95, vec/s) across OpenAI / ONNX / Noop on a labeled fixture, with an SLA-aware recommender. Anchored on arXiv:2605.23618 (v0.4.9)."
+
+[lib]
+name = "mnemo_embeddings_bench"
+path = "src/lib.rs"
+
+[[bench]]
+name = "embedding_quality"
+harness = false
+path = "benches/embedding_quality.rs"
+
+[dependencies]
+mnemo-core = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }

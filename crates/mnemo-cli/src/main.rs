@@ -110,6 +110,46 @@ enum Command {
     /// configuration sweeps (provenance on/off, recency half-life,
     /// hybrid weights) against a fixed prompt set.
     Eval(EvalArgs),
+    /// Run a measurement-only benchmark (v0.4.9).
+    ///
+    /// Currently exposes one subcommand: `embeddings`, which runs the
+    /// embedding-backend selection bench plus an SLA-aware recommender
+    /// anchored on arXiv:2605.23618 (GE2 vs local encoders — quality
+    /// and latency). The bench is measurement and recommendation
+    /// only: no retrieval defaults change, no RRF-weights change,
+    /// no managed-cloud default.
+    #[command(subcommand)]
+    Bench(BenchCommand),
+}
+
+#[derive(Subcommand)]
+enum BenchCommand {
+    /// Embedding-backend selection bench. For every configured backend
+    /// (Noop + bench-local hashing baseline always; OpenAI if
+    /// `OPENAI_API_KEY` is set; ONNX if `MNEMO_ONNX_MODEL_PATH` is set
+    /// and `mnemo-core` was built with the `onnx` feature), measure
+    /// nDCG@10, recall@10, p50/p95 single-vector embed latency, and
+    /// throughput at batch sizes 1/8/32, then recommend the
+    /// highest-nDCG backend whose p95 ≤ the SLO.
+    Embeddings(BenchEmbeddingsArgs),
+}
+
+#[derive(clap::Args)]
+struct BenchEmbeddingsArgs {
+    /// p95 latency SLO in milliseconds. The recommender picks the
+    /// highest-nDCG backend whose measured p95 ≤ this value.
+    #[arg(long, default_value_t = 50.0)]
+    slo_ms: f64,
+    /// Embedding dimensions to construct each backend with. The
+    /// fixture is small, so the default 384 is fine for both
+    /// MiniLM-class local models and `text-embedding-3-small` at
+    /// reduced dim.
+    #[arg(long, default_value_t = 384)]
+    dimensions: usize,
+    /// Number of single-vector embed calls timed per backend for
+    /// p50/p95. Default 32; raise for tighter percentile estimates.
+    #[arg(long, default_value_t = 32)]
+    latency_samples: usize,
 }
 
 #[derive(clap::Args)]
@@ -175,6 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Baseline(args)) => return run_baseline(&cli, args).await,
         Some(Command::McpServer(args)) => return run_mcp_server(&cli, args).await,
         Some(Command::Eval(args)) => return run_eval(&cli, args).await,
+        Some(Command::Bench(sub)) => return run_bench(sub).await,
         None => {}
     }
 
@@ -886,5 +927,30 @@ async fn run_eval(cli: &Cli, args: &EvalArgs) -> Result<(), Box<dyn std::error::
     });
     writeln!(out, "{}", serde_json::to_string(&summary)?)?;
     out.flush()?;
+    Ok(())
+}
+
+/// v0.4.9 — `mnemo bench <subcommand>` dispatch.
+async fn run_bench(sub: &BenchCommand) -> Result<(), Box<dyn std::error::Error>> {
+    match sub {
+        BenchCommand::Embeddings(args) => run_bench_embeddings(args).await,
+    }
+}
+
+async fn run_bench_embeddings(
+    args: &BenchEmbeddingsArgs,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let opts = mnemo_embeddings_bench::RunOptions {
+        dimensions: args.dimensions,
+        latency_samples: args.latency_samples,
+    };
+    let results = mnemo_embeddings_bench::run_all(&opts).await;
+    let rows: Vec<mnemo_embeddings_bench::BackendRow> = results
+        .iter()
+        .filter_map(|(_, row, _)| row.clone())
+        .collect();
+    let rec = mnemo_embeddings_bench::recommend(&rows, args.slo_ms);
+    let table = mnemo_embeddings_bench::render_table(&results, &rec);
+    print!("{table}");
     Ok(())
 }

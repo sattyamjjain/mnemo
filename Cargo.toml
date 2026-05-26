@@ -22,11 +22,12 @@ members = [
     "crates/mnemo-golem-wit",
     "crates/mnemo-golem-host",
     "bench/locomo",
+    "bench/embeddings",
     "python",
 ]
 
 [workspace.package]
-version = "0.4.8"
+version = "0.4.9"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"

@@ -40,6 +40,11 @@ hex = { workspace = true }
 sha2 = { workspace = true }
 chrono = { workspace = true }
 
+# v0.4.9 — `mnemo bench embeddings --slo-ms <N>` subcommand. Path-only
+# dep (bench crates carry publish = false and are not in the workspace
+# internal-deps section).
+mnemo-embeddings-bench = { path = "../../bench/embeddings" }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

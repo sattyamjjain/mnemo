@@ -1,0 +1,42 @@
+[
+  {
+    "query": "how do relational engines support many readers without blocking each other",
+    "relevant_ids": ["db-01", "db-10"]
+  },
+  {
+    "query": "what makes a column faster to look up by value",
+    "relevant_ids": ["db-02", "db-03"]
+  },
+  {
+    "query": "how does a deep network's optimizer move weights toward lower error",
+    "relevant_ids": ["ml-01", "ml-02"]
+  },
+  {
+    "query": "what stops a model from memorizing the training data",
+    "relevant_ids": ["ml-03", "ml-04"]
+  },
+  {
+    "query": "what architecture lets every token attend to every other token in a sequence",
+    "relevant_ids": ["ml-08", "ml-09"]
+  },
+  {
+    "query": "how do two machines start a reliable byte stream over the internet",
+    "relevant_ids": ["net-01", "net-03"]
+  },
+  {
+    "query": "how is a hostname turned into an IP address",
+    "relevant_ids": ["net-05"]
+  },
+  {
+    "query": "how can a server prove its identity to a client before sending traffic",
+    "relevant_ids": ["net-04", "sec-08"]
+  },
+  {
+    "query": "how do servers stop attackers from injecting code into a database query",
+    "relevant_ids": ["sec-06", "sec-07"]
+  },
+  {
+    "query": "how does the kernel let many threads run on a small number of cores",
+    "relevant_ids": ["os-03", "os-02"]
+  }
+]
