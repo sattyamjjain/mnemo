@@ -1,0 +1,25 @@
+{
+  "anchor": "Auto-Dreamer (offline consolidation: smaller active bank, equal-or-better recall)",
+  "auto_dreamer_assertions": {
+    "equal_or_better_recall": true,
+    "smaller_active_bank": true
+  },
+  "config": {
+    "archive_threshold": 0.4000000059604645,
+    "facts_per_session": 12,
+    "forget_threshold": 0.10000000149011612,
+    "min_cluster_size": 3,
+    "sessions": 6,
+    "trials": 3
+  },
+  "date": "2026-05-25",
+  "scenario": "auto_dreamer_consolidation",
+  "summary_median": {
+    "active_bank_post": 1.0,
+    "active_bank_pre": 72.0,
+    "active_bank_ratio": 0.013888888888888888,
+    "offline_pass_elapsed_ms": 41.634167,
+    "recall_post": 1.0,
+    "recall_pre": 0.16666666666666666
+  }
+}

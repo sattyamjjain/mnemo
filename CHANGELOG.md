@@ -4,6 +4,33 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-05-25)
+
+Auto-Dreamer-shaped offline consolidation bench. New scenario at
+[`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs)
+exercises the engine's existing
+[`mnemo_core::query::lifecycle::run_decay_pass`](crates/mnemo-core/src/query/lifecycle.rs)
++ [`run_consolidation`](crates/mnemo-core/src/query/lifecycle.rs)
+path end-to-end on a synthetic multi-session trajectory (8 sessions ×
+25 facts × 5 trials by default) and reports the two axes Auto-Dreamer
+headlines as its claim: `active_bank_ratio = post / pre` (expects
+`< 1.0`) and held-out `recall_post >= recall_pre`. Emits a Markdown
+report (`bench/locomo/results/auto_dreamer_<YYYY-MM-DD>.md`) plus a
+JSON summary (`auto_dreamer_<YYYY-MM-DD>.json`) carrying
+`active_bank_ratio`, `recall_pre`, `recall_post`, and the offline-pass
+elapsed time, so the headline is citable in the README.
+
+Anchored on Anthropic's Auto-Dreamer / "Auto Dream" offline-consolidation
+description — mnemo's reflection module
+([`crates/mnemo-core/src/query/reflection.rs`](crates/mnemo-core/src/query/reflection.rs))
+already calls out Auto-Dream compatibility; this bin is the bench-side
+companion. **No new public API surface** — the bin only consumes
+existing `mnemo_core::query::lifecycle::*` APIs. The default read path
+is unchanged. See the bin module rustdoc for the full "what this bin is
+NOT" block (not a faithful Auto-Dreamer reproduction; not the
+`criterion` crate; `NoopEmbedding` makes the vector lane degenerate by
+design; single-agent, single-scope).
+
 ### Landing trace (2026-05-23)
 
 v0.4.8 cut today (workspace 0.4.7 → 0.4.8). Next cycle's accumulator
