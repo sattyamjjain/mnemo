@@ -26,6 +26,10 @@ path = "src/bin/orientation.rs"
 name = "auto_dreamer_consolidation"
 path = "src/bin/auto_dreamer_consolidation.rs"
 
+[[bin]]
+name = "maturity_consolidation"
+path = "src/bin/maturity_consolidation.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }

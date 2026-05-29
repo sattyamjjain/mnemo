@@ -1,0 +1,43 @@
+{
+  "anchor": "FluxMem (arXiv:2605.28773) — prior art only; mnemo policy is a structural cousin",
+  "config": {
+    "facts_per_cluster": 4,
+    "fresh_clusters": 3,
+    "mature_access_count": 12,
+    "mature_age_hours": 168,
+    "mature_clusters": 3,
+    "maturity_threshold": 0.5,
+    "min_cluster_size": 3,
+    "trials": 5
+  },
+  "date": "2026-05-29",
+  "scenario": "maturity_consolidation",
+  "summary_median": {
+    "fixed": {
+      "active_bank_post": 6.0,
+      "active_bank_pre": 24.0,
+      "active_bank_ratio": 0.25,
+      "clusters_consolidated": 6.0,
+      "elapsed_ms": 133.423166,
+      "overreach": 3.0,
+      "recall_post": 1.0,
+      "recall_pre": 0.5
+    },
+    "maturity": {
+      "active_bank_post": 15.0,
+      "active_bank_pre": 24.0,
+      "active_bank_ratio": 0.625,
+      "clusters_consolidated": 3.0,
+      "elapsed_ms": 17.246875,
+      "overreach": 0.0,
+      "recall_post": 1.0,
+      "recall_pre": 0.5
+    }
+  },
+  "verdict": {
+    "no_overreach": true,
+    "pareto_win": false,
+    "recall_not_worse": true,
+    "reduction_not_worse": false
+  }
+}

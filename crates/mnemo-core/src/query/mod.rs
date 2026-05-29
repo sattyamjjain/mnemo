@@ -6,6 +6,7 @@ pub mod current_fact_resolver;
 pub mod event_builder;
 pub mod forget;
 pub mod lifecycle;
+pub mod maturity;
 pub mod merge;
 pub mod orientation_cache;
 pub mod poisoning;
@@ -90,6 +91,16 @@ pub struct MnemoEngine {
     /// overhead at zero. Attach via
     /// [`MnemoEngine::with_orientation_cache_store`].
     pub orientation_cache_store: Option<Arc<orientation_cache::OrientationCacheStore>>,
+    /// v0.4.10 — feedback-driven consolidation trigger metric. Default
+    /// [`maturity::ConsolidationPolicy::FixedSize`] preserves the
+    /// v0.4.x behaviour. Attach a
+    /// [`maturity::ConsolidationPolicy::MaturityDriven`] policy via
+    /// [`MnemoEngine::with_consolidation_policy`] to opt in to the
+    /// scalar maturity gate (recency / hit-success / edge-degree /
+    /// redundancy). Internal anchor: FluxMem (arXiv:2605.28773), prior
+    /// art only — mnemo's policy is a structural cousin, not a
+    /// reproduction.
+    pub consolidation_policy: maturity::ConsolidationPolicy,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -122,6 +133,7 @@ impl MnemoEngine {
             poisoning_policy: poisoning::PoisoningPolicy::default(),
             provenance_signer: None,
             orientation_cache_store: None,
+            consolidation_policy: maturity::ConsolidationPolicy::default(),
         }
     }
 
@@ -195,6 +207,16 @@ impl MnemoEngine {
         store: Arc<orientation_cache::OrientationCacheStore>,
     ) -> Self {
         self.orientation_cache_store = Some(store);
+        self
+    }
+
+    /// v0.4.10 — attach a [`maturity::ConsolidationPolicy`]. The default
+    /// `FixedSize` policy preserves the legacy behaviour; pass
+    /// `MaturityDriven(MaturityPolicy::balanced())` to opt in to the
+    /// feedback-driven trigger metric. See
+    /// [`crate::query::maturity`] for the score contract.
+    pub fn with_consolidation_policy(mut self, policy: maturity::ConsolidationPolicy) -> Self {
+        self.consolidation_policy = policy;
         self
     }
 

@@ -370,6 +370,21 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
         }
     }
 
+    // v0.4.10 — opportunistic, feedback-driven consolidation trigger.
+    // Best-effort: failures are logged, never propagated to the caller.
+    // Skipped under the default FixedSize policy and when the policy
+    // explicitly disables the forget hook.
+    if !forgotten.is_empty()
+        && let crate::query::maturity::ConsolidationPolicy::MaturityDriven(ref p) =
+            engine.consolidation_policy
+        && p.trigger_on_forget
+        && let Err(e) =
+            super::lifecycle::run_consolidation(engine, &agent_id, p.min_cluster_size_floor.max(1))
+                .await
+    {
+        tracing::warn!(error = %e, "post-forget maturity-driven consolidation failed (best-effort)");
+    }
+
     Ok(ForgetResponse { forgotten, errors })
 }
 

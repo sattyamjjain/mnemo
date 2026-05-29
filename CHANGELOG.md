@@ -13,6 +13,40 @@ commit
 (2026-05-26 admin-merge of PR #96); the embedding-backend selection
 bench + SLA-aware recommender is the headline feature of this cut.
 
+### Added (v0.4.10 work-in-progress, 2026-05-29)
+
+- **Feedback-driven consolidation trigger metric.** New
+  [`crate::query::maturity`](crates/mnemo-core/src/query/maturity.rs)
+  module ships a per-cluster scalar maturity score combining four
+  components — access-recency, retrieval-hit success, edge degree in
+  the graph store, and pairwise embedding redundancy — with tunable
+  weights and saturations. The new
+  `ConsolidationPolicy::MaturityDriven(MaturityPolicy)` engine config
+  gates `run_consolidation` on the score crossing a configurable
+  threshold; the default `ConsolidationPolicy::FixedSize` preserves the
+  v0.4.x unconditional-on-size behaviour byte-for-byte. The policy is
+  inherited by the existing `forget` and `checkpoint` paths
+  (opportunistic, best-effort, never propagates errors), so all four
+  access protocols (MCP / REST / gRPC / pgwire) pick it up without a
+  new MCP tool. Internal prior-art anchor only:
+  [arXiv:2605.28773](https://arxiv.org/abs/2605.28773) (FluxMem) —
+  mnemo's policy is a structural cousin, not a reproduction.
+- **New `bench/locomo/src/bin/maturity_consolidation.rs` scenario.**
+  LoCoMo-style synthetic trace mixing "mature" (backdated, hit,
+  edge-rich) and "fresh" (zero-access, no-edge) clusters; runs both
+  `FixedSize` and `MaturityDriven` arms and reports `active_bank_ratio`,
+  `recall_post`, `clusters_consolidated`, `overreach` (fresh clusters
+  consolidated), and a Pareto verdict on the user-specified
+  (recall_retained × store_reduction) axes. Markdown + JSON summaries
+  written to `bench/locomo/results/maturity_<date>.{md,json}`.
+- **2026-05-29 bench result on the synthetic trace.** Maturity arm
+  achieves equal recall (`1.0` vs `1.0`), zero overreach (`0` vs `3`
+  median), and ~7.7× faster consolidation pass (`~17ms` vs `~133ms`),
+  but consolidates fewer clusters, so `active_bank_ratio` is `0.625`
+  vs the fixed arm's `0.25`. No Pareto win on the (recall × reduction)
+  plane; selectivity win on overreach. **No release tag** until a
+  scenario demonstrates a true Pareto improvement.
+
 ## [0.4.9] - 2026-05-26
 
 Embedding-backend selection bench + SLA-aware recommender +

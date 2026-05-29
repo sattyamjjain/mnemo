@@ -208,6 +208,7 @@ _, _ = client.Share(mnemo.ShareInput{MemoryID: result.ID, TargetAgentID: "audito
 - **Hash chain integrity** — SHA-256 content hashes with chain linking and `verify` tool
 - **Memory poisoning detection** — anomaly scoring with prompt injection pattern detection; quarantine for flagged content
 - **Cognitive forgetting** — five strategies: soft delete, hard delete, decay, consolidation, archive
+- **Feedback-driven consolidation trigger** — opt-in `ConsolidationPolicy::MaturityDriven` gates `run_consolidation` on a per-cluster maturity score (recency × hit-success × edge-degree × redundancy) instead of firing on a fixed schedule. Inherited by `forget` and `checkpoint` automatically across MCP / REST / gRPC / pgwire; the default `FixedSize` policy preserves the v0.4.x behaviour byte-for-byte. New in v0.4.10. <!-- prior art: FluxMem, arXiv:2605.28773 — structural cousin only, not a reproduction. -->
 - **Branching and replay** — checkpoint, branch, merge, and replay agent memory timelines
 - **Point-in-time queries** — recall memories as they existed at any timestamp with `as_of`
 - **Causal debugging** — trace event causality chains up/down with type filtering

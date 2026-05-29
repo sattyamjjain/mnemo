@@ -160,6 +160,13 @@ pub struct ConsolidationResult {
     pub clusters_found: usize,
     pub new_memories_created: usize,
     pub originals_consolidated: usize,
+    /// v0.4.10 — number of clusters skipped because the engine has a
+    /// [`crate::query::maturity::ConsolidationPolicy::MaturityDriven`]
+    /// policy attached and the cluster's combined maturity score did
+    /// not clear the configured threshold. Always zero under the
+    /// default `FixedSize` policy.
+    #[serde(default)]
+    pub clusters_skipped_below_threshold: usize,
 }
 
 impl ConsolidationResult {
@@ -172,12 +179,23 @@ impl ConsolidationResult {
             clusters_found,
             new_memories_created,
             originals_consolidated,
+            clusters_skipped_below_threshold: 0,
         }
     }
 }
 
 /// Consolidate episodic memories into semantic summaries.
-/// Clusters by tag overlap and creates consolidated semantic memories.
+///
+/// Clusters by tag overlap. Whether a cluster is actually consolidated
+/// depends on the engine's
+/// [`crate::query::maturity::ConsolidationPolicy`]:
+///
+/// - `FixedSize` (default): every cluster with at least
+///   `min_cluster_size` members is consolidated unconditionally — the
+///   v0.4.x behaviour.
+/// - `MaturityDriven`: a cluster is consolidated iff its combined
+///   maturity score `>=` the policy's `threshold` AND it has at least
+///   `max(min_cluster_size, policy.min_cluster_size_floor)` members.
 pub async fn run_consolidation(
     engine: &MnemoEngine,
     agent_id: &str,
@@ -227,11 +245,50 @@ pub async fn run_consolidation(
     let mut clusters_found = 0;
     let mut new_memories_created = 0;
     let mut originals_consolidated = 0;
+    let mut clusters_skipped_below_threshold = 0;
+
+    // v0.4.10 — read the per-engine consolidation policy once. Default
+    // FixedSize preserves the legacy unconditional path.
+    let policy = engine.consolidation_policy.clone();
 
     for cluster in &clusters {
-        if cluster.len() < min_cluster_size {
+        let effective_min = match &policy {
+            crate::query::maturity::ConsolidationPolicy::FixedSize => min_cluster_size,
+            crate::query::maturity::ConsolidationPolicy::MaturityDriven(p) => {
+                min_cluster_size.max(p.min_cluster_size_floor)
+            }
+        };
+        if cluster.len() < effective_min {
             continue;
         }
+
+        // Feedback-driven trigger gate: skip the cluster when its
+        // combined maturity score does not clear the configured
+        // threshold. FixedSize policy never enters this branch.
+        if let crate::query::maturity::ConsolidationPolicy::MaturityDriven(p) = &policy {
+            match crate::query::maturity::compute_cluster_maturity(
+                engine,
+                cluster,
+                p.weights,
+                p.saturation,
+            )
+            .await?
+            {
+                Some(b) if b.combined < p.threshold => {
+                    tracing::debug!(
+                        agent_id,
+                        cluster_size = cluster.len(),
+                        score = b.combined,
+                        threshold = p.threshold,
+                        "consolidation: cluster below maturity threshold"
+                    );
+                    clusters_skipped_below_threshold += 1;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
         clusters_found += 1;
 
         // Create a consolidated semantic memory
@@ -336,6 +393,7 @@ pub async fn run_consolidation(
         clusters_found,
         new_memories_created,
         originals_consolidated,
+        clusters_skipped_below_threshold,
     })
 }
 
@@ -544,5 +602,117 @@ mod tests {
             accessed_eff > old_eff,
             "accessed memory {accessed_eff} should be higher than unaccessed {old_eff}"
         );
+    }
+
+    use crate::embedding::NoopEmbedding;
+    use crate::index::usearch::UsearchIndex;
+    use crate::query::MnemoEngine;
+    use crate::query::maturity::{
+        ConsolidationPolicy, MaturityPolicy, MaturitySaturation, MaturityWeights,
+    };
+    use crate::query::remember::RememberRequest;
+    use crate::storage::duckdb::DuckDbStorage;
+    use std::sync::Arc;
+
+    async fn seed_two_clusters(engine: &MnemoEngine, agent: &str) {
+        // Cluster A: 3 records sharing tag "topic-a".
+        for i in 0..3 {
+            let mut req = RememberRequest::new(format!("a-fact-{i}"));
+            req.tags = Some(vec!["topic-a".to_string()]);
+            req.agent_id = Some(agent.to_string());
+            engine.remember(req).await.expect("remember a");
+        }
+        // Cluster B: 3 records sharing tag "topic-b".
+        for i in 0..3 {
+            let mut req = RememberRequest::new(format!("b-fact-{i}"));
+            req.tags = Some(vec!["topic-b".to_string()]);
+            req.agent_id = Some(agent.to_string());
+            engine.remember(req).await.expect("remember b");
+        }
+    }
+
+    fn build_test_engine(policy: ConsolidationPolicy) -> MnemoEngine {
+        let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
+        let index = Arc::new(UsearchIndex::new(3).unwrap());
+        let embedding = Arc::new(NoopEmbedding::new(3));
+        MnemoEngine::new(storage, index, embedding, "tester".to_string(), None)
+            .with_consolidation_policy(policy)
+    }
+
+    #[tokio::test]
+    async fn fixed_size_policy_consolidates_unconditionally() {
+        let engine = build_test_engine(ConsolidationPolicy::FixedSize);
+        seed_two_clusters(&engine, "tester").await;
+        let result = run_consolidation(&engine, "tester", 2)
+            .await
+            .expect("run_consolidation");
+        assert_eq!(result.clusters_found, 2);
+        assert_eq!(result.new_memories_created, 2);
+        assert_eq!(result.clusters_skipped_below_threshold, 0);
+    }
+
+    #[tokio::test]
+    async fn maturity_policy_skips_below_threshold() {
+        // Threshold high enough that fresh, never-accessed, edge-less
+        // clusters with NoopEmbedding will never clear it.
+        let policy = MaturityPolicy {
+            weights: MaturityWeights::balanced(),
+            saturation: MaturitySaturation::default(),
+            threshold: 0.95,
+            min_cluster_size_floor: 2,
+            trigger_on_forget: false,
+            trigger_on_checkpoint: false,
+        };
+        let engine = build_test_engine(ConsolidationPolicy::MaturityDriven(policy));
+        seed_two_clusters(&engine, "tester").await;
+        let result = run_consolidation(&engine, "tester", 2)
+            .await
+            .expect("run_consolidation");
+        assert_eq!(result.clusters_found, 0);
+        assert_eq!(result.new_memories_created, 0);
+        assert_eq!(result.clusters_skipped_below_threshold, 2);
+    }
+
+    #[tokio::test]
+    async fn maturity_policy_consolidates_when_threshold_clears() {
+        // Threshold of 0.0 means every non-degenerate cluster passes.
+        let policy = MaturityPolicy {
+            weights: MaturityWeights::balanced(),
+            saturation: MaturitySaturation::default(),
+            threshold: 0.0,
+            min_cluster_size_floor: 2,
+            trigger_on_forget: false,
+            trigger_on_checkpoint: false,
+        };
+        let engine = build_test_engine(ConsolidationPolicy::MaturityDriven(policy));
+        seed_two_clusters(&engine, "tester").await;
+        let result = run_consolidation(&engine, "tester", 2)
+            .await
+            .expect("run_consolidation");
+        assert_eq!(result.clusters_found, 2);
+        assert_eq!(result.new_memories_created, 2);
+        assert_eq!(result.clusters_skipped_below_threshold, 0);
+    }
+
+    #[tokio::test]
+    async fn maturity_policy_respects_min_cluster_floor() {
+        // floor = 5 — clusters of 3 must be rejected on size alone.
+        let policy = MaturityPolicy {
+            weights: MaturityWeights::balanced(),
+            saturation: MaturitySaturation::default(),
+            threshold: 0.0,
+            min_cluster_size_floor: 5,
+            trigger_on_forget: false,
+            trigger_on_checkpoint: false,
+        };
+        let engine = build_test_engine(ConsolidationPolicy::MaturityDriven(policy));
+        seed_two_clusters(&engine, "tester").await;
+        let result = run_consolidation(&engine, "tester", 2)
+            .await
+            .expect("run_consolidation");
+        assert_eq!(result.clusters_found, 0);
+        assert_eq!(result.new_memories_created, 0);
+        // Skipped on size, not on threshold — the size check runs first.
+        assert_eq!(result.clusters_skipped_below_threshold, 0);
     }
 }

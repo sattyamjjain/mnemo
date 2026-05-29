@@ -120,6 +120,20 @@ pub async fn execute(
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }
 
+    // v0.4.10 — opportunistic, feedback-driven consolidation trigger.
+    // Best-effort: failures are logged, never propagated to the caller.
+    // Skipped under the default FixedSize policy and when the policy
+    // explicitly disables the checkpoint hook.
+    if let crate::query::maturity::ConsolidationPolicy::MaturityDriven(ref p) =
+        engine.consolidation_policy
+        && p.trigger_on_checkpoint
+        && let Err(e) =
+            super::lifecycle::run_consolidation(engine, &agent_id, p.min_cluster_size_floor.max(1))
+                .await
+    {
+        tracing::warn!(error = %e, "post-checkpoint maturity-driven consolidation failed (best-effort)");
+    }
+
     Ok(CheckpointResponse {
         id,
         parent_id,
