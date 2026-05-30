@@ -35,6 +35,10 @@ pub fn router(engine: Arc<MnemoEngine>) -> Router {
         .route("/v1/merge", post(handlers::merge_handler))
         .route("/v1/replay", post(handlers::replay_handler))
         .route("/v1/verify", post(handlers::verify_handler))
+        .route(
+            "/v1/compliance/trajectory_audit",
+            post(handlers::trajectory_audit_handler),
+        )
         .route("/v1/delegate", post(handlers::delegate_handler))
         .route("/v1/forget_subject", post(handlers::forget_subject_handler))
         .route("/v1/ingest/otlp", post(handlers::otlp_ingest_handler))

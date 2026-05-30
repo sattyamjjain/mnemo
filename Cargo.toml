@@ -105,6 +105,7 @@ pgvector = { version = "0.8.2", features = ["sqlx"] }
 # these. Path is used for local dev; version is what gets baked into the
 # published crate's manifest. Bump alongside `workspace.package.version`.
 mnemo-core = { path = "crates/mnemo-core", version = "0.4.7" }
+mnemo-compliance = { path = "crates/mnemo-compliance", version = "0.4.7" }
 mnemo-mcp = { path = "crates/mnemo-mcp", version = "0.4.7" }
 mnemo-postgres = { path = "crates/mnemo-postgres", version = "0.4.7" }
 mnemo-rest = { path = "crates/mnemo-rest", version = "0.4.7" }

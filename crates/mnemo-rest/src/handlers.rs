@@ -128,6 +128,15 @@ pub struct VerifyBody {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TrajectoryAuditBody {
+    pub agent_id: Option<String>,
+    pub thread_id: Option<String>,
+    pub active_bank_ceiling: Option<usize>,
+    pub fact_key: Option<String>,
+    pub named_forget_strategies: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DelegateRequest {
     pub delegate_id: String,
     pub permission: String,
@@ -455,6 +464,53 @@ pub async fn verify_handler(
         "first_broken_at": result.first_broken_at.map(|id| id.to_string()),
         "error_message": result.error_message,
         "status": if result.valid { "verified" } else { "integrity_violation" },
+    });
+
+    Ok(Json(response))
+}
+
+/// POST /v1/compliance/trajectory_audit -- GEM-aligned trajectory audit.
+///
+/// Anchor: arXiv:2605.26252. Complements `/v1/verify` (per-record chain
+/// integrity) on the orthogonal trajectory-correctness axis.
+pub async fn trajectory_audit_handler(
+    State(engine): State<AppState>,
+    Json(body): Json<TrajectoryAuditBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let agent_id = body
+        .agent_id
+        .clone()
+        .unwrap_or_else(|| engine.default_agent_id.clone());
+
+    // Mirror verify_handler's storage fetch shape: list_events returns
+    // DESC order; the trajectory audit needs chronological order.
+    let mut events = engine
+        .storage
+        .list_events(&agent_id, mnemo_core::query::MAX_BATCH_QUERY_LIMIT, 0)
+        .await?;
+    events.reverse();
+
+    let mut req = mnemo_compliance::trajectory::TrajectoryAuditRequest {
+        agent_id: Some(agent_id),
+        thread_id: body.thread_id.clone(),
+        ..Default::default()
+    };
+    if let Some(c) = body.active_bank_ceiling {
+        req.active_bank_ceiling = c;
+    }
+    if let Some(k) = body.fact_key {
+        req.fact_key = k;
+    }
+    if let Some(s) = body.named_forget_strategies {
+        req.named_forget_strategies = s;
+    }
+
+    let report = mnemo_compliance::trajectory::trajectory_audit(&events, &req)
+        .map_err(|e| AppError(CoreError::Validation(e.to_string())))?;
+
+    let response = serde_json::json!({
+        "report": report,
+        "all_ok": report.all_ok(),
     });
 
     Ok(Json(response))

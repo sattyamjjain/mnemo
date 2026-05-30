@@ -7,6 +7,7 @@ description = "REST API server for Mnemo"
 
 [dependencies]
 mnemo-core = { workspace = true }
+mnemo-compliance = { workspace = true }
 axum = { workspace = true }
 tower-http = { workspace = true }
 tokio = { workspace = true }

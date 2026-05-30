@@ -9,4 +9,5 @@ pub mod recall;
 pub mod remember;
 pub mod replay;
 pub mod share;
+pub mod trajectory_audit;
 pub mod verify;

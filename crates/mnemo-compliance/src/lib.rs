@@ -24,6 +24,7 @@ pub mod audit;
 pub mod consent;
 pub mod error;
 pub mod mannsetu;
+pub mod trajectory;
 
 pub use audit::{AuditBundle, AuditFormat, AuditSigner, export_audit_log, verify_ndjson_signed};
 pub use consent::{ConsentSource, ConsentState, HttpConsentManager, Scope as ConsentScope};
@@ -31,4 +32,9 @@ pub use error::ComplianceError;
 pub use mannsetu::{
     ConsentToken, ConsentTokenGuard, MANNSETU_PROD_BASE_URL, MANNSETU_SANDBOX_BASE_URL,
     MannsetuConfig, MannsetuConsentSource,
+};
+pub use trajectory::{
+    CapacityDrivenForgettingFinding, MissingSemanticRevisionFinding, ReadOnlyRetrievalFinding,
+    Severity, StaleFact, TrajectoryAuditReport, TrajectoryAuditRequest, UnregulatedGrowthFinding,
+    trajectory_audit,
 };

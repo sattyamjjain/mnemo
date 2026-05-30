@@ -31,6 +31,7 @@ use crate::tools::recall::RecallInput;
 use crate::tools::remember::RememberInput;
 use crate::tools::replay::ReplayInput;
 use crate::tools::share::ShareInput;
+use crate::tools::trajectory_audit::TrajectoryAuditInput;
 use crate::tools::verify::VerifyInput;
 
 #[derive(Clone)]
@@ -743,6 +744,69 @@ impl MnemoServer {
                     "first_broken_at": result.first_broken_at.map(|id| id.to_string()),
                     "error_message": result.error_message,
                     "status": if result.valid { "verified" } else { "integrity_violation" }
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.trajectory_audit",
+        description = "GEM-aligned trajectory-correctness audit (arXiv:2605.26252). Replays the hash-chained event log for an (agent_id, thread_id?) scope and reports four trajectory-level signals: (a) unregulated-growth (active-bank vs ceiling timeline), (b) missing-semantic-revision (facts superseded but never revised), (c) capacity-driven-forgetting (forget events outside the 5 named strategies), (d) read-only-retrieval (scopes that only RECALL). Complements mnemo.verify (per-record chain integrity) on the orthogonal trajectory axis."
+    )]
+    async fn trajectory_audit(
+        &self,
+        Parameters(input): Parameters<TrajectoryAuditInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let agent_id = input
+            .agent_id
+            .clone()
+            .unwrap_or_else(|| self.engine.default_agent_id.clone());
+        // Mirror `verify_integrity`'s storage fetch shape: list_events
+        // returns DESC order; the trajectory audit needs chronological
+        // input, so we `.reverse()` before handing to compliance.
+        let mut events = match self
+            .engine
+            .storage
+            .list_events(&agent_id, mnemo_core::query::MAX_BATCH_QUERY_LIMIT, 0)
+            .await
+        {
+            Ok(e) => e,
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        };
+        events.reverse();
+
+        let mut req = mnemo_compliance::trajectory::TrajectoryAuditRequest {
+            agent_id: Some(agent_id),
+            thread_id: input.thread_id.clone(),
+            ..Default::default()
+        };
+        if let Some(c) = input.active_bank_ceiling {
+            req.active_bank_ceiling = c;
+        }
+        if let Some(k) = input.fact_key {
+            req.fact_key = k;
+        }
+        if let Some(s) = input.named_forget_strategies {
+            req.named_forget_strategies = s;
+        }
+
+        match mnemo_compliance::trajectory::trajectory_audit(&events, &req) {
+            Ok(report) => {
+                let payload = match serde_json::to_value(&report) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return Ok(CallToolResult::error(vec![Content::text(e.to_string())]));
+                    }
+                };
+                let response = serde_json::json!({
+                    "report": payload,
+                    "all_ok": report.all_ok(),
                 });
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&response)

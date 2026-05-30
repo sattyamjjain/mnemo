@@ -4,6 +4,46 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-05-30) — GEM trajectory-correctness audit
+
+- **New `mnemo_compliance::trajectory_audit` function** that replays
+  the hash-chained event log for an `(agent_id, thread_id?)` scope and
+  computes four GEM-aligned health signals over the state
+  trajectory (anchor: [arXiv:2605.26252](https://arxiv.org/abs/2605.26252)):
+  - **(a) unregulated-growth** — active-bank size over time vs a
+    configured ceiling, with the full per-event timeline returned.
+  - **(b) missing-semantic-revision** — facts written under the same
+    `fact_key` where older writes were never deleted or redacted,
+    listed by `(fact_id, stale_memory_ids)`.
+  - **(c) capacity-driven-forgetting** — `MemoryDelete` events whose
+    `strategy` payload is missing or outside the five named
+    strategies (`soft_delete` / `hard_delete` / `decay` /
+    `consolidate` / `archive`).
+  - **(d) read-only-retrieval** — scopes that only ever emit
+    `MemoryRead` / `RetrievalQuery` / `RetrievalResult` and never a
+    write-shaped event.
+- **Surfaced through the three protocols that already expose
+  `mnemo.verify`:**
+  - `mnemo.trajectory_audit` MCP tool (mirrors `mnemo.verify`'s
+    `(agent_id, thread_id)` shape; adds `active_bank_ceiling`,
+    `fact_key`, `named_forget_strategies` knobs).
+  - `POST /v1/compliance/trajectory_audit` REST handler.
+  - `TrajectoryAudit` gRPC RPC (new RPC on the existing
+    `mnemo.v1.MnemoService`; new `TrajectoryAuditRequest` /
+    `TrajectoryAuditResponse` / `TrajectoryFinding` messages — same
+    proto file, no new package).
+- **Wiring change:** `mnemo-compliance` is now a workspace dep of
+  `mnemo-mcp`, `mnemo-rest`, and `mnemo-grpc`. The crate was already
+  in the workspace; this just adds the dep edge so the protocol
+  crates can call into it. No version bump (mnemo is on a doc-only
+  v0.4.4 cycle window; this lands under `[Unreleased]` only).
+- **9 unit tests** in `crates/mnemo-compliance/src/trajectory.rs`
+  exercise each signal independently (happy-path, breach, fail,
+  supersession-then-revision, mixed strategies, agent filter,
+  empty-window error). The compliance crate's existing
+  `export_audit_log` / `verify_ndjson_signed` tests remain
+  untouched.
+
 ### Landing trace (2026-05-26)
 
 v0.4.9 cut today (workspace 0.4.8 → 0.4.9). Next cycle's accumulator

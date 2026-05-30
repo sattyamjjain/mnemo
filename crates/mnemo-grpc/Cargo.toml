@@ -7,6 +7,7 @@ description = "gRPC API server for Mnemo"
 
 [dependencies]
 mnemo-core = { workspace = true }
+mnemo-compliance = { workspace = true }
 tonic = "0.14"
 tonic-prost = "0.14"
 prost = "0.14"

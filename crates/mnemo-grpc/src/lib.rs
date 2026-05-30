@@ -57,7 +57,10 @@ use proto::{
     ReplayMemory as ProtoReplayMemory, ReplayRequest as ProtoReplayRequest,
     ReplayResponse as ProtoReplayResponse, ScoredMemory as ProtoScoredMemory,
     ShareRequest as ProtoShareRequest, ShareResponse as ProtoShareResponse,
-    VerifyRequest as ProtoVerifyRequest, VerifyResponse as ProtoVerifyResponse,
+    TrajectoryAuditRequest as ProtoTrajectoryAuditRequest,
+    TrajectoryAuditResponse as ProtoTrajectoryAuditResponse,
+    TrajectoryFinding as ProtoTrajectoryFinding, VerifyRequest as ProtoVerifyRequest,
+    VerifyResponse as ProtoVerifyResponse,
 };
 
 // ---------------------------------------------------------------------------
@@ -752,6 +755,82 @@ impl MnemoService for MnemoGrpcServer {
         }))
     }
 
+    // -- TrajectoryAudit ---------------------------------------------------
+    //
+    // GEM arXiv:2605.26252. Complements `verify` (per-record chain
+    // integrity) on the orthogonal trajectory axis. The four signals
+    // are computed in `mnemo_compliance::trajectory::trajectory_audit`;
+    // this RPC is a thin events-fetch + handoff layer mirroring the
+    // `verify` plumbing above.
+
+    async fn trajectory_audit(
+        &self,
+        request: Request<ProtoTrajectoryAuditRequest>,
+    ) -> Result<Response<ProtoTrajectoryAuditResponse>, Status> {
+        let req = request.into_inner();
+        let agent_id = req
+            .agent_id
+            .clone()
+            .unwrap_or_else(|| self.engine.default_agent_id.clone());
+
+        // list_events returns DESC order — reverse to chronological
+        // before handing to the compliance function (same contract as
+        // export_audit_log).
+        let mut events = self
+            .engine
+            .storage
+            .list_events(&agent_id, mnemo_core::query::MAX_BATCH_QUERY_LIMIT, 0)
+            .await
+            .map_err(core_error_to_status)?;
+        events.reverse();
+
+        let mut audit_req = mnemo_compliance::trajectory::TrajectoryAuditRequest {
+            agent_id: Some(agent_id),
+            thread_id: req.thread_id.clone(),
+            ..Default::default()
+        };
+        if let Some(c) = req.active_bank_ceiling {
+            audit_req.active_bank_ceiling = c as usize;
+        }
+        if let Some(k) = req.fact_key {
+            audit_req.fact_key = k;
+        }
+        if !req.named_forget_strategies.is_empty() {
+            audit_req.named_forget_strategies = req.named_forget_strategies;
+        }
+
+        let report = mnemo_compliance::trajectory::trajectory_audit(&events, &audit_req)
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let report_json = serde_json::to_string(&report)
+            .map_err(|e| Status::internal(format!("report serialisation: {e}")))?;
+
+        Ok(Response::new(ProtoTrajectoryAuditResponse {
+            scope_label: report.scope_label.clone(),
+            event_count: report.event_count as u32,
+            all_ok: report.all_ok(),
+            unregulated_growth: Some(ProtoTrajectoryFinding {
+                severity: severity_to_str(report.unregulated_growth.severity).to_string(),
+                count: report.unregulated_growth.breach_count as u32,
+            }),
+            missing_semantic_revision: Some(ProtoTrajectoryFinding {
+                severity: severity_to_str(report.missing_semantic_revision.severity).to_string(),
+                count: report.missing_semantic_revision.stale_facts.len() as u32,
+            }),
+            capacity_driven_forgetting: Some(ProtoTrajectoryFinding {
+                severity: severity_to_str(report.capacity_driven_forgetting.severity).to_string(),
+                count: report
+                    .capacity_driven_forgetting
+                    .unlabelled_forget_event_ids
+                    .len() as u32,
+            }),
+            read_only_retrieval: Some(ProtoTrajectoryFinding {
+                severity: severity_to_str(report.read_only_retrieval.severity).to_string(),
+                count: report.read_only_retrieval.read_only_scopes.len() as u32,
+            }),
+            report_json,
+        }))
+    }
+
     // -- ForgetSubject -----------------------------------------------------
 
     async fn forget_subject(
@@ -855,6 +934,16 @@ fn core_error_to_status(err: mnemo_core::error::Error) -> Status {
         Error::PermissionDenied(msg) => Status::permission_denied(msg),
         Error::NotFound(msg) => Status::not_found(msg),
         other => Status::internal(other.to_string()),
+    }
+}
+
+/// Render a [`mnemo_compliance::Severity`] as the lowercase string the
+/// `TrajectoryFinding` proto carries.
+fn severity_to_str(s: mnemo_compliance::Severity) -> &'static str {
+    match s {
+        mnemo_compliance::Severity::Ok => "ok",
+        mnemo_compliance::Severity::Warn => "warn",
+        mnemo_compliance::Severity::Fail => "fail",
     }
 }
 

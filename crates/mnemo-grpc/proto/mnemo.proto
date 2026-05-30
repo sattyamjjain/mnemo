@@ -37,6 +37,10 @@ service MnemoService {
   /// Verify hash chain integrity.
   rpc Verify(VerifyRequest) returns (VerifyResponse);
 
+  /// GEM-aligned trajectory-correctness audit (arXiv:2605.26252).
+  /// Complements Verify on the orthogonal trajectory axis.
+  rpc TrajectoryAudit(TrajectoryAuditRequest) returns (TrajectoryAuditResponse);
+
   /// GDPR / DPDPA-aligned subject erasure by `subject:<id>` tag.
   rpc ForgetSubject(ForgetSubjectRequest) returns (ForgetSubjectResponse);
 }
@@ -347,4 +351,43 @@ message ForgetSubjectResponse {
   repeated string forgotten = 4;
   uint32 cascaded_events = 5;
   repeated ForgetError errors = 6;
+}
+
+// ---------------------------------------------------------------------------
+// TrajectoryAudit (v0.4.x — GEM arXiv:2605.26252)
+// ---------------------------------------------------------------------------
+
+message TrajectoryAuditRequest {
+  optional string agent_id = 1;
+  optional string thread_id = 2;
+  optional uint64 active_bank_ceiling = 3;
+  optional string fact_key = 4;
+  /// Strategies considered policy-driven by signal (c). Defaults to
+  /// the five canonical strategies when empty.
+  repeated string named_forget_strategies = 5;
+}
+
+message TrajectoryAuditResponse {
+  string scope_label = 1;
+  uint32 event_count = 2;
+  bool all_ok = 3;
+  TrajectoryFinding unregulated_growth = 4;
+  TrajectoryFinding missing_semantic_revision = 5;
+  TrajectoryFinding capacity_driven_forgetting = 6;
+  TrajectoryFinding read_only_retrieval = 7;
+  /// JSON-encoded full TrajectoryAuditReport (including timelines,
+  /// per-fact stale lists, etc.) so language clients can deserialise
+  /// the rich shape without re-mapping every nested field through
+  /// protobuf. The summary fields above are sufficient for a CI gate.
+  string report_json = 8;
+}
+
+message TrajectoryFinding {
+  /// "ok" / "warn" / "fail"
+  string severity = 1;
+  /// Best-effort scalar count attached to the finding (breach_count
+  /// for (a), stale_facts.len() for (b), unlabelled count for (c),
+  /// read_only_scopes.len() for (d)). The full structured data lives
+  /// in `TrajectoryAuditResponse.report_json`.
+  uint32 count = 2;
 }
