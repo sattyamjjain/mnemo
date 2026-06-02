@@ -4,6 +4,52 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-02) — v0.4.11 cut, MemFail per-operation fault-isolation harness
+
+Workspace `0.4.10 → 0.4.11`. Pinned `cargo_pkg_version_matches_v0_4_11`
+test and `docs/compat/version-skew-matrix.md` updated.
+
+- **New `mnemo_core::eval::memfail` module** that decomposes each
+  end-to-end recall into the three operation seams mnemo exposes —
+  `remember` (store), `run_consolidation` (summarize), `recall`
+  (retrieve) — and ships three adversarial probe sets engineered so a
+  failed assertion is attributable to exactly one stage. Prior-art
+  anchor: MemFail's per-operation eval decomposition; mnemo's harness
+  targets the real MCP-native primitives, not invented seams.
+  - **Store probes** check storage directly (no recall ranking, no
+    consolidation): content round-trip + hash, batch atomicity,
+    tag round-trip.
+  - **Summarize probes** inspect post-consolidation state via direct
+    storage reads: cluster emitted, needle string preserved verbatim
+    in the `[Consolidated from N memories] …` bundle, originals
+    flipped to `ConsolidationState::Consolidated`.
+  - **Retrieve probes** assume store has passed in the same run, so
+    any failure points at recall: direct-hit by needle string,
+    tag-filter scoping.
+- **`run_stale_context_fixture` (canonical MemFail "isolate the
+  operation" case).** Writes the same fact twice (older write at high
+  importance, newer write at low importance), asks the default hybrid
+  ranker, and confirms it returns the older / stale record on top.
+  Store + summarize probes pass — both records are present in storage
+  with intact content hashes and no consolidation has run — so the
+  harness attributes the failure to **retrieve**, not summarize. The
+  v0.4.7 current-fact-resolver (`fact_key` post-processor on
+  `RecallRequest`) is the documented opt-in mitigation; this fixture
+  asserts the *attribution shape*, not the retriever's quality.
+- **Integration test `crates/mnemo-core/tests/memfail_isolation.rs`**
+  exercises the harness end-to-end against an in-memory engine and
+  asserts (a) every stage probe passes on a well-formed engine and
+  (b) the stale-context fixture lands on
+  `Stage::Retrieve`, not `Stage::Summarize`.
+- **Module-level unit tests** in `eval/memfail.rs` independently
+  exercise each per-stage probe runner against a fresh engine.
+
+5 new test functions (3 module-level unit tests + 2 integration
+tests) added under the workspace `cargo test` surface. No new public
+trait, no protocol surface change, no managed-cloud dep, no change
+to the `REMEMBER` / `RECALL` / `FORGET` / `SHARE` primitive names or
+the embedded DuckDB default.
+
 ### Added (2026-05-30) — GEM trajectory-correctness audit
 
 - **New `mnemo_compliance::trajectory_audit` function** that replays

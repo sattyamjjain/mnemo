@@ -4,6 +4,7 @@ pub mod cache;
 pub mod embedding;
 pub mod encryption;
 pub mod error;
+pub mod eval;
 pub mod hash;
 pub mod index;
 pub mod model;
