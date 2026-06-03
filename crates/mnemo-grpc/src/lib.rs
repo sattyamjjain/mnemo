@@ -259,6 +259,7 @@ impl MnemoService for MnemoGrpcServer {
             mode: None,
             current_fact_resolver: None,
             orientation_cache: orientation_cache_cfg,
+            evidence_budget: None,
         };
 
         let result = self

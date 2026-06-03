@@ -4,6 +4,7 @@ pub mod checkpoint;
 pub mod conflict;
 pub mod current_fact_resolver;
 pub mod event_builder;
+pub mod evidence;
 pub mod forget;
 pub mod lifecycle;
 pub mod maturity;
@@ -101,6 +102,15 @@ pub struct MnemoEngine {
     /// art only — mnemo's policy is a structural cousin, not a
     /// reproduction.
     pub consolidation_policy: maturity::ConsolidationPolicy,
+    /// v0.4.12 — optional answer-impact scorer for the cost-aware
+    /// evidence budget. When a recall sets
+    /// [`RecallRequest::evidence_budget`](recall::RecallRequest::evidence_budget)
+    /// with [`ScorerKind::Delta`](evidence::ScorerKind::Delta) AND this
+    /// is `Some`, the budget uses this scorer to decide sufficiency;
+    /// otherwise it falls back to [`evidence::CosineScorer`]. `None`
+    /// keeps the recall hot-path at zero overhead. Attach via
+    /// [`MnemoEngine::with_evidence_scorer`].
+    pub evidence_scorer: Option<Arc<dyn evidence::EvidenceScorer>>,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -134,6 +144,7 @@ impl MnemoEngine {
             provenance_signer: None,
             orientation_cache_store: None,
             consolidation_policy: maturity::ConsolidationPolicy::default(),
+            evidence_scorer: None,
         }
     }
 
@@ -217,6 +228,17 @@ impl MnemoEngine {
     /// [`crate::query::maturity`] for the score contract.
     pub fn with_consolidation_policy(mut self, policy: maturity::ConsolidationPolicy) -> Self {
         self.consolidation_policy = policy;
+        self
+    }
+
+    /// v0.4.12 — attach an answer-impact [`evidence::EvidenceScorer`]
+    /// (typically a [`evidence::DeltaScorer`] wrapping an LLM callback)
+    /// used by the cost-aware evidence budget when a recall requests
+    /// [`ScorerKind::Delta`](evidence::ScorerKind::Delta). Without an
+    /// attached scorer, delta-mode budgets fall back to
+    /// [`evidence::CosineScorer`]. See [`crate::query::evidence`].
+    pub fn with_evidence_scorer(mut self, scorer: Arc<dyn evidence::EvidenceScorer>) -> Self {
+        self.evidence_scorer = Some(scorer);
         self
     }
 

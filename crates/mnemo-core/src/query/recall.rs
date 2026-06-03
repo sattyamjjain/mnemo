@@ -80,6 +80,15 @@ pub struct RecallRequest {
     /// unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation_cache: Option<crate::query::orientation_cache::OrientationCacheConfig>,
+    /// v0.4.12 — opt-in cost-aware evidence budget. When `Some`, the
+    /// engine runs the [`crate::query::evidence`] selector over the
+    /// ranked candidate set and returns the smallest prefix that
+    /// clears the configured sufficiency bar (capped by
+    /// `max_evidence`). Purely subtractive — it never reorders the
+    /// retrieval's top-k. Default `None` keeps the read path unchanged
+    /// (front-loaded top-`limit`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_budget: Option<crate::query::evidence::EvidenceBudget>,
 }
 
 impl RecallRequest {
@@ -105,6 +114,7 @@ impl RecallRequest {
             mode: None,
             current_fact_resolver: None,
             orientation_cache: None,
+            evidence_budget: None,
         }
     }
 }
@@ -166,6 +176,13 @@ pub struct RecallResponse {
     /// false`. PEEK-anchored (arXiv:2605.19932).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub orientation_cache: Option<crate::query::orientation_cache::RenderedContextMap>,
+    /// v0.4.12 — diagnostics from the cost-aware evidence budget.
+    /// Present iff the caller set [`RecallRequest::evidence_budget`].
+    /// Reports the scorer used, how many candidates were examined vs
+    /// returned, the cumulative sufficiency score, and whether
+    /// early-stop / the cap fired. See [`crate::query::evidence`].
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub evidence_selection: Option<crate::query::evidence::EvidenceSelectionReport>,
 }
 
 impl RecallResponse {
@@ -176,6 +193,7 @@ impl RecallResponse {
             provenance: None,
             superseded: None,
             orientation_cache: None,
+            evidence_selection: None,
         }
     }
 }
@@ -558,6 +576,52 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     scored_memories.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     scored_memories.truncate(limit);
 
+    // v0.4.12 — opt-in cost-aware evidence budget. Runs only when the
+    // caller set `request.evidence_budget`. The selector operates on
+    // the already-ranked list and returns the smallest prefix that
+    // clears the sufficiency bar (capped by `max_evidence`); it never
+    // reorders, so the top-k cosine/RRF ordering is preserved. Applied
+    // BEFORE `touch_memory` so we do not mark-accessed evidence the
+    // budget trimmed away (cost-aware on the write side too). See
+    // [`crate::query::evidence`].
+    let evidence_selection = if let Some(ref budget) = request.evidence_budget {
+        let cosine_default = crate::query::evidence::CosineScorer;
+        let scorer: &dyn crate::query::evidence::EvidenceScorer =
+            match (budget.scorer, engine.evidence_scorer.as_ref()) {
+                (crate::query::evidence::ScorerKind::Delta, Some(s)) => s.as_ref(),
+                _ => &cosine_default,
+            };
+        // Pass the query embedding only when it is non-degenerate
+        // (NoopEmbedding yields all-zero vectors, for which cosine is
+        // undefined and the scorer should fall back to retrieval score).
+        let q_emb: Option<&[f32]> = if query_embedding.iter().any(|v| *v != 0.0) {
+            Some(query_embedding.as_slice())
+        } else {
+            None
+        };
+        let candidates: Vec<crate::query::evidence::EvidenceCandidate<'_>> = scored_memories
+            .iter()
+            .map(|(r, score)| crate::query::evidence::EvidenceCandidate {
+                content: &r.content,
+                embedding: r.embedding.as_deref(),
+                retrieval_score: *score,
+            })
+            .collect();
+        let selection = crate::query::evidence::select_within_budget(
+            &candidates,
+            budget,
+            scorer,
+            &request.query,
+            q_emb,
+        );
+        let keep = selection.keep;
+        drop(candidates);
+        scored_memories.truncate(keep);
+        Some(selection.report)
+    } else {
+        None
+    };
+
     let _total_pre_resolver = scored_memories.len();
 
     // Touch accessed memories
@@ -735,6 +799,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         provenance,
         superseded: superseded_chain,
         orientation_cache: orientation_rendered,
+        evidence_selection,
     })
 }
 

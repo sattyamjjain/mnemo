@@ -266,6 +266,7 @@ pub async fn recall_handler(
         } else {
             None
         },
+        evidence_budget: None,
     };
 
     let response = engine.recall(request).await?;

@@ -4,6 +4,63 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-02) — v0.4.12 cut, cost-aware answer-impact-scored recall
+
+Workspace `0.4.11 → 0.4.12`. Pinned `cargo_pkg_version_matches_v0_4_12`
+test and `docs/compat/version-skew-matrix.md` updated.
+
+- **New `mnemo_core::query::evidence` module — cost-aware evidence
+  budget.** An opt-in per-query budget that runs over the
+  already-ranked recall candidate set and returns the smallest prefix
+  that clears a configurable sufficiency bar, capped by an optional
+  `max_evidence`. Purely subtractive: it only ever returns a prefix of
+  the ranked order, so it cannot reorder or silently lower the
+  retrieval's top-k ordering (enforced by an in-module property test).
+  - `EvidenceBudget { max_evidence: Option<usize>, stop_when_sufficient:
+    bool, sufficiency_threshold: f32, scorer: ScorerKind }` —
+    serializable config, attached via the new additive
+    `RecallRequest.evidence_budget: Option<EvidenceBudget>` field.
+  - `stop_when_sufficient` returns early once the running per-chunk
+    score sum clears `sufficiency_threshold`, so callers fetch the
+    smallest set that clears the bar instead of front-loading.
+- **New `EvidenceScorer` trait — pluggable answer-impact relevance
+  signal.**
+  - `CosineScorer` (default) — cosine of candidate vs query embedding,
+    falling back to the fused retrieval score when embeddings are
+    absent or degenerate (e.g. `NoopEmbedding`).
+  - `DeltaScorer` — answer-impact scorer that rates a chunk by whether
+    adding it to the already-selected evidence would change a
+    downstream answer. The judgement is an **injectable closure**
+    (`DeltaScorer::new(|ctx| …)`) so the core stays model-agnostic; the
+    real LLM callback is supplied by the caller.
+    `DeltaScorer::stub()` is a deterministic marginal-novelty heuristic
+    for tests / offline use.
+  - Attach a custom scorer via the new
+    `MnemoEngine::with_evidence_scorer(Arc<dyn EvidenceScorer>)`
+    builder. When a budget selects `ScorerKind::Delta` but no scorer is
+    attached, the path falls back to cosine rather than erroring.
+- **`RecallResponse.evidence_selection: Option<EvidenceSelectionReport>`
+  diagnostics** (scorer name, examined vs returned counts, cumulative
+  score, `stopped_early` / `capped` flags). Present iff the caller set
+  `evidence_budget`. The budget is applied BEFORE `touch_memory`, so
+  trimmed-away evidence is not mark-accessed (cost-aware on the write
+  side too).
+- **Tests:** 7 unit tests in `evidence.rs` (cap respected; early-stop
+  at threshold ×2; scorer-trait swappable; injectable closure honoured;
+  no-budget passthrough; property: larger budget is a prefix-superset)
+  + 6 end-to-end integration tests in
+  `crates/mnemo-core/tests/cost_aware_recall.rs` (cap, early-stop,
+  no-budget passthrough, delta-scorer-attached, delta-without-scorer
+  cosine fallback, prefix-invariant through the engine). The
+  integration suite doubles as the public-API smoke test: it imports
+  `EvidenceScorer` / `CosineScorer` / `DeltaScorer` from the built
+  crate and exercises both scorers through `engine.recall`.
+
+The default read path is unchanged — no `evidence_budget` means the
+legacy front-loaded top-`limit`. No managed-cloud dependency added; the
+`REMEMBER` / `RECALL` / `FORGET` / `SHARE` primitive names are
+untouched; the embedded DuckDB default is intact.
+
 ### Added (2026-06-02) — v0.4.11 cut, MemFail per-operation fault-isolation harness
 
 Workspace `0.4.10 → 0.4.11`. Pinned `cargo_pkg_version_matches_v0_4_11`

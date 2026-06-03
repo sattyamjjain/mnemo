@@ -142,6 +142,7 @@ fn build_recall(query: &str, with_provenance: Option<bool>) -> RecallRequest {
         mode: None,
         current_fact_resolver: None,
         orientation_cache: None,
+        evidence_budget: None,
     }
 }
 

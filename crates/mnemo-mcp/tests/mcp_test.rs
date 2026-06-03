@@ -176,6 +176,7 @@ async fn test_engine_recall_via_server_engine() {
             mode: None,
             current_fact_resolver: None,
             orientation_cache: None,
+            evidence_budget: None,
         })
         .await
         .unwrap();
