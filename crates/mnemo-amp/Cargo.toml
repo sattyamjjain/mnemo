@@ -1,0 +1,26 @@
+[package]
+name = "mnemo-amp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AMP / memorywire JSON-Schema 2020-12 interop adapter (5 ops × 4 memory types) over a MnemoEngine."
+
+[[bin]]
+name = "amp_conformance"
+path = "src/bin/amp_conformance.rs"
+
+[dependencies]
+mnemo-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = { workspace = true }

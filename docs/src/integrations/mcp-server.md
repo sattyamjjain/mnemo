@@ -223,3 +223,43 @@ are spec-evolution work where mnemo follows `rmcp`'s implementation
 of the SEPs as they're written. Buyers reading the roadmap should
 hear "mnemo's existing audit story already serves the Enterprise
 Readiness ask," not "mnemo is MCP-2026-ready."
+
+## AMP / memorywire conformance (v0.4.13)
+
+Alongside the MCP STDIO surface, mnemo ships an **AMP / memorywire**
+interop adapter in the [`mnemo-amp`](../../../crates/mnemo-amp) crate.
+AMP models memory as **5 operations** (`remember` / `recall` /
+`forget` / `merge` / `expire`) over **4 memory types** (`episodic` /
+`semantic` / `procedural` / `working`), carried in a self-describing
+JSON envelope validated against a JSON-Schema 2020-12 document
+(`mnemo_amp::schema()`).
+
+The adapter is a `MemoryStore`-conformant surface over a real
+`MnemoEngine`. Two ops are deliberately **thin compositions** over
+existing primitives rather than assumed engine methods:
+
+- **`merge`** folds N records into one consolidated record
+  (`remember` with `SourceType::Consolidation`) and retires the
+  originals (`forget` with the `Consolidate` strategy). It is *not*
+  mnemo's `engine.merge`, which is a branch-timeline merge.
+- **`expire`** sets `expires_at` and runs the existing
+  `run_ttl_sweep` lifecycle path (there is no `engine.expire`).
+
+A fan-out `AmpRouter` broadcasts writes to several backends and fuses
+multi-adapter recall with **Reciprocal Rank Fusion**. An optional
+**HITL diff-and-approve hook** gates long-term (`semantic` /
+`procedural`) writes and records each approval as a `Decision` event in
+mnemo's hash-chained audit log, so the approve trail is tamper-evident
+and replayable.
+
+Conformance mirrors the cross-adapter suite: **recall@5** on a small
+labelled corpus end-to-end against the embedded DuckDB backend, and
+**RRF-holds-under-rank-0-injection vs max-fusion** (RRF keeps a
+genuinely-relevant item on top; max-fusion is fooled by an adversarial
+rank-0 injection). Run the end-to-end smoke binary with
+`cargo run --release --bin amp_conformance -p mnemo-amp`.
+
+**Honest scope:** the crate provides the wire format, the schema
+document, and the engine-backed surface. AMP transport framing
+(HTTP / stdio, `.well-known` schema discovery) is left to the
+embedding application.

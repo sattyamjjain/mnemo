@@ -10,11 +10,11 @@
 //! [docs/compat/version-skew-matrix.md](../../docs/compat/version-skew-matrix.md).
 
 #[test]
-fn cargo_pkg_version_matches_v0_4_12() {
+fn cargo_pkg_version_matches_v0_4_13() {
     assert_eq!(
         env!("CARGO_PKG_VERSION"),
-        "0.4.12",
-        "mnemo-core CARGO_PKG_VERSION drifted from the v0.4.12 cut. \
+        "0.4.13",
+        "mnemo-core CARGO_PKG_VERSION drifted from the v0.4.13 cut. \
          Bump `workspace.package.version` in /Cargo.toml AND update \
          docs/compat/version-skew-matrix.md to match."
     );

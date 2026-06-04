@@ -61,6 +61,7 @@ Your AI agent now has persistent memory with 12 MCP tools:
 | **REST** (HTTP) | `mnemo-rest` | Web clients, dashboards, OTLP ingest |
 | **gRPC** | `mnemo-grpc` | High-performance service-to-service (11 RPCs) |
 | **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
+| **AMP** (memorywire) | `mnemo-amp` | AMP-conformant adapter: 5 ops × 4 memory types over a JSON-Schema 2020-12 envelope |
 
 ### Attention-state-memory substrate (v0.4.5)
 
@@ -164,6 +165,7 @@ All integrations are auto-imported via `from mnemo import <ClassName>` — depen
 | [Letta Conversations-style shared memory](docs/src/integrations/letta-conversations.md) | `MnemoLettaShared` | Multiple agents sharing a single audit-replayable memory stream. `attach`/`detach`/`read`/`write`/`list_participants` over Mnemo memories tagged `conversation:<id>` + `participant:<agent_id>`. |
 | [Cloudflare R2 workspace](docs/src/integrations/r2-workspace.md) | `CloudflareR2Workspace` | Drop-in R2 backend for `MnemoSnapshotStore` — same signed-manifest contract as the AWS S3 path; `pip install 'mnemo-db[openai-sandbox-r2]'`. |
 | [Letta-protocol-compat REST surface](crates/mnemo-letta/) (`mnemo-letta` crate) | `mnemo_letta::router(engine)` | `POST /v1/agents`, `POST /v1/agents/{id}/messages`, `GET /v1/agents/{id}/memory` — drop in front of any `MnemoEngine` so a Letta-Code-shaped benchmark or notebook can talk to Mnemo without code changes. New in v0.4.0-rc3 (B5). |
+| [AMP / memorywire wire format](crates/mnemo-amp/) (`mnemo-amp` crate) | `mnemo_amp::MnemoAmpStore` + `AmpRouter` | AMP-conformant `MemoryStore` surface: 5 ops (`remember`/`recall`/`forget`/`merge`/`expire`) × 4 memory types over a JSON-Schema 2020-12 envelope. `merge`/`expire` are thin compositions over the real primitives (no fictitious engine method); a fan-out router fuses multi-adapter recall with RRF; an optional HITL diff-and-approve hook gates long-term writes and records approvals in the hash-chained audit log. Conformance: recall@5 + RRF-holds-under-rank-0-injection vs max-fusion. New in v0.4.13. |
 | [Mannsetu DPDPA consent manager](crates/mnemo-compliance/src/mannsetu.rs) (`mnemo-compliance` crate) | `MannsetuConsentSource` + `ConsentTokenGuard` | DPB-registered consent-manager binding plus a per-write guard with expiry / scope / revocation checks. Refuses any `remember` whose consent token is missing, expired, wrong-scope, or revoked. New in v0.4.0-rc3 (B4). |
 | [DPDPA "data passport" PDF](python/mnemo/dpdpa_passport.py) | `mnemo.dpdpa_passport.build_passport_pdf` | One-page PDF showing every personal data point Mnemo holds for a subject, suitable for Section 11 / 12 access requests. Hand-rolled PDF — zero third-party deps, byte-for-byte reproducible. New in v0.4.0-rc3 (Q3). |
 | [Provenance SDK](python/mnemo/provenance.py) | `mnemo.provenance.verify_read_provenance` | Pure-Python verifier for the HMAC-SHA256 receipts that Mnemo returns alongside `recall(..., with_provenance=True)`. Auditors verify offline without compiling Rust. New in v0.4.0-rc3 (Q1). |

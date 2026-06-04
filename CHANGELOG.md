@@ -4,6 +4,66 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-04) — v0.4.13 cut, AMP / memorywire interop adapter
+
+Workspace `0.4.12 → 0.4.13`. Pinned `cargo_pkg_version_matches_v0_4_13`
+test and `docs/compat/version-skew-matrix.md` updated.
+
+> Note: the request that drove this cut referenced a "v0.4.4 cycle",
+> but the canonical workspace manifest was already at 0.4.12. Per the
+> "bump per the canonical Cargo manifest" instruction, this lands as
+> 0.4.13 rather than downgrading.
+
+- **New `mnemo-amp` crate — AMP / memorywire wire-format interop
+  adapter.** Implements the AMP surface (5 operations × 4 memory types)
+  as a `MemoryStore`-conformant layer over a real `MnemoEngine`, so any
+  AMP-speaking client can drive mnemo's embedded DuckDB backend
+  unchanged. Added to the workspace members + dep aliases.
+  - **Wire format (`wire.rs`):** `AmpOp` (`remember` / `recall` /
+    `forget` / `merge` / `expire`), `AmpMemoryType` (`episodic` /
+    `semantic` / `procedural` / `working`), `AmpEnvelope` request,
+    `AmpResult` response, and `schema()` returning a **JSON-Schema
+    2020-12** document that pins the 5-op × 4-type surface with
+    per-op conditional `required` lists.
+  - **Store (`store.rs`):** `MemoryStore` async trait + `MnemoAmpStore`
+    impl. `remember` → `engine.remember`; `recall` → `engine.recall`
+    (top-k, default 5); `forget` → `engine.forget`. **`merge` and
+    `expire` are thin compositions over existing primitives** — not
+    assumed engine methods. `merge` folds N records into one
+    consolidated record (`remember` + `SourceType::Consolidation`) and
+    retires the originals (`forget` + `Consolidate`); it is explicitly
+    *not* `engine.merge`, which is a branch-timeline merge. `expire`
+    sets `expires_at` + runs `run_ttl_sweep` (there is no
+    `engine.expire`).
+  - **Router (`router.rs`):** `AmpRouter` single- and fan-out-backend
+    entry; writes broadcast to every backend, recall fuses with RRF.
+    Ships `rrf_fuse` (Reciprocal Rank Fusion) and `max_fuse` (max-score)
+    combiners.
+  - **HITL (`approval.rs`):** `ApprovalHook` trait + `AutoApprove` /
+    `ClosureApprove` impls. Long-term (`semantic` / `procedural`)
+    writes are diffed (`WriteDiff`) and gated before commit; on
+    approval a `Decision` event is emitted through mnemo's existing
+    hash-chained audit log, so the approve trail is tamper-evident.
+    Short-term tiers bypass the gate.
+- **Conformance suite (deterministic).** Mirrors the paper's
+  cross-adapter checks: **recall@5** on a small labelled corpus driven
+  end-to-end through the AMP surface over the embedded DuckDB backend,
+  and **RRF-holds-under-rank-0-injection vs max-fusion** (RRF keeps the
+  genuinely-relevant item on top; max-fusion is fooled by an
+  adversarial rank-0 injection). 14 tests total (9 unit across
+  wire/approval/router + 5 integration in
+  `crates/mnemo-amp/tests/conformance.rs`) plus an `amp_conformance`
+  smoke binary (`cargo run --release --bin amp_conformance -p
+  mnemo-amp`) that runs all 5 ops + the fusion check and exits non-zero
+  on any failure.
+- **Docs:** README gains an AMP row in both the Access-Protocols table
+  and the integrations list; `docs/src/integrations/mcp-server.md`
+  gains an "AMP / memorywire conformance" section.
+
+No managed-cloud dependency added; the `REMEMBER` / `RECALL` /
+`FORGET` / `SHARE` primitive names are untouched; the embedded DuckDB
+default is intact.
+
 ### Added (2026-06-02) — v0.4.12 cut, cost-aware answer-impact-scored recall
 
 Workspace `0.4.11 → 0.4.12`. Pinned `cargo_pkg_version_matches_v0_4_12`
