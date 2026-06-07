@@ -24,9 +24,14 @@
 //! run log so anyone can recompute.
 
 pub mod judge;
+pub mod phase_cost;
 pub mod runner;
 pub mod scoring;
 
 pub use judge::{JudgeModel, JudgeVerdict, LoCoMoJudge, MockJudge};
+pub use phase_cost::{
+    Phase, PhaseCost, PhaseOpts, Rates, Recommendation, ScenarioPhases, Verdict,
+    render_phase_table, render_scorecard, run_phase_attribution, scorecard_2606_06448,
+};
 pub use runner::{Dialogue, GoldAnswer, LoCoMoRun, RecallMode};
 pub use scoring::{LoCoMoResult, ScoreSlice};

@@ -510,6 +510,21 @@ keeps the regression gate honest. Earlier reports under
 [`docs/benchmarks/`](docs/benchmarks/) carry the v0.3.0 / v0.3.1 floor
 numbers from before the v0.3.3 Tantivy-default + LLM-judge fixes.
 
+**Phase-aware cost attribution + agent-memory characterization scorecard (bench-only).** Anchored on [arXiv:2606.06448](https://arxiv.org/abs/2606.06448) (*Agent Memory: Characterization and System Implications of Stateful Long-Horizon Workloads*). The new [`phase_cost`](bench/locomo/src/bin/phase_cost.rs) bin splits every benchmark scenario's cost into the paper's **three phases** — **construction** (remember-path: embedding calls, prefill tokens, write latency), **retrieval** (recall-path: ANN + BM25 + graph + RRF latency, query tokens), and **generation** (downstream, *estimated* — mnemo does not generate) — and emits a per-phase table (tokens, wall-ms, $-estimate at configurable per-1K rates) per scenario. The `--scorecard-2606-06448` flag instead renders mnemo's PASS / PARTIAL / FAIL position against the paper's 10 §5 recommendations (quoted verbatim) as a 10-row table; mnemo currently scores **5 PASS · 5 PARTIAL · 0 FAIL** (PASS on the latency / feasibility / compaction recommendations R5/R7/R8/R9/R10; PARTIAL on the operator-side lifecycle-policy ones R1–R4/R6). Run via `cargo run --release --bin phase_cost -p mnemo-locomo-bench` (add `-- --scorecard-2606-06448` for the scorecard). **This is bench-only** — no access protocol (MCP / REST / gRPC / pgwire) and no retrieval default is touched; token counts are `ceil(chars/4)` estimates and the generation phase is never an LLM call. Sample per-phase table (default rates, 64 records / 16 queries, `NoopEmbedding`):
+
+```
+### Scenario `long-context` (64 records, 16 queries)
+
+| Phase | Tokens | Wall-ms | $-estimate |
+|---|---:|---:|---:|
+| construction | 15360 | 1551.42 | 0.001306 |
+| retrieval    |    96 |  157.76 | 0.000002 |
+| generation   | 13792 |     n/a | 0.003912 |
+| **total**    | 29248 |       — | 0.005220 |
+```
+
+Construction and generation dominate; retrieval is near-free — exactly the lifecycle-cost picture the paper insists operators measure (Recommendation 2). See [`bench/locomo/src/phase_cost.rs`](bench/locomo/src/phase_cost.rs) for the cost model + the full "what this is NOT" block.
+
 **Embedding-backend selection bench + SLA-aware recommender (v0.4.9).** Anchored on [arXiv:2605.23618](https://arxiv.org/abs/2605.23618) (GE2 vs local encoders — quality + latency). New crate [`bench/embeddings`](bench/embeddings) measures every configured backend (Noop + bench-local hashing baseline always; OpenAI when keyed; ONNX when configured + feature-gated) for nDCG@10, recall@10, p50/p95 embed latency, and throughput at batch 1/8/32 on a 50-doc / 10-query labeled fixture; the recommender picks the highest-nDCG backend whose p95 ≤ the SLO and reports the nDCG gap vs the best-quality backend. Run with `mnemo bench embeddings --slo-ms <N>` or `cargo bench -p mnemo-embeddings-bench`. See [`bench/embeddings/README.md`](bench/embeddings/README.md) for the full "what this bench is NOT" block.
 
 **First public LoCoMo number (v0.4.1, P0-1)** — full report at

@@ -30,6 +30,10 @@ path = "src/bin/auto_dreamer_consolidation.rs"
 name = "maturity_consolidation"
 path = "src/bin/maturity_consolidation.rs"
 
+[[bin]]
+name = "phase_cost"
+path = "src/bin/phase_cost.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }

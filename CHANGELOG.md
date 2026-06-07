@@ -4,6 +4,32 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-07) — bench-only, no version bump
+
+- **bench/locomo: phase-aware cost attribution (construction/retrieval/generation)
+  + 2606.06448 recommendations scorecard.** New `phase_cost` bin + reusable
+  `mnemo_locomo_bench::phase_cost` module, anchored on
+  [arXiv:2606.06448](https://arxiv.org/abs/2606.06448) (*Agent Memory:
+  Characterization and System Implications of Stateful Long-Horizon
+  Workloads*).
+  - **Phase attribution:** splits every benchmark scenario's cost into the
+    paper's three logical phases — **construction** (remember-path:
+    embedding calls, prefill tokens, write latency), **retrieval**
+    (recall-path: ANN + BM25 + graph + RRF latency, query tokens), and
+    **generation** (downstream, *estimated* — mnemo does not generate). Emits
+    a per-phase Markdown table (tokens, wall-ms, $-estimate at configurable
+    per-1K rates) per scenario via `render_phase_table`.
+  - **Scorecard:** `--scorecard-2606-06448` renders mnemo's PASS / PARTIAL /
+    FAIL position against the paper's 10 §5 recommendations (quoted verbatim
+    in `RECOMMENDATIONS`) as a 10-row table — currently **5 PASS · 5 PARTIAL
+    · 0 FAIL**.
+  - **Bench-only guardrail:** wired through the existing `mnemo-locomo-bench`
+    bench entry point only; no access protocol (MCP / REST / gRPC / pgwire)
+    and no retrieval default is touched. Token counts are `ceil(chars/4)`
+    estimates and the generation phase is never an LLM call.
+  - Workspace version unchanged (bench crate is `publish = false`); README
+    bench section updated with a sample per-phase table.
+
 ### Added (2026-06-04) — v0.4.13 cut, AMP / memorywire interop adapter
 
 Workspace `0.4.12 → 0.4.13`. Pinned `cargo_pkg_version_matches_v0_4_13`
