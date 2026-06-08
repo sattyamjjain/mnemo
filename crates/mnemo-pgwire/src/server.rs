@@ -197,6 +197,7 @@ async fn handle_query(
                 current_fact_resolver: None,
                 orientation_cache: orientation_cache_cfg,
                 evidence_budget: None,
+                retained_token_budget: None,
             };
 
             let response = engine.recall(request).await?;

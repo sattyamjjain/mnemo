@@ -15,6 +15,7 @@ pub mod recall;
 pub mod reflection;
 pub mod remember;
 pub mod replay;
+pub mod retained;
 pub mod retrieval;
 pub mod share;
 

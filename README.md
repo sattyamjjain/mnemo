@@ -89,6 +89,23 @@ Relevance is computed through a pluggable **`EvidenceScorer` trait** so callers 
 
 Enable via the Rust `RecallRequest.evidence_budget = Some(EvidenceBudget { max_evidence, stop_when_sufficient, sufficiency_threshold, scorer })` field. Attach a custom answer-impact scorer with `MnemoEngine::with_evidence_scorer(Arc<dyn EvidenceScorer>)`; when the budget selects `ScorerKind::Delta` but no scorer is attached, the path falls back to cosine rather than erroring. The recall response carries an `evidence_selection` diagnostics block (scorer name, examined vs returned counts, cumulative score, early-stop / capped flags). **The default read path is unchanged** — no `evidence_budget` means the legacy front-loaded top-`limit`. See the module doc + property test at [`crates/mnemo-core/src/query/evidence.rs`](crates/mnemo-core/src/query/evidence.rs) and the end-to-end integration test at [`crates/mnemo-core/tests/cost_aware_recall.rs`](crates/mnemo-core/tests/cost_aware_recall.rs).
 
+### Budgeted evidence retention — EMBER-style capsules (arXiv:2606.05894)
+
+Where the v0.4.12 evidence budget caps *how many records* come back, an agent that must keep evidence **resident** in a bounded context window has a different problem: raw chunk dumps burn the window fast — a handful of full records and it's full, even though most of each record is filler around one salient fact. [EMBER (arXiv:2606.05894)](https://arxiv.org/abs/2606.05894) frames this as a *writer* problem: under a fixed retained-token budget, keep compact, **recoverable** evidence rather than raw text.
+
+mnemo extends the verified recall surface with an opt-in `RecallRequest.retained_token_budget: Option<usize>`. When set, the engine packs the recalled hits into at most `budget` tokens as verbatim **evidence capsules** — a short verbatim excerpt **plus a retrieval key** (the record id, so the caller re-fetches the full chunk on demand) — ranked by a v0 **recoverability heuristic** (`recency × retrieval-hit-rate`) standing in for EMBER's learned writer. It is purely **additive**: the `memories` list is unchanged, and the capsule view rides in `RecallResponse.retained_evidence`. No new enum, no protocol change — just the one parameter on the existing surface.
+
+The eval at [`crates/mnemo-core/tests/budgeted_evidence_retention.rs`](crates/mnemo-core/tests/budgeted_evidence_retention.rs) measures the knob's value on a LongMemEval-style fixture (60 gold facts, each behind a noisy chunk) at a fixed **8192-token** budget — budgeted capsules vs naive truncation:
+
+```
+| arm               | covered | recall@budget | retained tokens |
+|-------------------|--------:|--------------:|----------------:|
+| naive truncation  |      45 |         0.750 |             n/a |
+| budgeted capsules |      60 |         1.000 |            4380 |
+```
+
+Because each capsule costs a fraction of a raw chunk, every gold fact survives the budget (recall 1.000 vs 0.750) using barely half the tokens. See the module doc + tests at [`crates/mnemo-core/src/query/retained.rs`](crates/mnemo-core/src/query/retained.rs) for the cost model + the full "what this is NOT" block (v0 heuristic, not EMBER's learned writer; read-side projection, nothing mutated).
+
 ### Offline consolidation — Auto-Dreamer-shaped active-bank shrink (v0.4.8)
 
 Anthropic's Auto-Dreamer consolidation runs offline, away from the agent's interactive loop, and produces a smaller *active bank* of semantic summaries that should serve subsequent recall at least as well as the raw episodic trace it replaced. mnemo's existing `run_decay_pass` + `run_consolidation` path ([`crates/mnemo-core/src/query/lifecycle.rs`](crates/mnemo-core/src/query/lifecycle.rs), plus the reflection module at [`crates/mnemo-core/src/query/reflection.rs`](crates/mnemo-core/src/query/reflection.rs) that mirrors the same offline-housekeeping shape) is the engine-side equivalent: the decay pass marks low effective-importance records as `Archived` / `Forgotten`, the consolidation pass replaces tag-overlap clusters of episodic memories with structured `[Consolidated from N memories] …` semantic bundles, and the originals are flipped to `Consolidated` rather than deleted (so the chain stays auditable). The new Auto-Dreamer-shaped scenario at [`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs) exercises both passes end-to-end on a synthetic multi-session trajectory and reports the two axes Auto-Dreamer headlines as its claim: `active_bank_ratio = post / pre` (expects `< 1.0`) and held-out `recall_post >= recall_pre`. A JSON summary lands beside the Markdown report so the headline number is citable here.

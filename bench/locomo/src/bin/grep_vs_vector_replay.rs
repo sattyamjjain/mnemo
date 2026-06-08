@@ -274,6 +274,7 @@ fn build_recall(query: &str, strategy: &str, limit: usize) -> RecallRequest {
         current_fact_resolver: None,
         orientation_cache: None,
         evidence_budget: None,
+        retained_token_budget: None,
     }
 }
 

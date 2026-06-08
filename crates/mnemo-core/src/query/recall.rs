@@ -89,6 +89,17 @@ pub struct RecallRequest {
     /// (front-loaded top-`limit`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_budget: Option<crate::query::evidence::EvidenceBudget>,
+    /// EMBER (arXiv:2606.05894) — opt-in budgeted evidence retention.
+    /// When `Some(budget)`, the engine builds a
+    /// [`RetentionReport`](crate::query::retained::RetentionReport) that
+    /// packs the recalled hits into at most `budget` retained tokens as
+    /// verbatim *evidence capsules* (excerpt + retrieval key), ranked by
+    /// a `recency × hit-rate` recoverability heuristic, and returns it in
+    /// [`RecallResponse::retained_evidence`]. Purely **additive** — the
+    /// `memories` list is unchanged, so the default read path is
+    /// unaffected. See [`crate::query::retained`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retained_token_budget: Option<usize>,
 }
 
 impl RecallRequest {
@@ -115,6 +126,7 @@ impl RecallRequest {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         }
     }
 }
@@ -183,6 +195,14 @@ pub struct RecallResponse {
     /// early-stop / the cap fired. See [`crate::query::evidence`].
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub evidence_selection: Option<crate::query::evidence::EvidenceSelectionReport>,
+    /// EMBER (arXiv:2606.05894) — budgeted evidence-retention view.
+    /// Present iff the caller set
+    /// [`RecallRequest::retained_token_budget`]. Carries verbatim
+    /// evidence capsules (excerpt + retrieval key) packed under the
+    /// requested token cap, ranked by recoverability. Additive: the
+    /// `memories` list above is unchanged. See [`crate::query::retained`].
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub retained_evidence: Option<crate::query::retained::RetentionReport>,
 }
 
 impl RecallResponse {
@@ -194,6 +214,7 @@ impl RecallResponse {
             superseded: None,
             orientation_cache: None,
             evidence_selection: None,
+            retained_evidence: None,
         }
     }
 }
@@ -793,6 +814,41 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         None
     };
 
+    // EMBER (arXiv:2606.05894) — opt-in budgeted evidence retention.
+    // Runs only when the caller set `request.retained_token_budget`.
+    // Builds verbatim evidence capsules (excerpt + retrieval key) packed
+    // under the token cap, ranked by `recency × hit-rate` recoverability.
+    // Computed from the FINAL `memories` (post current-fact resolver,
+    // decrypted) and returned ALONGSIDE them — `memories` is not
+    // modified, so the default read path is unaffected. See
+    // [`crate::query::retained`].
+    let retained_evidence = request.retained_token_budget.map(|budget| {
+        let retain_now = chrono::Utc::now();
+        let candidates: Vec<crate::query::retained::RetentionCandidate<'_>> = memories
+            .iter()
+            .map(|m| {
+                let age_hours = chrono::DateTime::parse_from_rfc3339(&m.updated_at)
+                    .or_else(|_| chrono::DateTime::parse_from_rfc3339(&m.created_at))
+                    .map(|ts| {
+                        (retain_now - ts.with_timezone(&chrono::Utc)).num_seconds() as f64 / 3600.0
+                    })
+                    .unwrap_or(0.0);
+                crate::query::retained::RetentionCandidate {
+                    id: m.id,
+                    content: &m.content,
+                    access_count: m.access_count,
+                    age_hours,
+                    retrieval_score: m.score,
+                }
+            })
+            .collect();
+        crate::query::retained::retain_within_budget(
+            &candidates,
+            budget,
+            crate::query::retained::DEFAULT_EXCERPT_TOKENS,
+        )
+    });
+
     Ok(RecallResponse {
         memories,
         total,
@@ -800,6 +856,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         superseded: superseded_chain,
         orientation_cache: orientation_rendered,
         evidence_selection,
+        retained_evidence,
     })
 }
 

@@ -210,6 +210,8 @@ impl MnemoClient {
             mode: None,
             current_fact_resolver: None,
             orientation_cache: None,
+            evidence_budget: None,
+            retained_token_budget: None,
         };
 
         let response = self

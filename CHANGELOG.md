@@ -4,6 +4,34 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-08) — budgeted evidence retention (EMBER, arXiv:2606.05894)
+
+- **`RecallRequest.retained_token_budget: Option<usize>` — opt-in
+  budgeted evidence retention.** Extends the existing recall surface
+  (no new enum); anchored on
+  [arXiv:2606.05894](https://arxiv.org/abs/2606.05894) (*EMBER —
+  Efficient Memory By Evidence Retention*).
+  - When `Some(budget)`, the engine packs the recalled hits into at most
+    `budget` retained tokens as verbatim **evidence capsules** (a short
+    verbatim excerpt + a **retrieval key** that recovers the full
+    record), ranked by a v0 **recoverability heuristic**
+    (`recency × retrieval-hit-rate`) — a stand-in for EMBER's learned
+    writer. New module `crates/mnemo-core/src/query/retained.rs`.
+  - **Purely additive:** the `memories` list is unchanged; capsules ride
+    in the new `RecallResponse.retained_evidence`
+    (`RetentionReport { capsules, retained_tokens, candidates_examined,
+    dropped, … }`). The default read path (no budget) is unaffected.
+  - **Eval harness** at
+    `crates/mnemo-core/tests/budgeted_evidence_retention.rs` reports
+    recall@budget (and F1) on a LongMemEval-style fixture (60 gold facts)
+    at a fixed 8192-token budget for budgeted-capsules vs
+    naive-truncation: **1.000 vs 0.750** recall, budgeted using ~4.4K of
+    the 8192 tokens — so the knob's value is measurable.
+  - No protocol surface (MCP / REST / gRPC / pgwire) and no core
+    retrieval default is changed; the field is `#[serde(default)]` so
+    existing wire payloads deserialize unchanged. Workspace version
+    unchanged.
+
 ### Added (2026-06-07) — bench-only, no version bump
 
 - **bench/locomo: phase-aware cost attribution (construction/retrieval/generation)

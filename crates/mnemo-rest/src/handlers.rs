@@ -267,6 +267,7 @@ pub async fn recall_handler(
             None
         },
         evidence_budget: None,
+        retained_token_budget: None,
     };
 
     let response = engine.recall(request).await?;

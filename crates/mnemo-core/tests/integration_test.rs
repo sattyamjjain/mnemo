@@ -93,6 +93,7 @@ async fn test_full_lifecycle() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .expect("recall should succeed");
@@ -159,6 +160,7 @@ async fn test_full_lifecycle() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .expect("recall should succeed");
@@ -262,6 +264,7 @@ async fn test_multiple_memories_with_filtering() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -291,6 +294,7 @@ async fn test_multiple_memories_with_filtering() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -320,6 +324,7 @@ async fn test_multiple_memories_with_filtering() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -350,6 +355,7 @@ async fn test_multiple_memories_with_filtering() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -448,6 +454,7 @@ async fn test_access_count_increments() {
                 current_fact_resolver: None,
                 orientation_cache: None,
                 evidence_budget: None,
+                retained_token_budget: None,
             })
             .await
             .unwrap();
@@ -897,6 +904,7 @@ async fn test_exact_recall_strategy() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -1138,6 +1146,7 @@ async fn test_quarantined_excluded_from_recall() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -1258,6 +1267,7 @@ async fn test_recall_scope_filter() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -1289,6 +1299,7 @@ async fn test_recall_scope_filter() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -1353,6 +1364,7 @@ async fn test_recall_multi_type_filter() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -1859,6 +1871,7 @@ async fn test_hybrid_with_graph_signal() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -1951,6 +1964,7 @@ async fn test_sync_push_pull() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -2160,6 +2174,7 @@ async fn test_permission_safe_ann() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -2274,6 +2289,7 @@ async fn test_as_of_point_in_time() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -2305,6 +2321,7 @@ async fn test_as_of_point_in_time() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -2338,6 +2355,7 @@ async fn test_as_of_point_in_time() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
@@ -2395,6 +2413,7 @@ async fn test_event_integrity_verification() {
             current_fact_resolver: None,
             orientation_cache: None,
             evidence_budget: None,
+            retained_token_budget: None,
         })
         .await
         .unwrap();
