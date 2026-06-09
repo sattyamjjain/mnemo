@@ -4,6 +4,37 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-09) — agent-controlled memory mode (AutoMEM, arXiv:2606.04315)
+
+- **Agent-controlled memory mode over the MCP tool surface.** Four new
+  MCP tools let the agent manage a flat store it curates, so the *agent*
+  (not an ingestion heuristic) decides what persists. Anchored on
+  [arXiv:2606.04315](https://arxiv.org/abs/2606.04315) (*AutoMEM*).
+  - `mnemo.mem_write` / `mnemo.mem_read` / `mnemo.mem_revise` /
+    `mnemo.mem_forget` — **thin compositions over the verified
+    `remember` / `recall` / `forget` primitives** plus a reserved
+    `agent-managed` tag (`crates/mnemo-mcp/src/tools/agent_managed.rs`).
+    No new engine enum or method. `mem_revise` = soft-`forget` old +
+    `remember` corrected (newest wins); `mem_read` is `recall` scoped to
+    the reserved tag.
+  - **The default `mnemo.recall` pipeline is unchanged** and remains the
+    fallback for single-shot queries; the agent-managed path is additive
+    and for long-horizon write-control.
+  - **Crossover eval** at
+    `crates/mnemo-core/tests/agent_managed_crossover.rs` reproduces the
+    paper's single-shot-vs-long-horizon framing on a multi-session
+    fixture (12 tracked facts × 3 revisions + 12 incidental details),
+    holding retrieval to BM25 to isolate write-control:
+    - **fixed-pipeline wins single-shot** incidental recall (1.000 vs
+      0.000 — it ingested everything the agent skipped);
+    - **agent-managed wins long-horizon** current-fact F1 (1.000 vs
+      0.500 — it revised in place, so no stale versions dilute
+      precision).
+  - MCP contract test (`crates/mnemo-mcp/tests/mcp_test.rs`) verifies the
+    tag-scoping invariant (mem_read sees only agent-managed entries; the
+    default pipeline still sees everything) and revise supersession.
+  - Workspace version unchanged.
+
 ### Added (2026-06-08) — budgeted evidence retention (EMBER, arXiv:2606.05894)
 
 - **`RecallRequest.retained_token_budget: Option<usize>` — opt-in

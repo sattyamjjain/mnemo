@@ -186,6 +186,93 @@ async fn test_engine_recall_via_server_engine() {
     assert!(recall.memories[0].content.contains("MCP recall test"));
 }
 
+/// Agent-controlled memory mode (AutoMEM, arXiv:2606.04315) contract.
+///
+/// The `#[tool]` macro makes the tool methods private, so this exercises
+/// the same engine path the `mnemo.mem_*` tools delegate to: the
+/// reserved `agent-managed` tag scopes `mem_read` to the agent's own
+/// flat store (while the default pipeline still sees everything), and a
+/// revise (soft-forget old + write new) supersedes the stale entry.
+#[tokio::test]
+async fn test_agent_managed_flat_store_contract() {
+    use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy};
+    use mnemo_mcp::tools::agent_managed::AGENT_MANAGED_TAG;
+
+    let (_, engine) = create_server();
+
+    // mem_write: two agent-curated entries carry the reserved tag.
+    let mut w1 = RememberRequest::new("project deadline is March".to_string());
+    w1.tags = Some(vec![AGENT_MANAGED_TAG.to_string()]);
+    let revisable = engine.remember(w1).await.unwrap();
+
+    let mut w2 = RememberRequest::new("user prefers dark mode".to_string());
+    w2.tags = Some(vec![AGENT_MANAGED_TAG.to_string()]);
+    engine.remember(w2).await.unwrap();
+
+    // A pipeline-only entry the agent did NOT curate (no reserved tag).
+    engine
+        .remember(RememberRequest::new(
+            "incidental log line the agent ignored".to_string(),
+        ))
+        .await
+        .unwrap();
+
+    // mem_read: tag-scoped recall sees only the 2 agent-managed entries,
+    // never the pipeline-only one.
+    let mut read = RecallRequest::new("project".to_string());
+    read.tags = Some(vec![AGENT_MANAGED_TAG.to_string()]);
+    read.limit = Some(50);
+    let scoped = engine.recall(read).await.unwrap();
+    assert!(scoped.total >= 1);
+    assert!(
+        scoped
+            .memories
+            .iter()
+            .all(|m| m.tags.iter().any(|t| t == AGENT_MANAGED_TAG)),
+        "mem_read must only surface agent-managed entries"
+    );
+    assert!(
+        !scoped
+            .memories
+            .iter()
+            .any(|m| m.content.contains("incidental log line")),
+        "mem_read must not surface pipeline-only entries"
+    );
+
+    // The DEFAULT pipeline still sees the pipeline-only entry (untouched).
+    let mut broad = RecallRequest::new("incidental".to_string());
+    broad.limit = Some(50);
+    let all = engine.recall(broad).await.unwrap();
+    assert!(
+        all.memories
+            .iter()
+            .any(|m| m.content.contains("incidental log line")),
+        "default recall pipeline must remain the full-store fallback"
+    );
+
+    // mem_revise: soft-forget the stale deadline, write the corrected one.
+    let mut fr = ForgetRequest::new(vec![revisable.id]);
+    fr.strategy = Some(ForgetStrategy::SoftDelete);
+    engine.forget(fr).await.unwrap();
+    let mut w3 = RememberRequest::new("project deadline is May".to_string());
+    w3.tags = Some(vec![AGENT_MANAGED_TAG.to_string()]);
+    w3.metadata = Some(serde_json::json!({ "revises": revisable.id.to_string() }));
+    engine.remember(w3).await.unwrap();
+
+    let mut after = RecallRequest::new("deadline".to_string());
+    after.tags = Some(vec![AGENT_MANAGED_TAG.to_string()]);
+    after.limit = Some(50);
+    let revised = engine.recall(after).await.unwrap();
+    assert!(
+        revised.memories.iter().any(|m| m.content.contains("May")),
+        "revised value must be readable"
+    );
+    assert!(
+        !revised.memories.iter().any(|m| m.content.contains("March")),
+        "stale value must be superseded after revise"
+    );
+}
+
 #[tokio::test]
 async fn test_engine_verify_via_server_engine() {
     let (_, engine) = create_server();

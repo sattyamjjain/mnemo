@@ -106,6 +106,34 @@ The eval at [`crates/mnemo-core/tests/budgeted_evidence_retention.rs`](crates/mn
 
 Because each capsule costs a fraction of a raw chunk, every gold fact survives the budget (recall 1.000 vs 0.750) using barely half the tokens. See the module doc + tests at [`crates/mnemo-core/src/query/retained.rs`](crates/mnemo-core/src/query/retained.rs) for the cost model + the full "what this is NOT" block (v0 heuristic, not EMBER's learned writer; read-side projection, nothing mutated).
 
+### Agent-controlled memory mode — agent-managed flat store (AutoMEM, arXiv:2606.04315)
+
+Mnemo's default path is an **ingestion + retrieval pipeline**: content is written, indexed, and recalled by vector + BM25 + graph + RRF. [AutoMEM (arXiv:2606.04315)](https://arxiv.org/abs/2606.04315) frames a **crossover**: the fixed pipeline wins **single-shot** retrieval (it ingested everything, so the fact is in the index), but on **long-horizon, multi-session** workloads an agent that **controls its own writes** over a simple flat store can win, because it *revises stale facts in place* instead of letting every version pile up and pollute retrieval.
+
+So mnemo adds an opt-in **agent-controlled memory mode** over the MCP tool surface — four tools the agent itself calls to manage a flat store it curates:
+
+| MCP tool | What the agent does | Composed from |
+|---|---|---|
+| `mnemo.mem_write` | persist an entry it judged worth keeping | `remember` (+ reserved `agent-managed` tag) |
+| `mnemo.mem_read` | read back its own flat store (tag-scoped) | `recall` filtered to `agent-managed` |
+| `mnemo.mem_revise` | supersede a stale entry with a corrected one | soft-`forget` old + `remember` new (`metadata.revises`) |
+| `mnemo.mem_forget` | drop an entry it no longer wants | `forget` (soft / hard) |
+
+These are **thin compositions over the verified `remember` / `recall` / `forget` primitives** plus a reserved `agent-managed` tag — no new engine enum or method. **The default `mnemo.recall` pipeline is untouched and remains the fallback for single-shot queries.** The point is *write-control*: the agent (not an ingestion heuristic) decides what persists.
+
+The crossover eval at [`crates/mnemo-core/tests/agent_managed_crossover.rs`](crates/mnemo-core/tests/agent_managed_crossover.rs) measures both directions on a multi-session fixture (12 tracked facts × 3 revisions + 12 incidental details), holding retrieval to BM25 so the measured variable is purely write-control:
+
+```
+| query family              | mode           | recall@k | precision |  F1   |
+|---------------------------|----------------|---------:|----------:|------:|
+| long-horizon current-fact | fixed-pipeline |    1.000 |     0.333 | 0.500 |
+| long-horizon current-fact | agent-managed  |    1.000 |     1.000 | 1.000 |
+| single-shot incidental    | fixed-pipeline |    1.000 |     1.000 | 1.000 |
+| single-shot incidental    | agent-managed  |    0.000 |     0.000 | 0.000 |
+```
+
+**The pipeline still wins single-shot retrieval** (recall 1.000 vs 0.000 — it ingested the incidental details the agent chose to skip); the **agent-managed path wins long-horizon write-control** (current-fact F1 1.000 vs 0.500 — it revised in place, so no stale versions dilute precision). The agent-managed mode is *for* long-horizon write-control, not a replacement for single-shot retrieval. See the tool inputs at [`crates/mnemo-mcp/src/tools/agent_managed.rs`](crates/mnemo-mcp/src/tools/agent_managed.rs).
+
 ### Offline consolidation — Auto-Dreamer-shaped active-bank shrink (v0.4.8)
 
 Anthropic's Auto-Dreamer consolidation runs offline, away from the agent's interactive loop, and produces a smaller *active bank* of semantic summaries that should serve subsequent recall at least as well as the raw episodic trace it replaced. mnemo's existing `run_decay_pass` + `run_consolidation` path ([`crates/mnemo-core/src/query/lifecycle.rs`](crates/mnemo-core/src/query/lifecycle.rs), plus the reflection module at [`crates/mnemo-core/src/query/reflection.rs`](crates/mnemo-core/src/query/reflection.rs) that mirrors the same offline-housekeeping shape) is the engine-side equivalent: the decay pass marks low effective-importance records as `Archived` / `Forgotten`, the consolidation pass replaces tag-overlap clusters of episodic memories with structured `[Consolidated from N memories] …` semantic bundles, and the originals are flipped to `Consolidated` rather than deleted (so the chain stays auditable). The new Auto-Dreamer-shaped scenario at [`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs) exercises both passes end-to-end on a synthetic multi-session trajectory and reports the two axes Auto-Dreamer headlines as its claim: `active_bank_ratio = post / pre` (expects `< 1.0`) and held-out `recall_post >= recall_pre`. A JSON summary lands beside the Markdown report so the headline number is citable here.

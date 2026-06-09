@@ -1,3 +1,4 @@
+pub mod agent_managed;
 pub mod attention_state;
 pub mod branch;
 pub mod checkpoint;

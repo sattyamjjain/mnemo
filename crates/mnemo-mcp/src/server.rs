@@ -20,6 +20,9 @@ use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
 
+use crate::tools::agent_managed::{
+    AGENT_MANAGED_TAG, MemForgetInput, MemReadInput, MemReviseInput, MemWriteInput,
+};
 use crate::tools::attention_state::{AttentionStateGetInput, AttentionStatePutInput};
 use crate::tools::branch::BranchInput;
 use crate::tools::checkpoint::CheckpointInput;
@@ -908,6 +911,198 @@ impl MnemoServer {
             Ok(None) => Ok(CallToolResult::success(vec![Content::text(
                 "null".to_string(),
             )])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    // ----- Agent-controlled memory mode (AutoMEM, arXiv:2606.04315) -----
+    //
+    // Four tools the agent itself calls to manage a flat store it
+    // curates: write what it judges worth keeping, read it back, revise
+    // stale entries, and forget. Each is a thin composition over the
+    // verified `remember` / `recall` / `forget` primitives plus the
+    // reserved `agent-managed` tag — no new engine surface, and the
+    // default `mnemo.recall` pipeline stays the single-shot fallback.
+
+    #[tool(
+        name = "mnemo.mem_write",
+        description = "Agent-controlled memory (AutoMEM): persist an entry YOU decided is worth keeping into your flat, agent-managed store. Unlike automatic ingestion, nothing is written unless you call this. The entry is tagged 'agent-managed' and readable via mnemo.mem_read. Use mnemo.remember/mnemo.recall for the general pipeline."
+    )]
+    async fn mem_write(
+        &self,
+        Parameters(input): Parameters<MemWriteInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let memory_type = match input.memory_type {
+            Some(ref s) => match s.parse::<MemoryType>() {
+                Ok(mt) => Some(mt),
+                Err(_) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "invalid memory_type '{}': expected one of: episodic, semantic, procedural, working",
+                        s
+                    ))]));
+                }
+            },
+            None => None,
+        };
+        let mut tags = input.tags.unwrap_or_default();
+        if !tags.iter().any(|t| t == AGENT_MANAGED_TAG) {
+            tags.push(AGENT_MANAGED_TAG.to_string());
+        }
+        let mut request = RememberRequest::new(input.content);
+        request.memory_type = memory_type;
+        request.tags = Some(tags);
+        request.importance = input.importance;
+        request.metadata = input.metadata;
+        request.source_type = Some(SourceType::Agent);
+        request.agent_id = input.agent_id;
+        request.org_id = input.org_id;
+        match self.engine.remember(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "id": response.id.to_string(),
+                    "content_hash": response.content_hash,
+                    "store": AGENT_MANAGED_TAG,
+                    "status": "written"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.mem_read",
+        description = "Agent-controlled memory (AutoMEM): read back YOUR agent-managed flat store. Searches only entries you wrote via mnemo.mem_write (filtered to the 'agent-managed' tag), not the whole backend. For broad single-shot retrieval across all memories, use mnemo.recall instead."
+    )]
+    async fn mem_read(
+        &self,
+        Parameters(input): Parameters<MemReadInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let mut tags = input.tags.unwrap_or_default();
+        if !tags.iter().any(|t| t == AGENT_MANAGED_TAG) {
+            tags.push(AGENT_MANAGED_TAG.to_string());
+        }
+        let mut request = RecallRequest::new(input.query);
+        request.limit = Some(input.limit.unwrap_or(10));
+        request.tags = Some(tags);
+        request.agent_id = input.agent_id;
+        request.org_id = input.org_id;
+        request.strategy = Some("auto".to_string());
+        match self.engine.recall(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "memories": response.memories,
+                    "total": response.total,
+                    "store": AGENT_MANAGED_TAG,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.mem_revise",
+        description = "Agent-controlled memory (AutoMEM): supersede a stale agent-managed entry with a corrected one. Soft-deletes the old id and writes the new content (tagged 'agent-managed', metadata.revises=<old_id>); the newest write wins on later reads. This is how YOU keep the flat store current instead of letting stale facts accumulate."
+    )]
+    async fn mem_revise(
+        &self,
+        Parameters(input): Parameters<MemReviseInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let old_id = match uuid::Uuid::parse_str(&input.id) {
+            Ok(id) => id,
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid UUID '{}': {e}",
+                    input.id
+                ))]));
+            }
+        };
+        // Step 1: soft-forget the stale entry (recoverable + auditable).
+        let mut forget_req = ForgetRequest::new(vec![old_id]);
+        forget_req.strategy = Some(ForgetStrategy::SoftDelete);
+        forget_req.agent_id = input.agent_id.clone();
+        if let Err(e) = self.engine.forget(forget_req).await {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "failed to retire prior entry: {e}"
+            ))]));
+        }
+        // Step 2: write the corrected entry, linked back to the old id.
+        let mut tags = input.tags.unwrap_or_default();
+        if !tags.iter().any(|t| t == AGENT_MANAGED_TAG) {
+            tags.push(AGENT_MANAGED_TAG.to_string());
+        }
+        let mut request = RememberRequest::new(input.content);
+        request.tags = Some(tags);
+        request.importance = input.importance;
+        request.source_type = Some(SourceType::Agent);
+        request.agent_id = input.agent_id;
+        request.org_id = input.org_id;
+        request.metadata = Some(serde_json::json!({ "revises": old_id.to_string() }));
+        match self.engine.remember(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "id": response.id.to_string(),
+                    "revises": old_id.to_string(),
+                    "content_hash": response.content_hash,
+                    "store": AGENT_MANAGED_TAG,
+                    "status": "revised"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.mem_forget",
+        description = "Agent-controlled memory (AutoMEM): drop an agent-managed entry YOU no longer want. Soft-deletes by default (recoverable); pass hard=true for permanent removal."
+    )]
+    async fn mem_forget(
+        &self,
+        Parameters(input): Parameters<MemForgetInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let id = match uuid::Uuid::parse_str(&input.id) {
+            Ok(id) => id,
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid UUID '{}': {e}",
+                    input.id
+                ))]));
+            }
+        };
+        let mut request = ForgetRequest::new(vec![id]);
+        request.strategy = Some(if input.hard.unwrap_or(false) {
+            ForgetStrategy::HardDelete
+        } else {
+            ForgetStrategy::SoftDelete
+        });
+        request.agent_id = input.agent_id;
+        match self.engine.forget(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "forgotten": response.forgotten.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    "errors": response.errors,
+                    "status": "forgotten"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
         }
     }
