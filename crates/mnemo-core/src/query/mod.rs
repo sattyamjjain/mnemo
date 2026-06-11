@@ -5,6 +5,7 @@ pub mod conflict;
 pub mod current_fact_resolver;
 pub mod event_builder;
 pub mod evidence;
+pub mod experience;
 pub mod forget;
 pub mod lifecycle;
 pub mod maturity;
@@ -112,6 +113,14 @@ pub struct MnemoEngine {
     /// keeps the recall hot-path at zero overhead. Attach via
     /// [`MnemoEngine::with_evidence_scorer`].
     pub evidence_scorer: Option<Arc<dyn evidence::EvidenceScorer>>,
+    /// DocTrace (arXiv:2606.10921) — experience-memory tier gate. When
+    /// `false` (the default), `remember_plan` is a validation error and
+    /// `recall_plan` always misses, so default behaviour is unchanged.
+    /// Flip on via [`MnemoEngine::with_experience_memory`]. Plans are
+    /// stored as ordinary records (reserved tag + metadata), so the
+    /// tier is backend-agnostic and RBAC/consent-gated like everything
+    /// else. See [`experience`].
+    pub experience_memory_enabled: bool,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -146,6 +155,7 @@ impl MnemoEngine {
             orientation_cache_store: None,
             consolidation_policy: maturity::ConsolidationPolicy::default(),
             evidence_scorer: None,
+            experience_memory_enabled: false,
         }
     }
 
@@ -243,6 +253,17 @@ impl MnemoEngine {
         self
     }
 
+    /// DocTrace (arXiv:2606.10921) — enable the experience-memory tier so
+    /// [`remember_plan`](Self::remember_plan) caches successful plans and
+    /// [`recall_plan`](Self::recall_plan) replays them on
+    /// structurally-similar queries. Off by default (the two ops are
+    /// inert when disabled), so existing behaviour is unchanged. See
+    /// [`experience`].
+    pub fn with_experience_memory(mut self) -> Self {
+        self.experience_memory_enabled = true;
+        self
+    }
+
     pub async fn remember(
         &self,
         request: remember::RememberRequest,
@@ -328,6 +349,29 @@ impl MnemoEngine {
 
     pub async fn replay(&self, request: replay::ReplayRequest) -> Result<replay::ReplayResponse> {
         replay::execute(self, request).await
+    }
+
+    /// `REMEMBER_PLAN` (DocTrace, arXiv:2606.10921) — cache a successful
+    /// retrieval/reasoning plan into the experience-memory tier. Inert
+    /// unless the engine was built with
+    /// [`with_experience_memory`](Self::with_experience_memory). See
+    /// [`experience`].
+    pub async fn remember_plan(
+        &self,
+        request: experience::RememberPlanRequest,
+    ) -> Result<experience::RememberPlanResponse> {
+        experience::execute_remember_plan(self, request).await
+    }
+
+    /// `RECALL_PLAN` (DocTrace, arXiv:2606.10921) — replay the best stored
+    /// plan whose query signature matches above the similarity threshold,
+    /// or return a miss. Always misses when the experience-memory mode is
+    /// disabled. See [`experience`].
+    pub async fn recall_plan(
+        &self,
+        request: experience::RecallPlanRequest,
+    ) -> Result<experience::RecallPlanResponse> {
+        experience::execute_recall_plan(self, request).await
     }
 
     pub async fn run_decay_pass(

@@ -199,6 +199,15 @@ struct EvalArgs {
     strategy: String,
 }
 
+/// DocTrace experience-memory tier gate. Off unless
+/// `MNEMO_EXPERIENCE_MEMORY` is `1` / `true` (case-insensitive), so the
+/// default server behaviour is unchanged.
+fn experience_memory_enabled() -> bool {
+    std::env::var("MNEMO_EXPERIENCE_MEMORY")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -263,6 +272,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eng = eng.with_encryption(Arc::new(enc));
                 tracing::info!("At-rest encryption enabled");
             }
+            if experience_memory_enabled() {
+                eng = eng.with_experience_memory();
+                tracing::info!("Experience-memory tier (DocTrace) enabled");
+            }
             Arc::new(eng)
         }
         #[cfg(not(feature = "postgres"))]
@@ -307,6 +320,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let enc = ContentEncryption::from_hex(key_hex)?;
             eng = eng.with_encryption(Arc::new(enc));
             tracing::info!("At-rest encryption enabled");
+        }
+        if experience_memory_enabled() {
+            eng = eng.with_experience_memory();
+            tracing::info!("Experience-memory tier (DocTrace) enabled");
         }
         Arc::new(eng)
     };

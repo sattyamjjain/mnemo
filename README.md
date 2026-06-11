@@ -36,7 +36,7 @@ Add to your MCP client configuration (e.g. Claude Desktop, Cursor, etc.):
 
 ### 3. Use it
 
-Your AI agent now has persistent memory with 12 MCP tools:
+Your AI agent now has persistent memory with 14 MCP tools:
 
 | Tool | Description |
 |------|-------------|
@@ -50,6 +50,8 @@ Your AI agent now has persistent memory with 12 MCP tools:
 | `mnemo.replay` | Replay events from a checkpoint |
 | `mnemo.delegate` | Delegate scoped, time-bounded permissions to another agent |
 | `mnemo.verify` | Verify SHA-256 hash chain integrity |
+| `mnemo.remember_plan` | v0.4.14 — Cache a *successful* retrieval/reasoning plan (query signature + steps + chunk ids + outcome score) into the experience-memory tier (DocTrace; only when the mode is enabled) |
+| `mnemo.recall_plan` | v0.4.14 — Replay the best cached plan for a structurally-similar query instead of re-running full retrieval; RBAC-gated, returns a miss when nothing matches |
 | `mnemo.attention_state.put` | v0.4.5 — Store an opaque attention-state blob keyed by `(agent_id, prefix_hash)` (anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226); only registered when the server is built with `MnemoServer::with_attention_state(...)`) |
 | `mnemo.attention_state.get` | v0.4.5 — Look up an attention-state blob by `(agent_id, prefix_hash)`; returns `null` on miss |
 
@@ -133,6 +135,17 @@ The crossover eval at [`crates/mnemo-core/tests/agent_managed_crossover.rs`](cra
 ```
 
 **The pipeline still wins single-shot retrieval** (recall 1.000 vs 0.000 — it ingested the incidental details the agent chose to skip); the **agent-managed path wins long-horizon write-control** (current-fact F1 1.000 vs 0.500 — it revised in place, so no stale versions dilute precision). The agent-managed mode is *for* long-horizon write-control, not a replacement for single-shot retrieval. See the tool inputs at [`crates/mnemo-mcp/src/tools/agent_managed.rs`](crates/mnemo-mcp/src/tools/agent_managed.rs).
+
+### Experience-memory tier — cached plan replay (DocTrace, arXiv:2606.10921) — v0.4.14
+
+The four primitives above (**REMEMBER / RECALL / FORGET / SHARE**) operate on *tier 1*: the raw memory store. [DocTrace (arXiv:2606.10921)](https://arxiv.org/abs/2606.10921) adds a *tier 2* — an **experience memory** that caches a **successful retrieval/reasoning plan** and **replays** it when a structurally-similar query recurs, instead of re-running full retrieval. mnemo ships this as a **mode, not a new store**: two new ops on the existing engine surface, gated behind `MnemoEngine::with_experience_memory()` (or the `MNEMO_EXPERIENCE_MEMORY=1` env on the server) so **default behaviour is unchanged**.
+
+| Op | MCP tool | What it does |
+|---|---|---|
+| `REMEMBER_PLAN` | `mnemo.remember_plan` | Persist `{query-signature, steps, chunk ids, outcome score}` — **only** when the outcome clears the success threshold (failures are never cached). |
+| `RECALL_PLAN` | `mnemo.recall_plan` | On a new query, return the best stored plan whose signature matches above a Jaccard threshold (default 0.7) — the cached chunk-set + step order — else a miss. |
+
+Plans are persisted as **ordinary `MemoryRecord`s** carrying a reserved tag with the plan payload in `metadata`, so the tier is **backend-agnostic** (DuckDB + PostgreSQL, unchanged schema) and **RBAC/consent-gated** exactly like every other record (private plans are invisible to other agents; shared plans honour the ACL). A query *signature* is its normalized significant-token set; structural similarity is the Jaccard overlap of two signatures — deterministic and embedder-agnostic for the v0 replay gate. Plan records are excluded from ordinary `recall` (replayed only via `RECALL_PLAN`). See [`crates/mnemo-core/src/query/experience.rs`](crates/mnemo-core/src/query/experience.rs) and the contract tests at [`crates/mnemo-core/tests/experience_memory.rs`](crates/mnemo-core/tests/experience_memory.rs) (store-on-success, replay-on-similar, no-replay-on-dissimilar, RBAC, mode-off).
 
 ### Offline consolidation — Auto-Dreamer-shaped active-bank shrink (v0.4.8)
 

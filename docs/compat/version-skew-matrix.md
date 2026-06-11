@@ -1,7 +1,8 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-06-04 for the v0.4.13 cut (AMP / memorywire interop
-> adapter — `mnemo-amp`). The v0.4.5 → v0.4.9 cuts are not reproduced
+> Updated 2026-06-11 for the v0.4.14 cut (experience-memory tier —
+> DocTrace `REMEMBER_PLAN` / `RECALL_PLAN`, arXiv:2606.10921; engine +
+> MCP, default-off mode). The v0.4.5 → v0.4.9 cuts are not reproduced
 > here; consult the [CHANGELOG](../../CHANGELOG.md) for the per-cut
 > substrate / SDK matrix in those windows.
 
@@ -14,7 +15,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.4.13** (2026-06-04) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.4.14** (2026-06-11) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.4.13 (2026-06-04) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.12 (2026-06-02) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.11 (2026-06-02) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.10 (2026-05-29) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -26,7 +28,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.4.13** (2026-06-04) | 0.4.13 | 0.4.13 | 0.4.13 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.4.14** (2026-06-11) | 0.4.14 | 0.4.14 | 0.4.14 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.4.13 (2026-06-04) | 0.4.13 | 0.4.13 | 0.4.13 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.12 (2026-06-02) | 0.4.12 | 0.4.12 | 0.4.12 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.11 (2026-06-02) | 0.4.11 | 0.4.11 | 0.4.11 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.10 (2026-05-29) | 0.4.10 | 0.4.10 | 0.4.10 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |

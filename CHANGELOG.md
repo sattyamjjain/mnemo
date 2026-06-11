@@ -4,6 +4,41 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-11) — v0.4.14 cut, experience-memory tier (DocTrace, arXiv:2606.10921)
+
+Workspace `0.4.13 → 0.4.14`. Pinned `cargo_pkg_version_matches_v0_4_14`
+test and `docs/compat/version-skew-matrix.md` updated.
+
+- **Experience-memory tier — cached plan replay (`REMEMBER_PLAN` /
+  `RECALL_PLAN`).** DocTrace's two-tier idea (arXiv:2606.10921) as a
+  mnemo **mode, not a new store**: tier 1 is the raw memory store; tier 2
+  caches a *successful* retrieval/reasoning plan and replays it when a
+  structurally-similar query recurs.
+  - **New ops on the existing engine surface** (`MnemoEngine::remember_plan`
+    / `recall_plan`, module `crates/mnemo-core/src/query/experience.rs`) —
+    diff-compatible additions, no change to existing signatures and no new
+    `MemoryType` variant.
+  - `REMEMBER_PLAN` persists `{query-signature, steps, chunk ids, outcome
+    score}` **only** when the outcome clears the success threshold (0.5) —
+    failures are never cached. `RECALL_PLAN` returns the best stored plan
+    whose signature Jaccard-matches above a threshold (default 0.7), else
+    a miss.
+  - **Backend-agnostic + RBAC/consent-gated for free:** plans are ordinary
+    `MemoryRecord`s (reserved `__experience_plan__` tag + payload in
+    `metadata`), so both the DuckDB and PostgreSQL backends work unchanged
+    and scope/ACL visibility is enforced exactly like any record. Plan
+    records are excluded from ordinary `recall`.
+  - **Gated, default-off:** `MnemoEngine::with_experience_memory()` (or the
+    `MNEMO_EXPERIENCE_MEMORY=1` env on the CLI/server). With the mode off,
+    `remember_plan` errors and `recall_plan` misses, so default behaviour
+    is unchanged.
+  - **MCP surface:** `mnemo.remember_plan` + `mnemo.recall_plan`
+    (`crates/mnemo-mcp/src/tools/experience.rs`).
+  - **Tests** (`crates/mnemo-core/tests/experience_memory.rs`):
+    store-on-success, replay-on-similar, no-replay-on-dissimilar,
+    failures-not-cached, RBAC (private invisible / public visible), and
+    mode-off inertness; plus signature/Jaccard unit tests.
+
 ### Added (2026-06-09) — agent-controlled memory mode (AutoMEM, arXiv:2606.04315)
 
 - **Agent-controlled memory mode over the MCP tool surface.** Four new

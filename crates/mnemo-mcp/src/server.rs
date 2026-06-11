@@ -13,6 +13,7 @@ use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest;
+use mnemo_core::query::experience::{RecallPlanRequest, RememberPlanRequest};
 use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy, ForgetSubjectRequest};
 use mnemo_core::query::merge::{MergeRequest, MergeStrategy};
 use mnemo_core::query::recall::{RecallRequest, TemporalRange};
@@ -27,6 +28,7 @@ use crate::tools::attention_state::{AttentionStateGetInput, AttentionStatePutInp
 use crate::tools::branch::BranchInput;
 use crate::tools::checkpoint::CheckpointInput;
 use crate::tools::delegate::DelegateInput;
+use crate::tools::experience::{RecallPlanInput, RememberPlanInput};
 use crate::tools::forget::ForgetInput;
 use crate::tools::forget_subject::ForgetSubjectInput;
 use crate::tools::merge::MergeInput;
@@ -1097,6 +1099,92 @@ impl MnemoServer {
                     "forgotten": response.forgotten.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
                     "errors": response.errors,
                     "status": "forgotten"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    // ----- Experience-memory tier (DocTrace, arXiv:2606.10921) -----
+    //
+    // Two ops that cache and replay successful retrieval/reasoning plans.
+    // Both dispatch to the engine, which gates them on the
+    // experience-memory mode (`with_experience_memory`); with the mode
+    // off, `remember_plan` returns a disabled error and `recall_plan`
+    // returns a miss, so default behaviour is unchanged.
+
+    #[tool(
+        name = "mnemo.remember_plan",
+        description = "Experience memory (DocTrace): cache a SUCCESSFUL retrieval/reasoning plan — the query, the ordered steps, the chunk ids that produced a confirmed-good outcome, and an outcome score in [0,1]. Plans below the success threshold are not stored. Replay later with mnemo.recall_plan. Requires the server's experience-memory mode to be enabled."
+    )]
+    async fn remember_plan(
+        &self,
+        Parameters(input): Parameters<RememberPlanInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let scope = match input.scope {
+            Some(ref s) => match s.parse::<Scope>() {
+                Ok(sc) => Some(sc),
+                Err(_) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "invalid scope '{}': expected one of: private, shared, public, global",
+                        s
+                    ))]));
+                }
+            },
+            None => None,
+        };
+        let request = RememberPlanRequest {
+            query: input.query,
+            steps: input.steps,
+            chunk_ids: input.chunk_ids,
+            outcome_score: input.outcome_score,
+            agent_id: input.agent_id,
+            scope,
+            org_id: input.org_id,
+        };
+        match self.engine.remember_plan(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "id": response.id.map(|id| id.to_string()),
+                    "signature": response.signature,
+                    "stored": response.stored,
+                    "status": if response.stored { "plan_cached" } else { "below_success_threshold" }
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.recall_plan",
+        description = "Experience memory (DocTrace): replay the best cached plan whose query signature matches the new query above a similarity threshold (default 0.7), returning the stored chunk ids + step order instead of re-running full retrieval. Returns a miss (plan: null) when nothing matches or the mode is disabled. RBAC-gated: only plans visible to the requesting agent are considered."
+    )]
+    async fn recall_plan(
+        &self,
+        Parameters(input): Parameters<RecallPlanInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let request = RecallPlanRequest {
+            query: input.query,
+            agent_id: input.agent_id,
+            org_id: input.org_id,
+            similarity_threshold: input.similarity_threshold,
+        };
+        match self.engine.recall_plan(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "plan": response.plan,
+                    "candidates_considered": response.candidates_considered,
+                    "hit": response.plan.is_some(),
                 });
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&result)

@@ -866,6 +866,26 @@ async fn passes_filters(
     agent_id: &str,
     engine: &MnemoEngine,
 ) -> bool {
+    // Experience-tier plan records (DocTrace, arXiv:2606.10921) are never
+    // surfaced by ordinary recall — they are replayed only via
+    // `recall_plan`. Skip them unless the caller explicitly asks for the
+    // reserved tag.
+    if record
+        .tags
+        .iter()
+        .any(|t| t == crate::query::experience::EXPERIENCE_PLAN_TAG)
+        && !request
+            .tags
+            .as_ref()
+            .map(|ts| {
+                ts.iter()
+                    .any(|t| t == crate::query::experience::EXPERIENCE_PLAN_TAG)
+            })
+            .unwrap_or(false)
+    {
+        return false;
+    }
+
     // Skip deleted (unless as_of is set — the as_of filter handles deleted records)
     if request.as_of.is_none() && record.is_deleted() {
         return false;

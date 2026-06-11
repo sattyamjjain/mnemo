@@ -3,6 +3,7 @@ pub mod attention_state;
 pub mod branch;
 pub mod checkpoint;
 pub mod delegate;
+pub mod experience;
 pub mod forget;
 pub mod forget_subject;
 pub mod merge;
