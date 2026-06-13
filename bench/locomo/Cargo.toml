@@ -15,6 +15,10 @@ name = "grep_vs_vector_replay"
 path = "src/bin/grep_vs_vector_replay.rs"
 
 [[bin]]
+name = "semantic_recall_bench"
+path = "src/bin/semantic_recall_bench.rs"
+
+[[bin]]
 name = "interference"
 path = "src/bin/interference.rs"
 

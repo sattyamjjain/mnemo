@@ -4,6 +4,27 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-13) — real-embedder retrieval benchmark (`semantic_recall_bench`, bench-only)
+
+- **bench(locomo): real-embedder retrieval-quality bench.** New
+  [`semantic_recall_bench`](bench/locomo/src/bin/semantic_recall_bench.rs)
+  bin measures mnemo's recall path with a **real local semantic embedder**
+  (`nomic-embed-text`, 768-dim, via Ollama) instead of the degenerate
+  `NoopEmbedding` the sibling scaffolds use. Metric = gold-document
+  recall@1/@3/@5 + MRR, with a deterministic held-out tune/eval query
+  split, an auditable `hybrid_weights` / `rrf_k` sweep on the tune split,
+  and 5-seed averaging for stable numbers. Report + JSON at
+  `bench/locomo/results/semantic_recall_2026-06-13.md`.
+  - Held-out eval (mean of 5 seeds): `vector_only` recall@1 **0.739** / MRR
+    **0.805** clearly leads; mnemo's default `auto` (RRF) fusion
+    *underperforms* on recall@1 (0.452); a vector-dominant weight config
+    (`[6,1,0,0]` k=30) recovers most of the gap (0.696) — a real,
+    actionable finding that the default `auto` weights are worth revisiting
+    for paraphrase-heavy single-fact recall.
+  - **Bench-only**: no engine API, access protocol, or retrieval default is
+    changed; not the official LLM-judged LongMemEval / LoCoMo QA score
+    (gated; #44).
+
 ### Added (2026-06-13) — v0.4.15 cut, domain-scoped recall (MASDR-RAG, arXiv:2606.11350)
 
 Workspace `0.4.14 → 0.4.15`. Pinned `cargo_pkg_version_matches_v0_4_15`
