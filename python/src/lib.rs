@@ -212,6 +212,7 @@ impl MnemoClient {
             orientation_cache: None,
             evidence_budget: None,
             retained_token_budget: None,
+            domain_scope: None,
         };
 
         let response = self

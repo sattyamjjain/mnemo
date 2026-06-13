@@ -62,6 +62,30 @@ pub struct RecallInput {
     /// (arXiv:2605.19932). Default `None` leaves the read path
     /// unchanged.
     pub orientation_cache: Option<RecallOrientationCacheInput>,
+    /// v0.4.15 — domain-scoped recall (MASDR-RAG, arXiv:2606.11350).
+    /// When set, the candidate set is restricted to this
+    /// metadata-defined sub-corpus **before** the dense similarity step
+    /// (countering vector-search dilution at scale), then a single
+    /// vector pass runs over the sub-corpus. This selects the
+    /// `domain_scoped` retrieval mode automatically. Named `domain_scope`
+    /// (not `scope`) because `scope` already filters visibility
+    /// (private/shared/public/global). Default `None` leaves recall
+    /// unchanged.
+    pub domain_scope: Option<RecallDomainScopeInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecallDomainScopeInput {
+    /// Restrict to a single tenant / organization.
+    pub org_id: Option<String>,
+    /// Restrict to a namespace — matched against the record's tags or
+    /// its `metadata["namespace"]` value.
+    pub namespace: Option<String>,
+    /// Restrict to a document class — matched against the record's
+    /// `metadata["doc_class"]` value.
+    pub doc_class: Option<String>,
+    /// Require the record to carry all of these tags.
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

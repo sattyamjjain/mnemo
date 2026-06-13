@@ -144,6 +144,7 @@ fn build_recall(query: &str, with_provenance: Option<bool>) -> RecallRequest {
         orientation_cache: None,
         evidence_budget: None,
         retained_token_budget: None,
+        domain_scope: None,
     }
 }
 

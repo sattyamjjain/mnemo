@@ -4,6 +4,36 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-13) — v0.4.15 cut, domain-scoped recall (MASDR-RAG, arXiv:2606.11350)
+
+Workspace `0.4.14 → 0.4.15`. Pinned `cargo_pkg_version_matches_v0_4_15`
+test and `docs/compat/version-skew-matrix.md` updated.
+
+- **feat(recall): domain-scoped recall mode (anti vector-search-dilution,
+  MASDR-RAG 2606.11350).** Adds `RetrievalMode::DomainScoped`, a recall
+  mode that restricts the candidate set to a **metadata-defined
+  sub-corpus before the dense similarity step**, then runs a single
+  vector pass — so off-domain-but-semantically-similar records cannot
+  dilute the top-k as the corpus scales.
+  - **Diff-compatible:** additive enum variant (→ new `"domain_scoped"`
+    strategy) plus an optional `RecallRequest.domain_scope` kwarg
+    (`DomainScope { org_id, namespace, doc_class, tags }`,
+    `#[serde(default)]`). No existing caller breaks; legacy `strategy`
+    and typed `mode` paths are unchanged. A non-empty `domain_scope`
+    selects the mode automatically even when `mode` is unset.
+  - **Backend-agnostic + RBAC-gated:** the predicate resolves the
+    sub-corpus id-set through the existing storage layer (DuckDB +
+    PostgreSQL) and is composed with the permission filter, so the ANN
+    sees only `(accessible ∩ in-domain)` ids.
+  - **MCP surface:** `mnemo.recall` gains a `domain_scope` object
+    (`crates/mnemo-mcp/src/tools/recall.rs`); named `domain_scope` (not
+    `scope`) because `scope` already filters visibility.
+  - **Dilution eval** (`crates/mnemo-core/tests/domain_scoped_dilution.rs`):
+    on a corpus growing 50 → 1,000 docs, flat semantic P@10 collapses
+    0.100 → 0.000 while domain-scoped holds at 1.000 — asserts the gap at
+    the largest size is ≥ 0.05 (it is ~1.0). Plus `DomainScope::matches`
+    + serde unit tests in `retrieval.rs`.
+
 ### Added (2026-06-11) — v0.4.14 cut, experience-memory tier (DocTrace, arXiv:2606.10921)
 
 Workspace `0.4.13 → 0.4.14`. Pinned `cargo_pkg_version_matches_v0_4_14`

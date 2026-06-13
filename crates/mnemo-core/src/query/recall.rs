@@ -100,6 +100,15 @@ pub struct RecallRequest {
     /// unaffected. See [`crate::query::retained`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retained_token_budget: Option<usize>,
+    /// v0.4.15 — domain-scoped recall predicate (MASDR-RAG,
+    /// arXiv:2606.11350). When set (or when
+    /// [`mode`](Self::mode) is [`RetrievalMode::DomainScoped`][crate::retrieval::RetrievalMode::DomainScoped]),
+    /// the candidate set is restricted to the metadata-defined
+    /// sub-corpus described by this [`DomainScope`][crate::retrieval::DomainScope]
+    /// *before* the dense similarity step, countering vector-search
+    /// dilution at scale. Default `None` keeps the read path unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_scope: Option<crate::retrieval::DomainScope>,
 }
 
 impl RecallRequest {
@@ -127,6 +136,7 @@ impl RecallRequest {
             orientation_cache: None,
             evidence_budget: None,
             retained_token_budget: None,
+            domain_scope: None,
         }
     }
 }
@@ -288,6 +298,16 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     // compatible — SDKs that only marshal `strategy` continue to work.
     let strategy = if let Some(ref mode) = request.mode {
         mode.to_strategy_str()
+    } else if request
+        .domain_scope
+        .as_ref()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+    {
+        // v0.4.15 — a domain_scope predicate selects domain-scoped recall
+        // even when the caller didn't set the typed mode (ergonomic for
+        // SDKs that only marshal a `scope` kwarg).
+        "domain_scoped"
     } else {
         request.strategy.as_deref().unwrap_or("auto")
     };
@@ -328,6 +348,63 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
                 engine
                     .index
                     .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            for (id, distance) in search_results {
+                if let Some(record) = get_memory_cached(engine, id).await?
+                    && passes_filters(&record, &request, &agent_id, engine).await
+                {
+                    let score = 1.0 - distance;
+                    scored_memories.push((record, score));
+                }
+            }
+        }
+        "domain_scoped" => {
+            // v0.4.15 — domain-scoped recall (MASDR-RAG, arXiv:2606.11350).
+            // Restrict the candidate universe to the metadata-defined
+            // sub-corpus BEFORE the dense similarity step, so off-domain
+            // (but semantically similar) records can never enter the
+            // top-k. Then a single vector pass over the sub-corpus.
+            //
+            // The sub-corpus id-set is resolved from storage by the
+            // `DomainScope` predicate and composed with the permission
+            // filter, so the ANN sees only (accessible ∩ in-domain) ids.
+            let domain_ids: Option<HashSet<Uuid>> = match request.domain_scope.as_ref() {
+                Some(scope) if !scope.is_empty() => {
+                    // Coarse narrowing on org_id at the storage layer, then
+                    // exact predicate matching (namespace / doc_class / tags).
+                    let coarse = MemoryFilter {
+                        agent_id: None,
+                        memory_type: None,
+                        scope: None,
+                        tags: None,
+                        min_importance: None,
+                        org_id: scope.org_id.clone(),
+                        thread_id: None,
+                        include_deleted: false,
+                    };
+                    let records = engine
+                        .storage
+                        .list_memories(&coarse, super::MAX_BATCH_QUERY_LIMIT, 0)
+                        .await?;
+                    Some(
+                        records
+                            .iter()
+                            .filter(|r| scope.matches(r))
+                            .map(|r| r.id)
+                            .collect(),
+                    )
+                }
+                // DomainScoped selected without a predicate degrades to a
+                // plain vector pass (no extra restriction).
+                _ => None,
+            };
+
+            let domain_filter = |id: Uuid| {
+                perm_filter(id) && domain_ids.as_ref().map(|d| d.contains(&id)).unwrap_or(true)
+            };
+            let search_results =
+                engine
+                    .index
+                    .filtered_search(&query_embedding, limit * 3, &domain_filter)?;
             for (id, distance) in search_results {
                 if let Some(record) = get_memory_cached(engine, id).await?
                     && passes_filters(&record, &request, &agent_id, engine).await

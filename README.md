@@ -147,6 +147,26 @@ The four primitives above (**REMEMBER / RECALL / FORGET / SHARE**) operate on *t
 
 Plans are persisted as **ordinary `MemoryRecord`s** carrying a reserved tag with the plan payload in `metadata`, so the tier is **backend-agnostic** (DuckDB + PostgreSQL, unchanged schema) and **RBAC/consent-gated** exactly like every other record (private plans are invisible to other agents; shared plans honour the ACL). A query *signature* is its normalized significant-token set; structural similarity is the Jaccard overlap of two signatures — deterministic and embedder-agnostic for the v0 replay gate. Plan records are excluded from ordinary `recall` (replayed only via `RECALL_PLAN`). See [`crates/mnemo-core/src/query/experience.rs`](crates/mnemo-core/src/query/experience.rs) and the contract tests at [`crates/mnemo-core/tests/experience_memory.rs`](crates/mnemo-core/tests/experience_memory.rs) (store-on-success, replay-on-similar, no-replay-on-dissimilar, RBAC, mode-off).
 
+### Domain-scoped recall — anti vector-search-dilution (MASDR-RAG, arXiv:2606.11350) — v0.4.15
+
+`RetrievalMode::DomainScoped` adds a recall mode that **pre-filters to a metadata-defined sub-corpus before the dense similarity step**, then runs a single vector pass. The predicate rides on an additive, optional `RecallRequest.domain_scope` kwarg (a `DomainScope { org_id, namespace, doc_class, tags }`) — no breaking change to existing callers, and the legacy `strategy` / typed `mode` paths are untouched. Over MCP, pass a `domain_scope` object to `mnemo.recall` (named `domain_scope`, not `scope`, because `scope` already filters visibility):
+
+```jsonc
+{ "query": "indemnification cap", "domain_scope": { "org_id": "acme", "namespace": "legal", "doc_class": "contract" } }
+```
+
+**Why scoping beats more-documents.** Dense retrieval ranks by semantic similarity, and similarity is *not* domain-awareness: a query about one tenant's contracts is highly similar to every other tenant's contracts too. As the corpus grows, those off-domain-but-on-topic records crowd into the top-k and push the genuinely relevant ones out — so adding documents makes precision **worse**, not better. Restricting the candidate set to the right sub-corpus *before* the vector search removes the dilutants entirely, so precision is independent of how large the rest of the corpus gets. The dilution eval at [`crates/mnemo-core/tests/domain_scoped_dilution.rs`](crates/mnemo-core/tests/domain_scoped_dilution.rs) reproduces the curve on a corpus growing 50 → 1,000 docs (10 fixed in-domain gold docs, the rest same-topic off-domain distractors):
+
+```
+| corpus | flat P@10 | domain-scoped P@10 | gap    |
+|-------:|----------:|-------------------:|-------:|
+|     50 |     0.100 |              1.000 | +0.900 |
+|    200 |     0.000 |              1.000 | +1.000 |
+|   1000 |     0.000 |              1.000 | +1.000 |
+```
+
+Flat semantic recall collapses to **0.000** P@10 by 1,000 docs; domain-scoped holds at **1.000**. The metadata predicate is enforced through the existing storage layer, so it works on **both** the DuckDB and PostgreSQL backends and respects RBAC/scope exactly like ordinary recall.
+
 ### Offline consolidation — Auto-Dreamer-shaped active-bank shrink (v0.4.8)
 
 Anthropic's Auto-Dreamer consolidation runs offline, away from the agent's interactive loop, and produces a smaller *active bank* of semantic summaries that should serve subsequent recall at least as well as the raw episodic trace it replaced. mnemo's existing `run_decay_pass` + `run_consolidation` path ([`crates/mnemo-core/src/query/lifecycle.rs`](crates/mnemo-core/src/query/lifecycle.rs), plus the reflection module at [`crates/mnemo-core/src/query/reflection.rs`](crates/mnemo-core/src/query/reflection.rs) that mirrors the same offline-housekeeping shape) is the engine-side equivalent: the decay pass marks low effective-importance records as `Archived` / `Forgotten`, the consolidation pass replaces tag-overlap clusters of episodic memories with structured `[Consolidated from N memories] …` semantic bundles, and the originals are flipped to `Consolidated` rather than deleted (so the chain stays auditable). The new Auto-Dreamer-shaped scenario at [`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs) exercises both passes end-to-end on a synthetic multi-session trajectory and reports the two axes Auto-Dreamer headlines as its claim: `active_bank_ratio = post / pre` (expects `< 1.0`) and held-out `recall_post >= recall_pre`. A JSON summary lands beside the Markdown report so the headline number is citable here.

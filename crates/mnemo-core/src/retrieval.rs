@@ -90,6 +90,16 @@ pub enum RetrievalMode {
         harness: HarnessKind,
         format: EnvelopeFormat,
     },
+    /// New in v0.4.15 — **domain-scoped** recall (anti
+    /// vector-search-dilution; MASDR-RAG, arXiv:2606.11350). Restricts
+    /// the candidate set to a metadata-defined sub-corpus *before* the
+    /// dense similarity step, then runs a single vector pass — so at
+    /// scale, off-domain-but-semantically-similar records cannot dilute
+    /// the top-k. The predicate rides on
+    /// [`RecallRequest.domain_scope`][crate::query::recall::RecallRequest::domain_scope]
+    /// (a [`DomainScope`]); selecting this mode without a predicate
+    /// degrades gracefully to a plain vector pass.
+    DomainScoped,
 }
 
 impl RetrievalMode {
@@ -103,6 +113,7 @@ impl RetrievalMode {
             Self::Bm25Only => "lexical",
             Self::HybridRrf | Self::HarnessAware { .. } => "auto",
             Self::Graph => "graph",
+            Self::DomainScoped => "domain_scoped",
         }
     }
 
@@ -115,6 +126,78 @@ impl RetrievalMode {
             return None;
         };
         Some(adapter_for(*harness, format.clone()))
+    }
+}
+
+/// Metadata predicate that defines a recall **sub-corpus** for
+/// [`RetrievalMode::DomainScoped`] (MASDR-RAG, arXiv:2606.11350).
+///
+/// A record is *in domain* iff it matches **every** populated field
+/// (logical AND); empty fields are ignored. `org_id` matches the record's
+/// tenant; `namespace` matches either a record tag or
+/// `metadata["namespace"]`; `doc_class` matches `metadata["doc_class"]`;
+/// `tags` requires the record to carry **all** listed tags. An entirely
+/// empty scope ([`DomainScope::is_empty`]) imposes no restriction.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DomainScope {
+    /// Restrict to a single tenant / organization.
+    pub org_id: Option<String>,
+    /// Restrict to a namespace — matched against the record's tags or
+    /// its `metadata["namespace"]` value.
+    pub namespace: Option<String>,
+    /// Restrict to a document class — matched against the record's
+    /// `metadata["doc_class"]` value.
+    pub doc_class: Option<String>,
+    /// Require the record to carry all of these tags.
+    pub tags: Option<Vec<String>>,
+}
+
+impl DomainScope {
+    /// `true` when no predicate field is set (imposes no restriction).
+    pub fn is_empty(&self) -> bool {
+        self.org_id.is_none()
+            && self.namespace.is_none()
+            && self.doc_class.is_none()
+            && self.tags.as_ref().map(|t| t.is_empty()).unwrap_or(true)
+    }
+
+    /// Whether `record` belongs to this sub-corpus (logical AND over the
+    /// populated fields).
+    pub fn matches(&self, record: &crate::model::memory::MemoryRecord) -> bool {
+        if let Some(ref org) = self.org_id
+            && record.org_id.as_deref() != Some(org.as_str())
+        {
+            return false;
+        }
+        if let Some(ref ns) = self.namespace {
+            let tag_hit = record.tags.iter().any(|t| t == ns);
+            let meta_hit = record
+                .metadata
+                .get("namespace")
+                .and_then(|v| v.as_str())
+                .map(|v| v == ns)
+                .unwrap_or(false);
+            if !tag_hit && !meta_hit {
+                return false;
+            }
+        }
+        if let Some(ref dc) = self.doc_class {
+            let meta_hit = record
+                .metadata
+                .get("doc_class")
+                .and_then(|v| v.as_str())
+                .map(|v| v == dc)
+                .unwrap_or(false);
+            if !meta_hit {
+                return false;
+            }
+        }
+        if let Some(ref tags) = self.tags
+            && !tags.iter().all(|t| record.tags.contains(t))
+        {
+            return false;
+        }
+        true
     }
 }
 
@@ -324,6 +407,10 @@ mod tests {
         assert_eq!(RetrievalMode::Bm25Only.to_strategy_str(), "lexical");
         assert_eq!(RetrievalMode::HybridRrf.to_strategy_str(), "auto");
         assert_eq!(RetrievalMode::Graph.to_strategy_str(), "graph");
+        assert_eq!(
+            RetrievalMode::DomainScoped.to_strategy_str(),
+            "domain_scoped"
+        );
         let harness = RetrievalMode::HarnessAware {
             harness: HarnessKind::ClaudeCode,
             format: EnvelopeFormat::Inline,
@@ -333,6 +420,94 @@ mod tests {
         assert_eq!(harness.to_strategy_str(), "auto");
     }
 
+    fn rec(
+        org: Option<&str>,
+        tags: &[&str],
+        metadata: serde_json::Value,
+    ) -> crate::model::memory::MemoryRecord {
+        use crate::model::memory::{ConsolidationState, SourceType};
+        crate::model::memory::MemoryRecord {
+            id: Uuid::now_v7(),
+            agent_id: "a".to_string(),
+            content: "c".to_string(),
+            memory_type: MemoryType::Episodic,
+            scope: Scope::Private,
+            importance: 0.5,
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            metadata,
+            embedding: None,
+            content_hash: vec![],
+            prev_hash: None,
+            source_type: SourceType::Agent,
+            source_id: None,
+            consolidation_state: ConsolidationState::Raw,
+            access_count: 0,
+            org_id: org.map(str::to_string),
+            thread_id: None,
+            created_at: "2026-06-13T00:00:00Z".to_string(),
+            updated_at: "2026-06-13T00:00:00Z".to_string(),
+            last_accessed_at: None,
+            expires_at: None,
+            deleted_at: None,
+            decay_rate: None,
+            created_by: None,
+            version: 1,
+            prev_version_id: None,
+            quarantined: false,
+            quarantine_reason: None,
+            decay_function: None,
+        }
+    }
+
+    #[test]
+    fn domain_scope_matches_logical_and() {
+        // Empty scope matches everything.
+        let empty = DomainScope::default();
+        assert!(empty.is_empty());
+        assert!(empty.matches(&rec(Some("alpha"), &[], serde_json::Value::Null)));
+
+        // org_id predicate.
+        let by_org = DomainScope {
+            org_id: Some("alpha".to_string()),
+            ..Default::default()
+        };
+        assert!(by_org.matches(&rec(Some("alpha"), &[], serde_json::Value::Null)));
+        assert!(!by_org.matches(&rec(Some("beta"), &[], serde_json::Value::Null)));
+
+        // namespace via tag OR metadata.
+        let by_ns = DomainScope {
+            namespace: Some("legal".to_string()),
+            ..Default::default()
+        };
+        assert!(by_ns.matches(&rec(None, &["legal"], serde_json::Value::Null)));
+        assert!(by_ns.matches(&rec(None, &[], serde_json::json!({"namespace": "legal"}))));
+        assert!(!by_ns.matches(&rec(None, &["hr"], serde_json::json!({"namespace": "hr"}))));
+
+        // doc_class via metadata; AND with org.
+        let combo = DomainScope {
+            org_id: Some("alpha".to_string()),
+            doc_class: Some("contract".to_string()),
+            ..Default::default()
+        };
+        assert!(combo.matches(&rec(
+            Some("alpha"),
+            &[],
+            serde_json::json!({"doc_class": "contract"})
+        )));
+        // right doc_class, wrong org → rejected (AND).
+        assert!(!combo.matches(&rec(
+            Some("beta"),
+            &[],
+            serde_json::json!({"doc_class": "contract"})
+        )));
+        // right org, wrong doc_class → rejected.
+        assert!(!combo.matches(&rec(
+            Some("alpha"),
+            &[],
+            serde_json::json!({"doc_class": "memo"})
+        )));
+    }
+
     #[test]
     fn retrieval_mode_serde_round_trip() {
         for mode in [
@@ -340,6 +515,7 @@ mod tests {
             RetrievalMode::Bm25Only,
             RetrievalMode::HybridRrf,
             RetrievalMode::Graph,
+            RetrievalMode::DomainScoped,
             RetrievalMode::HarnessAware {
                 harness: HarnessKind::ClaudeCode,
                 format: EnvelopeFormat::Inline,

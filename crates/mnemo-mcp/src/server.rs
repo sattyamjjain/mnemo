@@ -263,6 +263,21 @@ impl MnemoServer {
                 distill: o.distill.unwrap_or(true),
             }
         });
+        // v0.4.15 — domain-scoped recall. A non-empty `domain_scope`
+        // restricts the candidate set to the metadata sub-corpus before
+        // the dense step and selects the DomainScoped mode.
+        if let Some(ds) = input.domain_scope {
+            let scope = mnemo_core::retrieval::DomainScope {
+                org_id: ds.org_id,
+                namespace: ds.namespace,
+                doc_class: ds.doc_class,
+                tags: ds.tags,
+            };
+            if !scope.is_empty() {
+                request.domain_scope = Some(scope);
+                request.mode = Some(mnemo_core::retrieval::RetrievalMode::DomainScoped);
+            }
+        }
 
         match self.engine.recall(request).await {
             Ok(response) => {

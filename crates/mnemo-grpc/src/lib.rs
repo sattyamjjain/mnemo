@@ -261,6 +261,7 @@ impl MnemoService for MnemoGrpcServer {
             orientation_cache: orientation_cache_cfg,
             evidence_budget: None,
             retained_token_budget: None,
+            domain_scope: None,
         };
 
         let result = self

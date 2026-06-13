@@ -102,6 +102,7 @@ pub async fn send_message(
         orientation_cache: None,
         evidence_budget: None,
         retained_token_budget: None,
+        domain_scope: None,
     };
     let resp = engine
         .recall(recall)
