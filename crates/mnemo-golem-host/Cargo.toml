@@ -16,11 +16,13 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-# wasmtime is the WASM-component runtime. Pinned to the stable v27
-# component-model release that the cargo-component v0.21 toolchain
-# emits artifacts compatible with.
-wasmtime = { version = "27.0", features = ["component-model"] }
-wasmtime-wasi = "27.0"
+# wasmtime is the WASM-component runtime. Tracks the stable v45
+# component-model release. NOTE: this crate's source does not yet call
+# the wasmtime API (the Linker/Store/bindgen wiring is deferred — see the
+# lib.rs module doc), so the version is a forward-looking pin; bumps are
+# resolve/compile-only until the loader integration lands.
+wasmtime = { version = "45.0", features = ["component-model"] }
+wasmtime-wasi = "45.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

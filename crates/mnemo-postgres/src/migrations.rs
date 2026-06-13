@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS memories (
 )
 "#
     );
-    sqlx::query(&create_memories)
+    sqlx::query(sqlx::AssertSqlSafe(create_memories.as_str()))
         .execute(pool)
         .await
         .map_err(|e| Error::Storage(format!("create memories: {e}")))?;
@@ -212,6 +212,8 @@ CREATE TABLE IF NOT EXISTS embedding_baseline (
     .map_err(|e| Error::Storage(format!("create embedding_baseline: {e}")))?;
 
     // ---- Indexes ----
+    // sqlx 0.9 gates dynamic SQL behind `SqlSafeStr`; these statements are
+    // compile-time literals (no user data), so `AssertSqlSafe` is audited-safe.
     let index_stmts: &[&str] = &[
         "CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id)",
         "CREATE INDEX IF NOT EXISTS idx_memories_thread ON memories(agent_id, thread_id)",
@@ -228,7 +230,7 @@ CREATE TABLE IF NOT EXISTS embedding_baseline (
     ];
 
     for stmt in index_stmts {
-        sqlx::query(stmt)
+        sqlx::query(sqlx::AssertSqlSafe(*stmt))
             .execute(pool)
             .await
             .map_err(|e| Error::Storage(format!("create index: {e}")))?;

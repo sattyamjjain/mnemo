@@ -142,6 +142,12 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> std::result::Result<MemoryRecor
 /// The standard SELECT column list for the memories table.
 /// We cast the pgvector `embedding` column to text so we can parse it
 /// back into `Vec<f32>` without depending on a pgvector Rust decode path.
+///
+/// NOTE (sqlx 0.9 `SqlSafeStr`): queries that interpolate this const into
+/// a `format!`ed SQL string are wrapped in `sqlx::AssertSqlSafe`. This is
+/// audited-safe: the only interpolated values are this column-list const,
+/// code-built `$N` placeholder fragments, and numeric `usize` limit/offset
+/// — all caller data is bound via `$N`, never string-interpolated.
 const MEMORY_COLUMNS: &str = r#"
     id, agent_id, content, memory_type, scope, importance,
     tags, metadata, embedding::text AS embedding_text,
@@ -348,7 +354,7 @@ INSERT INTO memories (
 
     async fn get_memory(&self, id: Uuid) -> Result<Option<MemoryRecord>> {
         let sql = format!("SELECT {MEMORY_COLUMNS} FROM memories WHERE id = $1");
-        let row = sqlx::query(&sql)
+        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(id)
             .fetch_optional(&self.pool)
             .await
@@ -534,7 +540,7 @@ WHERE id = $28
             "SELECT {MEMORY_COLUMNS} FROM memories {where_clause} ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
         );
 
-        let mut query = sqlx::query(&sql);
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
         for p in &params {
             match p {
                 Param::Str(s) => query = query.bind(s),
@@ -1016,7 +1022,7 @@ LIMIT $2
             let sql = format!(
                 "SELECT {MEMORY_COLUMNS} FROM memories WHERE agent_id = $1 AND thread_id = $2 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT $3"
             );
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(agent_id)
                 .bind(tid)
                 .bind(limit as i64)
@@ -1027,7 +1033,7 @@ LIMIT $2
             let sql = format!(
                 "SELECT {MEMORY_COLUMNS} FROM memories WHERE agent_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC LIMIT $2"
             );
-            sqlx::query(&sql)
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(agent_id)
                 .bind(limit as i64)
                 .fetch_all(&self.pool)
@@ -1054,7 +1060,7 @@ LIMIT $2
         let sql = format!(
             "SELECT {MEMORY_COLUMNS} FROM memories WHERE updated_at > $1 ORDER BY updated_at ASC LIMIT $2"
         );
-        let rows = sqlx::query(&sql)
+        let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(updated_after)
             .bind(limit as i64)
             .fetch_all(&self.pool)

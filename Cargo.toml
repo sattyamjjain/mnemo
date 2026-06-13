@@ -50,10 +50,10 @@ hex = "0.4"
 
 # Storage
 # duckdb-rs re-versioned to a calendar-style scheme aligned with the
-# underlying DuckDB engine: 1.10502.0 wraps DuckDB 1.5.2 (year 1,
-# month 05, patch 02). See https://github.com/duckdb/duckdb-rs/releases.
+# underlying DuckDB engine: 1.10503.1 wraps DuckDB 1.5.3 (year 1,
+# month 05, patch 03). See https://github.com/duckdb/duckdb-rs/releases.
 # Tracked at #41 (Step 1 — bump; Step 2 — DuckLake opt-in deferred to v0.5.x).
-duckdb = { version = "=1.10502.0", features = ["bundled"] }
+duckdb = { version = "=1.10503.1", features = ["bundled"] }
 
 # Vector index
 usearch = "2.21"
@@ -98,7 +98,7 @@ axum = "0.8"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # PostgreSQL
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "chrono", "json"] }
 pgvector = { version = "0.8.2", features = ["sqlx"] }
 
 # Internal crates.

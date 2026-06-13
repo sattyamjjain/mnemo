@@ -382,7 +382,7 @@ pub async fn measure_quality(
     let doc_vecs_raw = provider.embed_batch(&doc_texts).await?;
     let doc_vecs: Vec<(String, Vec<f32>)> = corpus
         .iter()
-        .zip(doc_vecs_raw.into_iter())
+        .zip(doc_vecs_raw)
         .map(|(d, v)| (d.id.clone(), v))
         .collect();
 
