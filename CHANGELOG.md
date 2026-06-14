@@ -4,6 +4,22 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-06-14) — Postgres semantic recall fails loud instead of silent-empty
+
+- **fix(postgres): `PgVectorIndex` ANN search now errors instead of silently
+  returning empty.** On the PostgreSQL backend, `semantic` / `auto` (hybrid) /
+  `graph` / `domain_scoped` recall previously returned `Ok(vec![])` because
+  `PgVectorIndex::search` / `filtered_search` were no-op stubs — making recall
+  look like it legitimately found nothing, the most dangerous failure mode for
+  a memory database. Both now return a clear `Error::Index` naming the
+  limitation, the DuckDB alternative, and the tracking issue. Embeddings are
+  still persisted to the pgvector column; only ANN *search* is unimplemented.
+  The README now documents DuckDB as the supported vector backend, and real
+  pgvector ANN is tracked in
+  [#99](https://github.com/sattyamjjain/mnemo/issues/99). Adds a unit test
+  asserting the fail-loud behaviour. **No change to the DuckDB path or any
+  public API.**
+
 ### Added (2026-06-13) — real-embedder retrieval benchmark (`semantic_recall_bench`, bench-only)
 
 - **bench(locomo): real-embedder retrieval-quality bench.** New
