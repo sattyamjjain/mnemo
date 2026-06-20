@@ -41,7 +41,7 @@ jobs:
     outputs:
       to_publish: ${{ steps.diff.outputs.to_publish }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Compute which crates need publishing
         id: diff
         run: |
@@ -94,7 +94,7 @@ jobs:
       name: crates-io
       url: https://crates.io/crates/mnemo-core
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by mnemo-grpc build script)
