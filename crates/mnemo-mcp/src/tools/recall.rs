@@ -25,7 +25,7 @@ pub struct RecallInput {
     pub min_importance: Option<f32>,
     /// Filter by tags. Returns memories matching any of the specified tags.
     pub tags: Option<Vec<String>>,
-    /// Retrieval strategy: "semantic" (vector only), "lexical" (BM25 only), "hybrid" (vector + BM25 + recency), "graph" (graph traversal), "exact" (filter-based), or "auto" (hybrid if available, else semantic). Defaults to "auto".
+    /// Retrieval strategy: "semantic" (vector only), "lexical" (BM25 only), "hybrid" (vector + BM25 + recency), "graph" (graph traversal), "reconstruct" (active reconstruction — retrieve + walk graph for linked/causal context + a deterministic belief-state summary returned alongside the hits; MRAgent arXiv:2606.06036), "exact" (filter-based), or "auto" (hybrid if available, else semantic). Defaults to "auto".
     pub strategy: Option<String>,
     /// Filter by time range.
     pub temporal_range: Option<TemporalRange>,

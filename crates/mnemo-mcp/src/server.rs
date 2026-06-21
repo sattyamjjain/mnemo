@@ -294,6 +294,12 @@ impl MnemoServer {
                     result["orientation_cache"] =
                         serde_json::to_value(orientation).unwrap_or_default();
                 }
+                // v0.5.1 — active-reconstruction belief-state node (MRAgent,
+                // arXiv:2606.06036), present when strategy = "reconstruct".
+                if let Some(reconstruction) = response.reconstruction.as_ref() {
+                    result["reconstruction"] =
+                        serde_json::to_value(reconstruction).unwrap_or_default();
+                }
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&result)
                         .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),

@@ -38,6 +38,10 @@ path = "src/bin/maturity_consolidation.rs"
 name = "phase_cost"
 path = "src/bin/phase_cost.rs"
 
+[[bin]]
+name = "reconstruct_ab"
+path = "src/bin/reconstruct_ab.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }

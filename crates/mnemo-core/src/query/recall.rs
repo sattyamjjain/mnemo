@@ -213,6 +213,15 @@ pub struct RecallResponse {
     /// `memories` list above is unchanged. See [`crate::query::retained`].
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub retained_evidence: Option<crate::query::retained::RetentionReport>,
+    /// v0.5.1 — active-reconstruction belief-state node (MRAgent,
+    /// arXiv:2606.06036). Present iff the caller selected the
+    /// `reconstruct` strategy ([`RetrievalMode::Reconstruct`][crate::retrieval::RetrievalMode::Reconstruct]).
+    /// Carries a deterministic summary synthesised from the retrieved
+    /// candidates plus the linked/causal context gathered by walking the
+    /// memory graph. Additive: `memories` is exactly the top-k the default
+    /// hybrid (`auto`) path returns, so the raw read path is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reconstruction: Option<ReconstructedBelief>,
 }
 
 impl RecallResponse {
@@ -225,8 +234,35 @@ impl RecallResponse {
             orientation_cache: None,
             evidence_selection: None,
             retained_evidence: None,
+            reconstruction: None,
         }
     }
+}
+
+/// v0.5.1 — a reconstructed belief-state node (MRAgent, arXiv:2606.06036).
+///
+/// Produced by the `reconstruct` recall strategy. Rather than returning
+/// the top-k hits alone, the strategy walks the memory graph from those
+/// hits to gather linked/causal context and synthesises a deterministic
+/// summary the caller receives ALONGSIDE the raw `memories`. The synthesis
+/// is rule-based (no LLM), so the same inputs always yield the same node —
+/// it is an honest substrate for A/B-ing reconstruction vs. retrieval on
+/// your own data, not a claim that retrieval is wrong.
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReconstructedBelief {
+    /// The cue (query) the belief was reconstructed for.
+    pub cue: String,
+    /// Deterministic summary: direct evidence (the retrieved hits) followed
+    /// by the linked/causal context gathered from the memory graph.
+    pub summary: String,
+    /// Ids of the retrieved candidates that seeded the reconstruction.
+    pub source_ids: Vec<Uuid>,
+    /// Ids of graph-linked memories pulled in as causal/linked context
+    /// (not present in `source_ids`).
+    pub linked_context_ids: Vec<Uuid>,
+    /// Mean retrieval score of the source hits — a coarse confidence proxy.
+    pub confidence: f32,
 }
 
 #[non_exhaustive]
@@ -797,6 +833,17 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     };
     let total = memories.len();
 
+    // v0.5.1 — active reconstruction (MRAgent, arXiv:2606.06036). When the
+    // caller selected the `reconstruct` strategy, walk the memory graph from
+    // the retrieved hits to gather linked/causal context and synthesise a
+    // deterministic belief-state node returned ALONGSIDE the raw hits. The
+    // `memories` list above is untouched, so this is purely additive.
+    let reconstruction = if strategy == "reconstruct" {
+        Some(reconstruct_belief(engine, &request, &agent_id, &memories).await)
+    } else {
+        None
+    };
+
     // v0.4.8 — opt-in orientation cache. Runs only when the caller
     // set `request.orientation_cache` AND the engine has an
     // `OrientationCacheStore` attached. Per-namespace map is
@@ -934,7 +981,119 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         orientation_cache: orientation_rendered,
         evidence_selection,
         retained_evidence,
+        reconstruction,
     })
+}
+
+/// v0.5.1 — synthesise a [`ReconstructedBelief`] from the retrieved hits
+/// (MRAgent, arXiv:2606.06036). Walks one hop of memory-graph relations
+/// outward from each hit to gather linked/causal context, then renders a
+/// deterministic, rule-based summary (no LLM). Used only by the
+/// `reconstruct` strategy; the raw `memories` are left unchanged.
+async fn reconstruct_belief(
+    engine: &MnemoEngine,
+    request: &RecallRequest,
+    agent_id: &str,
+    memories: &[ScoredMemory],
+) -> ReconstructedBelief {
+    let cue = request.query.clone();
+    if memories.is_empty() {
+        return ReconstructedBelief {
+            cue: cue.clone(),
+            summary: format!("No memories matched the cue \"{cue}\"."),
+            source_ids: Vec::new(),
+            linked_context_ids: Vec::new(),
+            confidence: 0.0,
+        };
+    }
+
+    let source_ids: Vec<Uuid> = memories.iter().map(|m| m.id).collect();
+    let mut seen: HashSet<Uuid> = source_ids.iter().copied().collect();
+
+    // Walk one hop of relations outward from each hit to gather
+    // linked/causal context. Deterministic order: hits in rank order, and
+    // within a hit, outgoing relations before incoming.
+    let mut linked: Vec<(Uuid, String)> = Vec::new();
+    for m in memories {
+        let from_rels = engine
+            .storage
+            .get_relations_from(m.id)
+            .await
+            .unwrap_or_default();
+        let to_rels = engine
+            .storage
+            .get_relations_to(m.id)
+            .await
+            .unwrap_or_default();
+        for rel in from_rels.iter().chain(to_rels.iter()) {
+            let linked_id = if rel.source_id == m.id {
+                rel.target_id
+            } else {
+                rel.source_id
+            };
+            if seen.insert(linked_id)
+                && let Ok(Some(mut rec)) = engine.storage.get_memory(linked_id).await
+                && passes_filters(&rec, request, agent_id, engine).await
+            {
+                decrypt_record_content(engine, &mut rec);
+                linked.push((linked_id, rec.content));
+            }
+        }
+    }
+
+    // Deterministic, rule-based belief summary (no LLM).
+    let mut summary = format!("Reconstructed belief for cue \"{cue}\":\n\nDirect evidence:\n");
+    for (i, m) in memories.iter().enumerate() {
+        summary.push_str(&format!("{}. {}\n", i + 1, excerpt(&m.content, 200)));
+    }
+    if linked.is_empty() {
+        summary.push_str("\n(No linked context found in the memory graph.)\n");
+    } else {
+        summary.push_str("\nLinked context (from graph relations):\n");
+        for (_, content) in &linked {
+            summary.push_str(&format!("- {}\n", excerpt(content, 160)));
+        }
+    }
+
+    let confidence = memories.iter().map(|m| m.score).sum::<f32>() / memories.len() as f32;
+
+    ReconstructedBelief {
+        cue,
+        summary,
+        source_ids,
+        linked_context_ids: linked.into_iter().map(|(id, _)| id).collect(),
+        confidence,
+    }
+}
+
+/// First non-empty line of `content`, truncated to `max` chars (char-safe).
+fn excerpt(content: &str, max: usize) -> String {
+    let line = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+    let trimmed = line.trim();
+    if trimmed.chars().count() <= max {
+        trimmed.to_string()
+    } else {
+        let mut out: String = trimmed.chars().take(max).collect();
+        out.push('…');
+        out
+    }
+}
+
+/// Decrypt a record's content in place if engine-level encryption is on.
+/// Mirrors the read-path decryption in [`execute`]; used by
+/// [`reconstruct_belief`] for graph-linked records fetched after the main
+/// decrypt loop.
+fn decrypt_record_content(engine: &MnemoEngine, record: &mut MemoryRecord) {
+    if let Some(ref enc) = engine.encryption {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&record.content)
+            && let Ok(plain) = enc.decrypt(&bytes)
+            && let Ok(text) = String::from_utf8(plain)
+        {
+            record.content = text;
+        } else {
+            record.content = "[content unavailable: decryption error]".to_string();
+        }
+    }
 }
 
 async fn passes_filters(

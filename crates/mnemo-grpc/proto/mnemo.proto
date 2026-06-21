@@ -144,6 +144,17 @@ message RecallResponse {
   repeated ScoredMemory memories = 1;
   uint32 total = 2;
   optional OrientationCacheResponse orientation_cache = 3;
+  // v0.5.1 — active-reconstruction belief-state node (MRAgent
+  // arXiv:2606.06036), present when strategy = "reconstruct".
+  optional Reconstruction reconstruction = 4;
+}
+
+message Reconstruction {
+  string cue = 1;
+  string summary = 2;
+  repeated string source_ids = 3;
+  repeated string linked_context_ids = 4;
+  float confidence = 5;
 }
 
 message ScoredMemory {

@@ -4,6 +4,38 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-21) — v0.5.1 cut, active-reconstruction recall strategy (MRAgent, arXiv:2606.06036)
+
+Workspace `0.5.0 → 0.5.1` (patch bump — additive recall option, no breaking change).
+
+- **feat(core): active-reconstruction recall strategy (MRAgent, arXiv:2606.06036).**
+  Adds an opt-in `reconstruct` recall strategy
+  (`RetrievalMode::Reconstruct` / `strategy = "reconstruct"`). Instead of
+  returning only the top-k snippets, it retrieves candidates via the default
+  hybrid RRF, walks the existing memory-graph `related_to` edges to gather
+  linked/causal context, and synthesises a deterministic **belief-state
+  node** returned ALONGSIDE the raw hits — MRAgent's cue → linked-context →
+  reconstruct pattern.
+  - **Additive, no pivot.** REMEMBER/RECALL/FORGET/SHARE are untouched; the
+    `memories` top-k is exactly what `auto` returns, and the belief node is
+    a new optional `RecallResponse.reconstruction` field. The default read
+    path is unchanged.
+  - **Deterministic** (rule-based synthesis, no LLM): same inputs → same
+    belief node. `ReconstructedBelief { cue, summary, source_ids,
+    linked_context_ids, confidence }`.
+  - **Surfaced as a strategy parameter across all four protocols** (no new
+    tool): MCP `strategy: "reconstruct"`, REST `?strategy=reconstruct`,
+    gRPC `RecallRequest.strategy` (+ new `Reconstruction` message on
+    `RecallResponse`), and pgwire `SELECT ... /*+ reconstruct */`.
+  - **A/B bench** (`bench/locomo/src/bin/reconstruct_ab.rs`): measures
+    gold-coverage@k of `reconstruct` vs. default RRF on an adversarially
+    multi-hop fixture so the MRAgent "up-to-23%" claim can be checked on
+    mnemo itself (fixture result: coverage@5 0.083 → 0.208). Framed honestly
+    as a mechanism check, not an absolute-number claim.
+  - **Tests** (`crates/mnemo-core/tests/reconstruct.rs`): belief node carries
+    graph-linked context disjoint from sources; typed mode parity; default
+    path unchanged; empty-corpus belief.
+
 ### Added (2026-06-21) — v0.5.0 cut, topic-document consolidation (Infini-Memory, arXiv:2606.10677)
 
 Workspace `0.4.15 → 0.5.0` (minor bump — new public primitive).

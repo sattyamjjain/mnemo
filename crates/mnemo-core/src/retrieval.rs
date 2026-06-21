@@ -100,6 +100,17 @@ pub enum RetrievalMode {
     /// (a [`DomainScope`]); selecting this mode without a predicate
     /// degrades gracefully to a plain vector pass.
     DomainScoped,
+    /// New in v0.5.1 — **active reconstruction** (MRAgent,
+    /// arXiv:2606.06036). Retrieves candidate memories for the cue, walks
+    /// the existing memory-graph edges to gather linked/causal context,
+    /// and synthesises a deterministic *belief-state* summary node that
+    /// the caller receives ALONGSIDE the raw hits in
+    /// [`RecallResponse.reconstruction`][crate::query::recall::RecallResponse::reconstruction].
+    /// Additive: the `memories` top-k is exactly what the default hybrid
+    /// (`auto`) path returns, so the raw read path is unchanged — this is
+    /// an option to A/B reconstruction vs. plain retrieval, not a
+    /// replacement for it.
+    Reconstruct,
 }
 
 impl RetrievalMode {
@@ -114,6 +125,7 @@ impl RetrievalMode {
             Self::HybridRrf | Self::HarnessAware { .. } => "auto",
             Self::Graph => "graph",
             Self::DomainScoped => "domain_scoped",
+            Self::Reconstruct => "reconstruct",
         }
     }
 
@@ -411,6 +423,7 @@ mod tests {
             RetrievalMode::DomainScoped.to_strategy_str(),
             "domain_scoped"
         );
+        assert_eq!(RetrievalMode::Reconstruct.to_strategy_str(), "reconstruct");
         let harness = RetrievalMode::HarnessAware {
             harness: HarnessKind::ClaudeCode,
             format: EnvelopeFormat::Inline,
@@ -516,6 +529,7 @@ mod tests {
             RetrievalMode::HybridRrf,
             RetrievalMode::Graph,
             RetrievalMode::DomainScoped,
+            RetrievalMode::Reconstruct,
             RetrievalMode::HarnessAware {
                 harness: HarnessKind::ClaudeCode,
                 format: EnvelopeFormat::Inline,

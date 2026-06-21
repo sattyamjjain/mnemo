@@ -175,6 +175,14 @@ async fn handle_query(
             } else {
                 None
             };
+            // v0.5.1 — the `/*+ reconstruct */` hint selects the
+            // active-reconstruction strategy (MRAgent, arXiv:2606.06036);
+            // otherwise the default pgwire read is filter-based "exact".
+            let strategy = if q.reconstruct {
+                "reconstruct"
+            } else {
+                "exact"
+            };
             let request = mnemo_core::query::recall::RecallRequest {
                 agent_id: Some(agent_id),
                 query: q.query_text.unwrap_or_default(),
@@ -182,7 +190,7 @@ async fn handle_query(
                 memory_type: None,
                 memory_types: None,
                 scope: None,
-                strategy: Some("exact".to_string()),
+                strategy: Some(strategy.to_string()),
                 min_importance: None,
                 tags: None,
                 org_id: None,

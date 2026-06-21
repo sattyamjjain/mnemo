@@ -339,10 +339,25 @@ impl MnemoService for MnemoGrpcServer {
                 hit_count: r.hit_count,
             });
 
+        // v0.5.1 — active-reconstruction belief-state node (MRAgent
+        // arXiv:2606.06036), present when strategy = "reconstruct".
+        let reconstruction = result.reconstruction.map(|b| proto::Reconstruction {
+            cue: b.cue,
+            summary: b.summary,
+            source_ids: b.source_ids.iter().map(|id| id.to_string()).collect(),
+            linked_context_ids: b
+                .linked_context_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect(),
+            confidence: b.confidence,
+        });
+
         Ok(Response::new(ProtoRecallResponse {
             memories,
             total,
             orientation_cache,
+            reconstruction,
         }))
     }
 

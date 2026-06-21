@@ -33,6 +33,13 @@ pub struct SelectQuery {
     /// When `true` the pgwire server attaches a default
     /// `OrientationCacheConfig` to the underlying `RecallRequest`.
     pub orientation_cache: bool,
+    /// v0.5.1 — opt-in active-reconstruction hint, set when the query
+    /// contains the SQL comment directive `/*+ reconstruct */`. When
+    /// `true` the pgwire server sets `strategy = "reconstruct"` on the
+    /// underlying `RecallRequest` (MRAgent, arXiv:2606.06036), so the
+    /// returned rows are reconstruction-strategy hits. The structured
+    /// belief-state node is surfaced on the MCP/REST/gRPC protocols.
+    pub reconstruct: bool,
 }
 
 /// A parsed INSERT statement.
@@ -84,6 +91,7 @@ fn parse_select(sql: &str) -> ParsedStatement {
         offset: 0,
         orientation_cache: upper.contains("/*+ ORIENTATION_CACHE")
             || upper.contains("/*+ORIENTATION_CACHE"),
+        reconstruct: upper.contains("/*+ RECONSTRUCT") || upper.contains("/*+RECONSTRUCT"),
     };
 
     // Extract LIMIT
