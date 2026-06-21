@@ -95,7 +95,7 @@ pyo3 = { version = "0.29", features = ["extension-module"] }
 
 # HTTP/REST
 axum = "0.8"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
 
 # PostgreSQL
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "chrono", "json"] }
