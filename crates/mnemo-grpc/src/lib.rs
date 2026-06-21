@@ -25,6 +25,7 @@ use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest as CoreBranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest as CoreCheckpointRequest;
+use mnemo_core::query::consolidate::ConsolidateRequest as CoreConsolidateRequest;
 use mnemo_core::query::forget::{
     ForgetRequest as CoreForgetRequest, ForgetStrategy,
     ForgetSubjectRequest as CoreForgetSubjectRequest,
@@ -47,6 +48,7 @@ use proto::mnemo_service_server::{MnemoService, MnemoServiceServer};
 use proto::{
     BranchRequest as ProtoBranchRequest, BranchResponse as ProtoBranchResponse,
     CheckpointRequest as ProtoCheckpointRequest, CheckpointResponse as ProtoCheckpointResponse,
+    ConsolidateRequest as ProtoConsolidateRequest, ConsolidateResponse as ProtoConsolidateResponse,
     DelegateRequest as ProtoDelegateRequest, DelegateResponse as ProtoDelegateResponse,
     ForgetError as ProtoForgetError, ForgetRequest as ProtoForgetRequest,
     ForgetResponse as ProtoForgetResponse, ForgetSubjectRequest as ProtoForgetSubjectRequest,
@@ -512,6 +514,60 @@ impl MnemoService for MnemoGrpcServer {
             checkpoint_id: result.id.to_string(),
             parent_id: result.parent_id.map(|id| id.to_string()),
             branch_name: result.branch_name,
+        }))
+    }
+
+    async fn consolidate(
+        &self,
+        request: Request<ProtoConsolidateRequest>,
+    ) -> Result<Response<ProtoConsolidateResponse>, Status> {
+        let req = request.into_inner();
+
+        let mut memory_ids = Vec::with_capacity(req.memory_ids.len());
+        for s in &req.memory_ids {
+            memory_ids.push(
+                Uuid::parse_str(s).map_err(|e| {
+                    Status::invalid_argument(format!("invalid memory id '{s}': {e}"))
+                })?,
+            );
+        }
+        let supersede = match req.supersede {
+            Some(ref s) => Some(Uuid::parse_str(s).map_err(|e| {
+                Status::invalid_argument(format!("invalid supersede id '{s}': {e}"))
+            })?),
+            None => None,
+        };
+        let metadata: Option<serde_json::Value> = match req.metadata {
+            Some(ref s) => Some(
+                serde_json::from_str(s)
+                    .map_err(|e| Status::invalid_argument(format!("invalid metadata JSON: {e}")))?,
+            ),
+            None => None,
+        };
+
+        let mut core_req = CoreConsolidateRequest::new(memory_ids, req.topic_name);
+        core_req.agent_id = req.agent_id;
+        core_req.summary = req.summary;
+        core_req.supersede = supersede;
+        core_req.thread_id = req.thread_id;
+        core_req.metadata = metadata;
+
+        let result = self
+            .engine
+            .consolidate(core_req)
+            .await
+            .map_err(core_error_to_status)?;
+
+        Ok(Response::new(ProtoConsolidateResponse {
+            topic_document_id: result.topic_document_id.to_string(),
+            topic_name: result.topic_name,
+            source_count: result.source_count as u64,
+            version: result.version,
+            superseded_id: result.superseded_id.map(|id| id.to_string()),
+            member_ids: result.member_ids.iter().map(|id| id.to_string()).collect(),
+            content_hash: result.content_hash,
+            consolidation_event_id: result.consolidation_event_id.to_string(),
+            revision_event_id: result.revision_event_id.map(|id| id.to_string()),
         }))
     }
 

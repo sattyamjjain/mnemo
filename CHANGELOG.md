@@ -4,6 +4,51 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-21) — v0.5.0 cut, topic-document consolidation (Infini-Memory, arXiv:2606.10677)
+
+Workspace `0.4.15 → 0.5.0` (minor bump — new public primitive).
+
+- **feat(core,mcp): topic-document consolidation primitive (Infini-Memory,
+  arXiv:2606.10677).** Adds `MnemoEngine::consolidate` and the MCP tool
+  `mnemo.consolidate` — a caller-driven primitive that groups a chosen set of
+  member memories into one revisable **topic document** ("each topic document
+  serves as a semantic unit for collecting related evidence, preserving
+  metadata, and revising facts over time"). It is the interactive, by-id
+  sibling of the offline `run_consolidation` tag-cluster pass.
+  - **Deterministic + protocol-agnostic.** New module
+    [`crates/mnemo-core/src/query/consolidate.rs`](crates/mnemo-core/src/query/consolidate.rs)
+    with `ConsolidateRequest { memory_ids, topic_name, agent_id?, summary?,
+    supersede?, thread_id?, metadata? }` and `ConsolidateResponse`. Absent a
+    caller `summary`, the body is a stable join of member contents ordered by
+    `(created_at, id)`. Additive engine wrapper — no existing primitive
+    changes.
+  - **Evidence + provenance preserved.** The topic document records
+    `consolidated_from` plus each member's source / timestamp / confidence in
+    metadata, and writes `topic_document --consolidated_from--> member`
+    relations so the set is retrievable as a unit. Members are permission-gated
+    (`check_permission(Read)`) and decrypted on read; a missing/denied/deleted
+    member aborts the whole op (nothing partial written).
+  - **Fact revision keeps history.** `supersede` makes the new document
+    version *N+1* (`prev_version_id → old`); the old document is **retained**
+    (not soft-deleted — that would orphan the memory hash chain) and marked
+    `Consolidated` with a `superseded_by` pointer. Reuse the same `topic_name`
+    so the current-fact resolver (keyed on `topic`) collapses to the current
+    view.
+  - **Auditability — no dropped provenance.** Two new hash-chained
+    `EventType` variants: `MemoryConsolidated` (every consolidation) and
+    `MemoryRevised` (on supersede). `verify_integrity` and
+    `verify_event_integrity` both stay valid after consolidation + revision.
+  - **Surfaces.** MCP `mnemo.consolidate`
+    ([`crates/mnemo-mcp/src/tools/consolidate.rs`](crates/mnemo-mcp/src/tools/consolidate.rs)),
+    REST `POST /v1/consolidate`, gRPC `rpc Consolidate` (12 RPCs total).
+    **pgwire is not extended** — it stays SQL-only (`SELECT`/`INSERT`/`DELETE`
+    → recall/remember/forget); consolidation is a primitive-RPC operation, not
+    a SQL statement.
+  - **Tests** ([`crates/mnemo-core/tests/consolidate.rs`](crates/mnemo-core/tests/consolidate.rs)):
+    consolidate-as-unit + relations, provenance metadata, revision-keeps-history,
+    hash-chain integrity after consolidation/revision, permission gating,
+    empty/missing rejection, and `EventType` serde round-trip.
+
 ### Fixed (2026-06-14) — Postgres semantic recall fails loud instead of silent-empty
 
 - **fix(postgres): `PgVectorIndex` ANN search now errors instead of silently

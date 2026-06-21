@@ -36,7 +36,7 @@ Add to your MCP client configuration (e.g. Claude Desktop, Cursor, etc.):
 
 ### 3. Use it
 
-Your AI agent now has persistent memory with 14 MCP tools:
+Your AI agent now has persistent memory with 15 MCP tools:
 
 | Tool | Description |
 |------|-------------|
@@ -50,6 +50,7 @@ Your AI agent now has persistent memory with 14 MCP tools:
 | `mnemo.replay` | Replay events from a checkpoint |
 | `mnemo.delegate` | Delegate scoped, time-bounded permissions to another agent |
 | `mnemo.verify` | Verify SHA-256 hash chain integrity |
+| `mnemo.consolidate` | v0.5.0 — Group related memories into one revisable **topic document** (Infini-Memory): collects members as evidence, preserves provenance, records a hash-chained audit event; pass `supersede` to revise a fact while keeping the old version in history |
 | `mnemo.remember_plan` | v0.4.14 — Cache a *successful* retrieval/reasoning plan (query signature + steps + chunk ids + outcome score) into the experience-memory tier (DocTrace; only when the mode is enabled) |
 | `mnemo.recall_plan` | v0.4.14 — Replay the best cached plan for a structurally-similar query instead of re-running full retrieval; RBAC-gated, returns a miss when nothing matches |
 | `mnemo.attention_state.put` | v0.4.5 — Store an opaque attention-state blob keyed by `(agent_id, prefix_hash)` (anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226); only registered when the server is built with `MnemoServer::with_attention_state(...)`) |
@@ -61,7 +62,7 @@ Your AI agent now has persistent memory with 14 MCP tools:
 |----------|-------|----------|
 | **MCP** (stdio) | `mnemo-mcp` | AI agent integration via rmcp 1.3 |
 | **REST** (HTTP) | `mnemo-rest` | Web clients, dashboards, OTLP ingest |
-| **gRPC** | `mnemo-grpc` | High-performance service-to-service (11 RPCs) |
+| **gRPC** | `mnemo-grpc` | High-performance service-to-service (12 RPCs) |
 | **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
 | **AMP** (memorywire) | `mnemo-amp` | AMP-conformant adapter: 5 ops × 4 memory types over a JSON-Schema 2020-12 envelope |
 
@@ -170,6 +171,18 @@ Flat semantic recall collapses to **0.000** P@10 by 1,000 docs; domain-scoped ho
 ### Offline consolidation — Auto-Dreamer-shaped active-bank shrink (v0.4.8)
 
 Anthropic's Auto-Dreamer consolidation runs offline, away from the agent's interactive loop, and produces a smaller *active bank* of semantic summaries that should serve subsequent recall at least as well as the raw episodic trace it replaced. mnemo's existing `run_decay_pass` + `run_consolidation` path ([`crates/mnemo-core/src/query/lifecycle.rs`](crates/mnemo-core/src/query/lifecycle.rs), plus the reflection module at [`crates/mnemo-core/src/query/reflection.rs`](crates/mnemo-core/src/query/reflection.rs) that mirrors the same offline-housekeeping shape) is the engine-side equivalent: the decay pass marks low effective-importance records as `Archived` / `Forgotten`, the consolidation pass replaces tag-overlap clusters of episodic memories with structured `[Consolidated from N memories] …` semantic bundles, and the originals are flipped to `Consolidated` rather than deleted (so the chain stays auditable). The new Auto-Dreamer-shaped scenario at [`bench/locomo/src/bin/auto_dreamer_consolidation.rs`](bench/locomo/src/bin/auto_dreamer_consolidation.rs) exercises both passes end-to-end on a synthetic multi-session trajectory and reports the two axes Auto-Dreamer headlines as its claim: `active_bank_ratio = post / pre` (expects `< 1.0`) and held-out `recall_post >= recall_pre`. A JSON summary lands beside the Markdown report so the headline number is citable here.
+
+### Topic-document consolidation (Infini-Memory, arXiv:2606.10677) — v0.5.0
+
+`mnemo.consolidate` / `MnemoEngine::consolidate` adds a **caller-driven** consolidation primitive: it groups a *chosen* set of member memories into one revisable **topic document** — a semantic unit that collects related evidence, preserves metadata, and revises facts over time. This is the interactive, by-id sibling of the offline `run_consolidation` pass above: instead of clustering by tag overlap on a schedule, the caller names the members and the topic.
+
+```jsonc
+{ "memory_ids": ["<id1>", "<id2>", "<id3>"], "topic_name": "Acme account" }
+```
+
+The primitive is deterministic (no LLM): absent a caller `summary`, the document body is a stable join of the member contents ordered by `(created_at, id)`. It **preserves provenance** — the topic document's metadata records `consolidated_from` plus each member's source, timestamp, and confidence — and links `topic_document --consolidated_from--> member` relations so the evidence set is retrievable as a unit. Every consolidation appends a hash-chained `MemoryConsolidated` audit event.
+
+**Fact revision keeps history.** Pass `supersede: <old_topic_document_id>` to revise a fact: the new document becomes version *N+1* (`prev_version_id → old`), the old document is **retained** (not deleted — deleting a mid-chain record would break `verify_integrity`) and marked `Consolidated` with a `superseded_by` pointer, and a `MemoryRevised` event is appended alongside. Reuse the same `topic_name` across revisions so the current-fact resolver (keyed on the `topic` metadata) collapses to the current view at recall time. The primitive is protocol-agnostic — reachable identically over MCP, REST (`POST /v1/consolidate`), and gRPC (`rpc Consolidate`). It is not exposed over pgwire, which stays SQL-only (`SELECT`/`INSERT`/`DELETE` → recall/remember/forget); consolidation is a primitive-RPC operation, not a SQL statement.
 
 Run via `cargo run --release --bin auto_dreamer_consolidation -p mnemo-locomo-bench` — defaults to 8 sessions × 25 facts × 5 trials with archive/forget thresholds of 0.40 / 0.10 and `min_cluster_size = 3`; all tunable via CLI flags. **The default read path is unchanged** — the bench only consumes existing `mnemo_core::query::lifecycle::*` APIs and adds no public surface. See the bin module rustdoc for the full "what this bin is NOT" block (not a faithful Auto-Dreamer reproduction; not the `criterion` crate; `NoopEmbedding` makes the vector lane degenerate by design; single-agent, single-scope).
 

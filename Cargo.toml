@@ -28,7 +28,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.4.15"
+version = "0.5.0"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"
@@ -105,16 +105,16 @@ pgvector = { version = "0.8.2", features = ["sqlx"] }
 # `version` MUST be present alongside `path` for `cargo publish` to accept
 # these. Path is used for local dev; version is what gets baked into the
 # published crate's manifest. Bump alongside `workspace.package.version`.
-mnemo-core = { path = "crates/mnemo-core", version = "0.4.7" }
-mnemo-compliance = { path = "crates/mnemo-compliance", version = "0.4.7" }
-mnemo-mcp = { path = "crates/mnemo-mcp", version = "0.4.7" }
-mnemo-postgres = { path = "crates/mnemo-postgres", version = "0.4.7" }
-mnemo-rest = { path = "crates/mnemo-rest", version = "0.4.7" }
-mnemo-admin = { path = "crates/mnemo-admin", version = "0.4.7" }
-mnemo-pgwire = { path = "crates/mnemo-pgwire", version = "0.4.7" }
-mnemo-grpc = { path = "crates/mnemo-grpc", version = "0.4.7" }
-mnemo-graph = { path = "crates/mnemo-graph", version = "0.4.7" }
-mnemo-attention-state = { path = "crates/mnemo-attention-state", version = "0.4.7" }
-mnemo-golem-wit = { path = "crates/mnemo-golem-wit", version = "0.4.7" }
-mnemo-golem-host = { path = "crates/mnemo-golem-host", version = "0.4.7" }
-mnemo-amp = { path = "crates/mnemo-amp", version = "0.4.7" }
+mnemo-core = { path = "crates/mnemo-core", version = "0.5.0" }
+mnemo-compliance = { path = "crates/mnemo-compliance", version = "0.5.0" }
+mnemo-mcp = { path = "crates/mnemo-mcp", version = "0.5.0" }
+mnemo-postgres = { path = "crates/mnemo-postgres", version = "0.5.0" }
+mnemo-rest = { path = "crates/mnemo-rest", version = "0.5.0" }
+mnemo-admin = { path = "crates/mnemo-admin", version = "0.5.0" }
+mnemo-pgwire = { path = "crates/mnemo-pgwire", version = "0.5.0" }
+mnemo-grpc = { path = "crates/mnemo-grpc", version = "0.5.0" }
+mnemo-graph = { path = "crates/mnemo-graph", version = "0.5.0" }
+mnemo-attention-state = { path = "crates/mnemo-attention-state", version = "0.5.0" }
+mnemo-golem-wit = { path = "crates/mnemo-golem-wit", version = "0.5.0" }
+mnemo-golem-host = { path = "crates/mnemo-golem-host", version = "0.5.0" }
+mnemo-amp = { path = "crates/mnemo-amp", version = "0.5.0" }

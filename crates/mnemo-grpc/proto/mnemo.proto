@@ -22,6 +22,9 @@ service MnemoService {
   /// Create a checkpoint for the current state.
   rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse);
 
+  /// Consolidate related memories into one revisable topic document.
+  rpc Consolidate(ConsolidateRequest) returns (ConsolidateResponse);
+
   /// Fork a new branch from an existing checkpoint.
   rpc Branch(BranchRequest) returns (BranchResponse);
 
@@ -230,6 +233,32 @@ message CheckpointResponse {
   string checkpoint_id = 1;
   optional string parent_id = 2;
   string branch_name = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Consolidate (topic-document consolidation, Infini-Memory arXiv:2606.10677)
+// ---------------------------------------------------------------------------
+
+message ConsolidateRequest {
+  repeated string memory_ids = 1;
+  string topic_name = 2;
+  optional string agent_id = 3;
+  optional string summary = 4;
+  optional string supersede = 5;
+  optional string thread_id = 6;
+  optional string metadata = 7;
+}
+
+message ConsolidateResponse {
+  string topic_document_id = 1;
+  string topic_name = 2;
+  uint64 source_count = 3;
+  uint32 version = 4;
+  optional string superseded_id = 5;
+  repeated string member_ids = 6;
+  string content_hash = 7;
+  string consolidation_event_id = 8;
+  optional string revision_event_id = 9;
 }
 
 // ---------------------------------------------------------------------------

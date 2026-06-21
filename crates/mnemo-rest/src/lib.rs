@@ -31,6 +31,7 @@ pub fn router(engine: Arc<MnemoEngine>) -> Router {
         )
         .route("/v1/memories/{id}/share", post(handlers::share_handler))
         .route("/v1/checkpoints", post(handlers::checkpoint_handler))
+        .route("/v1/consolidate", post(handlers::consolidate_handler))
         .route("/v1/branches", post(handlers::branch_handler))
         .route("/v1/merge", post(handlers::merge_handler))
         .route("/v1/replay", post(handlers::replay_handler))

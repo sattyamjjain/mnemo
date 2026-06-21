@@ -142,6 +142,18 @@ pub enum EventType {
     /// fingerprints. Direct response to arXiv 2604.20994
     /// (function-hijacking via tool-catalog poisoning).
     McpToolCatalogDrift,
+    /// v0.5.0 — a caller-driven topic-document consolidation
+    /// (`MnemoEngine::consolidate`) grouped a set of member memories into
+    /// one revisable topic document. Payload carries the topic name, the
+    /// `consolidated_from` member ids, the new `topic_document_id`, and
+    /// the document `version`. Anchored on Infini-Memory (arXiv:2606.10677).
+    MemoryConsolidated,
+    /// v0.5.0 — a topic document superseded an earlier one during a
+    /// consolidation revision. Payload carries `superseded_id` (the prior
+    /// document, retained in history), `superseded_by` (the new current
+    /// view), and the topic name. Provenance/hash-chain history is never
+    /// dropped.
+    MemoryRevised,
 }
 
 impl std::fmt::Display for EventType {
@@ -167,6 +179,8 @@ impl std::fmt::Display for EventType {
             EventType::ReflectionCompleted => write!(f, "reflection_completed"),
             EventType::DreamReportIngested => write!(f, "dream_report_ingested"),
             EventType::McpToolCatalogDrift => write!(f, "mcp_tool_catalog_drift"),
+            EventType::MemoryConsolidated => write!(f, "memory_consolidated"),
+            EventType::MemoryRevised => write!(f, "memory_revised"),
         }
     }
 }
@@ -195,6 +209,8 @@ impl std::str::FromStr for EventType {
             "reflection_completed" => Ok(EventType::ReflectionCompleted),
             "dream_report_ingested" => Ok(EventType::DreamReportIngested),
             "mcp_tool_catalog_drift" => Ok(EventType::McpToolCatalogDrift),
+            "memory_consolidated" => Ok(EventType::MemoryConsolidated),
+            "memory_revised" => Ok(EventType::MemoryRevised),
             _ => Err(crate::error::Error::Validation(format!(
                 "invalid event type: {s}"
             ))),

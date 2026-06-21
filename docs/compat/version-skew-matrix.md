@@ -1,11 +1,11 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-06-13 for the v0.4.15 cut (domain-scoped recall —
-> `RetrievalMode::DomainScoped`, anti vector-search-dilution, MASDR-RAG
-> arXiv:2606.11350; additive enum variant + `RecallRequest.domain_scope`
-> kwarg). The v0.4.5 → v0.4.9 cuts are not reproduced here; consult the
-> [CHANGELOG](../../CHANGELOG.md) for the per-cut substrate / SDK matrix
-> in those windows.
+> Updated 2026-06-21 for the v0.5.0 cut (topic-document consolidation —
+> `MnemoEngine::consolidate` / `mnemo.consolidate`, Infini-Memory
+> arXiv:2606.10677; additive primitive across MCP/REST/gRPC, two new
+> `EventType` audit variants). The v0.4.5 → v0.4.9 cuts are not reproduced
+> here; consult the [CHANGELOG](../../CHANGELOG.md) for the per-cut
+> substrate / SDK matrix in those windows.
 
 The matrix below pins which downstream and upstream versions are tested
 together for each `mnemo` workspace release. Bumping any cell requires a
@@ -16,7 +16,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.4.15** (2026-06-13) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.5.0** (2026-06-21) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.4.15 (2026-06-13) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.14 (2026-06-11) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.13 (2026-06-04) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.12 (2026-06-02) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -30,7 +31,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.4.15** (2026-06-13) | 0.4.15 | 0.4.15 | 0.4.15 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.5.0** (2026-06-21) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.4.15 (2026-06-13) | 0.4.15 | 0.4.15 | 0.4.15 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.14 (2026-06-11) | 0.4.14 | 0.4.14 | 0.4.14 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.13 (2026-06-04) | 0.4.13 | 0.4.13 | 0.4.13 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.12 (2026-06-02) | 0.4.12 | 0.4.12 | 0.4.12 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
@@ -89,6 +91,14 @@ follow-up.
   for DuckDB 1.5.2). On-disk files written by 0.4.3+ are not readable
   by 0.4.2 binaries — see the v0.4.3 BREAKING note in CHANGELOG for
   the upgrade procedure.
+
+⁶ **v0.5.0 is a server-side primitive cut.** It adds the
+  `consolidate` topic-document primitive to the Rust workspace
+  (crates.io) and the MCP/REST/gRPC surfaces. The language SDKs
+  (`mnemo-db` Python, `@mndfreek/mnemo-sdk` TS, Go) are **unchanged**
+  and ship on their own cadence; `pip install mnemo-db` continues to
+  report its existing version. SDK marshalling is unaffected because
+  the new primitive is additive.
 
 ⁵ **MCP SDK matrix** — these are the **client-side** SDKs from
   `https://github.com/modelcontextprotocol`, distinct from the

@@ -16,6 +16,7 @@ use mnemo_core::model::memory::{MemoryType, Scope};
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::{BranchRequest, BranchResponse};
 use mnemo_core::query::checkpoint::{CheckpointRequest, CheckpointResponse};
+use mnemo_core::query::consolidate::{ConsolidateRequest, ConsolidateResponse};
 use mnemo_core::query::forget::{
     ForgetRequest, ForgetResponse, ForgetStrategy, ForgetSubjectRequest, ForgetSubjectResponse,
 };
@@ -421,6 +422,15 @@ pub async fn checkpoint_handler(
     Json(request): Json<CheckpointRequest>,
 ) -> Result<Json<CheckpointResponse>, AppError> {
     let response = engine.checkpoint(request).await?;
+    Ok(Json(response))
+}
+
+/// POST /v1/consolidate
+pub async fn consolidate_handler(
+    State(engine): State<AppState>,
+    Json(request): Json<ConsolidateRequest>,
+) -> Result<Json<ConsolidateResponse>, AppError> {
+    let response = engine.consolidate(request).await?;
     Ok(Json(response))
 }
 

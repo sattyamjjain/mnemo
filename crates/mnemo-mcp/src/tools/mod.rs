@@ -2,6 +2,7 @@ pub mod agent_managed;
 pub mod attention_state;
 pub mod branch;
 pub mod checkpoint;
+pub mod consolidate;
 pub mod delegate;
 pub mod experience;
 pub mod forget;

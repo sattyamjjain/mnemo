@@ -2,6 +2,7 @@ pub mod branch;
 pub mod causality;
 pub mod checkpoint;
 pub mod conflict;
+pub mod consolidate;
 pub mod current_fact_resolver;
 pub mod event_builder;
 pub mod evidence;
@@ -349,6 +350,16 @@ impl MnemoEngine {
 
     pub async fn replay(&self, request: replay::ReplayRequest) -> Result<replay::ReplayResponse> {
         replay::execute(self, request).await
+    }
+
+    /// `CONSOLIDATE` (Infini-Memory, arXiv:2606.10677) — group a caller-chosen
+    /// set of member memories into one revisable topic document, preserving
+    /// provenance and the hash-chained audit history. See [`consolidate`].
+    pub async fn consolidate(
+        &self,
+        request: consolidate::ConsolidateRequest,
+    ) -> Result<consolidate::ConsolidateResponse> {
+        consolidate::execute(self, request).await
     }
 
     /// `REMEMBER_PLAN` (DocTrace, arXiv:2606.10921) — cache a successful

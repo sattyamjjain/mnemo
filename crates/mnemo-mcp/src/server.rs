@@ -13,6 +13,7 @@ use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest;
+use mnemo_core::query::consolidate::ConsolidateRequest;
 use mnemo_core::query::experience::{RecallPlanRequest, RememberPlanRequest};
 use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy, ForgetSubjectRequest};
 use mnemo_core::query::merge::{MergeRequest, MergeStrategy};
@@ -27,6 +28,7 @@ use crate::tools::agent_managed::{
 use crate::tools::attention_state::{AttentionStateGetInput, AttentionStatePutInput};
 use crate::tools::branch::BranchInput;
 use crate::tools::checkpoint::CheckpointInput;
+use crate::tools::consolidate::ConsolidateInput;
 use crate::tools::delegate::DelegateInput;
 use crate::tools::experience::{RecallPlanInput, RememberPlanInput};
 use crate::tools::forget::ForgetInput;
@@ -528,6 +530,70 @@ impl MnemoServer {
                     "parent_id": response.parent_id.map(|id| id.to_string()),
                     "branch_name": response.branch_name,
                     "status": "checkpointed"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.consolidate",
+        description = "Consolidate a set of related memories into one revisable topic document (Infini-Memory). Collects the members as evidence, preserves provenance (sources, timestamps, confidence), and records a hash-chained audit event. Pass `supersede` with an existing topic document id to revise a fact while keeping the old version in history."
+    )]
+    async fn consolidate(
+        &self,
+        Parameters(input): Parameters<ConsolidateInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+
+        let mut memory_ids = Vec::with_capacity(input.memory_ids.len());
+        for s in &input.memory_ids {
+            match uuid::Uuid::parse_str(s) {
+                Ok(id) => memory_ids.push(id),
+                Err(e) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "invalid memory id '{s}': {e}"
+                    ))]));
+                }
+            }
+        }
+
+        let supersede = match input.supersede.as_deref() {
+            Some(s) => match uuid::Uuid::parse_str(s) {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "invalid supersede id '{s}': {e}"
+                    ))]));
+                }
+            },
+            None => None,
+        };
+
+        let mut request = ConsolidateRequest::new(memory_ids, input.topic_name);
+        request.agent_id = input.agent_id;
+        request.summary = input.summary;
+        request.supersede = supersede;
+        request.thread_id = input.thread_id;
+        request.metadata = input.metadata;
+
+        match self.engine.consolidate(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "topic_document_id": response.topic_document_id.to_string(),
+                    "topic_name": response.topic_name,
+                    "source_count": response.source_count,
+                    "version": response.version,
+                    "superseded_id": response.superseded_id.map(|id| id.to_string()),
+                    "member_ids": response.member_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    "content_hash": response.content_hash,
+                    "consolidation_event_id": response.consolidation_event_id.to_string(),
+                    "revision_event_id": response.revision_event_id.map(|id| id.to_string()),
+                    "status": "consolidated"
                 });
                 Ok(CallToolResult::success(vec![Content::text(
                     serde_json::to_string_pretty(&result)
