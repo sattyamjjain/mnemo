@@ -4,6 +4,37 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-06-22) — v0.5.2 cut, real-embedder memory-quality result + Postgres semantic stub hard-errors
+
+Workspace `0.5.1 → 0.5.2` (patch bump — bench + docs + a credibility-bug confirmation, no API change).
+
+- **feat(bench): published real-embedder memory-quality result ([`bench/RESULTS.md`](bench/RESULTS.md)).**
+  One honest, reproducible number from `semantic_recall_bench` run with a
+  **real** local semantic embedder (`nomic-embed-text`, 768-dim, via Ollama —
+  never `NoopEmbedding`) over the bundled LongMemEval_M slice: held-out
+  semantic **recall@1 = 0.739 (MRR 0.805)**, with the default `auto` RRF
+  fusion reported as-is (0.435 recall@1 — not cherry-picked).
+  - **Engram-style token efficiency** (arXiv:2606.09900, lean-slice-vs-full-history,
+    cited as a reference point not a parity claim): a lean top-5 retrieved
+    slice costs **~89% fewer context tokens** than the full history. Added as
+    a deterministic, no-LLM section + JSON field to the bench
+    (`bench/locomo/src/bin/semantic_recall_bench.rs`).
+  - **Honest caveats baked in:** single-run (5 in-process seeds, not
+    restart-averaged); HNSW + RRF-weight selection sit near a noise floor (FID
+    Lottery) so the swept "best" hybrid config flips run-to-run — `vector_only`
+    is the one stable strong mode. This is retrieval quality + token
+    efficiency, NOT end-to-end QA accuracy (which needs a generative LLM, not
+    run here), and LongMemEval_M (45 q) not _S.
+- **fix(postgres): semantic-recall stub hard-errors, confirmed + documented.**
+  The pgvector ANN path returns a clear `Err` ("pgvector ANN search is not
+  implemented…") instead of silently returning empty results
+  (`crates/mnemo-postgres/src/pgvector_index.rs`, test
+  `ann_search_fails_loud_not_silent_empty`). README documents **DuckDB +
+  USearch as the supported semantic backend**; an unwired path must never
+  return empty.
+- **docs:** README Benchmarks section links `bench/RESULTS.md` (one number, one
+  caveat, one source).
+
 ### Added (2026-06-21) — v0.5.1 cut, active-reconstruction recall strategy (MRAgent, arXiv:2606.06036)
 
 Workspace `0.5.0 → 0.5.1` (patch bump — additive recall option, no breaking change).

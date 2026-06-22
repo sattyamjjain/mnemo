@@ -506,6 +506,58 @@ async fn eval_avg(
     }
 }
 
+/// Token estimate, `ceil(chars / 4)` — the repo's bench-wide heuristic
+/// (see `bench/locomo/src/phase_cost.rs`). Good enough for a *relative*
+/// slice-vs-full ratio; not a `tiktoken`-calibrated absolute count.
+fn est_tokens(s: &str) -> usize {
+    s.chars().count().div_ceil(4)
+}
+
+/// Engram-style (arXiv:2606.09900) "lean retrieved slice vs full history"
+/// token accounting. Deterministic, no LLM. `full_history_tokens` is the
+/// whole corpus — the naive "stuff every memory into the prompt" baseline;
+/// `mean_slice_tokens` is the mean token cost of the top-`slice_k` recalled
+/// memories per query (what mnemo actually hands a downstream LLM). The
+/// reduction is the token saving of retrieving a lean slice vs. dumping the
+/// full history. This is the memory layer's measurable contribution to the
+/// Engram framing; end-to-end QA accuracy needs a generative LLM (not run
+/// here) and is intentionally out of scope.
+#[allow(clippy::too_many_arguments)]
+async fn token_efficiency(
+    embedding: Arc<dyn EmbeddingProvider>,
+    dim: usize,
+    weights: Option<Vec<f32>>,
+    rrf_k: Option<f32>,
+    corpus: &[LongMemRecord],
+    queries: &[&LongMemRecord],
+    limit: usize,
+    slice_k: usize,
+) -> (usize, f64, f64) {
+    let full_history_tokens: usize = corpus.iter().map(|r| est_tokens(&r.content)).sum();
+    let engine = build_engine(embedding, dim);
+    seed(&engine, corpus).await;
+    let mut slice_tokens: Vec<f64> = Vec::with_capacity(queries.len());
+    for r in queries {
+        let req = build_recall(&r.query, "auto", limit, weights.clone(), rrf_k);
+        if let Ok(resp) = engine.recall(req).await {
+            let t: usize = resp
+                .memories
+                .iter()
+                .take(slice_k)
+                .map(|m| est_tokens(&m.content))
+                .sum();
+            slice_tokens.push(t as f64);
+        }
+    }
+    let mean_slice = mean(&slice_tokens);
+    let reduction = if full_history_tokens > 0 {
+        1.0 - mean_slice / full_history_tokens as f64
+    } else {
+        0.0
+    };
+    (full_history_tokens, mean_slice, reduction)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_markdown(
     eval_rows: &[EvalRow],
@@ -768,10 +820,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await,
     );
 
+    // 2b. Engram-style token efficiency (lean slice vs full history) on the
+    //     tuned config — the memory layer's measurable half of the framing.
+    let slice_k = 5usize;
+    let (full_tok, slice_tok, token_reduction) = token_efficiency(
+        embedding.clone(),
+        dim,
+        Some(best.weights.clone()),
+        Some(best.rrf_k),
+        &dataset,
+        &eval,
+        cli.limit,
+        slice_k,
+    )
+    .await;
+
     // 3. Write + print.
     std::fs::create_dir_all(&cli.out_dir)?;
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let md = render_markdown(
+    let mut md = render_markdown(
         &eval_rows,
         &sweep_rows,
         &best,
@@ -784,13 +851,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tune.len(),
         eval.len(),
     );
+    // Append the Engram-style token-efficiency section to the report.
+    md.push_str(&format!(
+        "\n## Token efficiency — lean slice vs full history (Engram framing)\n\n\
+         > Reference: Engram ([arXiv:2606.09900](https://arxiv.org/abs/2606.09900)) frames the \
+         win as a *lean retrieved slice* giving comparable answers at a fraction of the tokens of \
+         the *full history*. This is the memory layer's measurable half (no LLM): tokens estimated \
+         as `ceil(chars/4)`; slice = top-{slice_k} recalled memories under the tuned config \
+         `{cfg}` (k={k}); full history = the entire {n}-record corpus.\n\n\
+         | metric | tokens |\n|---|---:|\n\
+         | full history (all {n} records) | {full_tok} |\n\
+         | mean retrieved slice (top-{slice_k}) | {slice_tok:.0} |\n\
+         | **token reduction** | **{pct:.1}%** |\n\n\
+         Retrieving a lean top-{slice_k} slice costs ~{pct:.1}% fewer context tokens than dumping \
+         the full history, at the recall@5 shown above. **Not** an end-to-end QA-accuracy or \
+         parity claim — answer accuracy needs a generative LLM, which this run does not invoke.\n",
+        slice_k = slice_k,
+        cfg = best.label,
+        k = best.rrf_k,
+        n = dataset.len(),
+        full_tok = full_tok,
+        slice_tok = slice_tok,
+        pct = token_reduction * 100.0,
+    ));
+
     let md_path = cli.out_dir.join(format!("semantic_recall_{date}.md"));
-    std::fs::write(&md_path, md)?;
+    std::fs::write(&md_path, &md)?;
+    let mut json = render_json(&eval_rows, &best, &cli.model, dim);
+    json["token_efficiency"] = serde_json::json!({
+        "framing": "Engram arXiv:2606.09900 lean-slice-vs-full-history",
+        "token_estimate": "ceil(chars/4)",
+        "slice_k": slice_k,
+        "tuned_config": best.label,
+        "full_history_tokens": full_tok,
+        "mean_slice_tokens": slice_tok,
+        "token_reduction": token_reduction,
+        "note": "memory-layer token accounting only; QA accuracy needs a generative LLM (not run)",
+    });
     let json_path = cli.out_dir.join(format!("semantic_recall_{date}.json"));
-    std::fs::write(
-        &json_path,
-        serde_json::to_string_pretty(&render_json(&eval_rows, &best, &cli.model, dim))?,
-    )?;
+    std::fs::write(&json_path, serde_json::to_string_pretty(&json)?)?;
 
     println!(
         "\n=== semantic_recall_bench ({} {}-dim) — held-out eval (n={}, mean of {} seeds) ===",
@@ -812,6 +911,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "\nbest swept hybrid config: {:?} k={} (`{}`)",
         best.weights, best.rrf_k, best.label
+    );
+    println!(
+        "token efficiency (Engram lean-slice): full_history={full_tok} tok, \
+         top-{slice_k} slice={slice_tok:.0} tok, reduction={pct:.1}%",
+        full_tok = full_tok,
+        slice_k = slice_k,
+        slice_tok = slice_tok,
+        pct = token_reduction * 100.0,
     );
     println!("wrote {}\nwrote {}", md_path.display(), json_path.display());
     Ok(())

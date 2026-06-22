@@ -623,37 +623,30 @@ keeps the regression gate honest. Earlier reports under
 [`docs/benchmarks/`](docs/benchmarks/) carry the v0.3.0 / v0.3.1 floor
 numbers from before the v0.3.3 Tantivy-default + LLM-judge fixes.
 
-**Real-embedder retrieval-quality bench (`semantic_recall_bench`).** Most
-bins here run with `NoopEmbedding` (zero vectors) or behind gated
-dataset/judge access; this one is the first that measures mnemo's recall
-path with a **real local semantic embedder** — `nomic-embed-text`
-(768-dim) served via Ollama — and a standard IR metric. The corpus (the
-bundled 45-record LongMemEval-M slice) is fully seeded; the *queries* are
-split deterministically into a tune and a **held-out** eval set, the RRF
-weights are swept on tune, and every row is the **mean of 5 seeds** (to
-absorb UUID-v7 + approximate-HNSW run-to-run variance). Metric =
-gold-document recall@K + MRR (does a query retrieve its own source
-record?). Held-out eval:
+**Real-embedder memory-quality result → [`bench/RESULTS.md`](bench/RESULTS.md).**
+The canonical, reproducible number: mnemo's recall path with a **real local
+semantic embedder** (`nomic-embed-text`, 768-dim, via Ollama — never
+`NoopEmbedding`) over the bundled LongMemEval_M slice, held-out eval:
+**semantic recall@1 = 0.739 (MRR 0.805), at ~89% token reduction** vs.
+dumping the full history (Engram-style lean-slice framing,
+[arXiv:2606.09900](https://arxiv.org/abs/2606.09900) — a reference point, not a
+parity claim).
 
-| mode | recall@1 | recall@3 | recall@5 | MRR |
-|---|---:|---:|---:|---:|
-| `bm25_only` (`lexical`) | 0.522 | 0.609 | 0.739 | 0.586 |
-| `vector_only` (`semantic`) | **0.739** | 0.826 | 0.826 | **0.805** |
-| `rrf_hybrid` (`auto`, default weights) | 0.452 | 0.748 | 0.809 | 0.619 |
-| `rrf_hybrid_tuned` (`[6,1,0,0]` k=30) | 0.696 | 0.783 | 0.826 | 0.765 |
+| mode | recall@1 | recall@3 | recall@5 | MRR | errored |
+|---|---:|---:|---:|---:|---:|
+| `bm25_only` (`lexical`) | 0.522 | 0.609 | 0.739 | 0.586 | ~1/23 |
+| `vector_only` (`semantic`) | **0.739** | 0.826 | 0.826 | **0.805** | 0/23 |
+| `rrf_hybrid` (`auto`, default weights) | 0.435 | 0.739 | 0.817 | 0.608 | ~1/23 |
 
-Honest read: on this tight single-fact slice the **vector lane is
-strongest**; mnemo's **default `auto` fusion underperforms it** on
-recall@1 (equal-weighting dilutes a strong semantic signal with the
-weaker BM25/recency/graph lanes); up-weighting the vector lane through
-the public `hybrid_weights` / `rrf_k` knobs **recovers most of the gap** —
-evidence the knobs work and the default `auto` weights are worth
-revisiting. This is *retrieval* quality, not an LLM-judged QA score, and
-not a leaderboard claim (45 records, ~23-query eval) — the gated full-set
-run stays tracked in [#44](https://github.com/sattyamjjain/mnemo/issues/44).
-Full report + JSON at
-[`bench/locomo/results/semantic_recall_2026-06-13.md`](bench/locomo/results/semantic_recall_2026-06-13.md).
-Reproduce: `ollama pull nomic-embed-text && cargo run --release --bin semantic_recall_bench -p mnemo-locomo-bench`.
+**One caveat:** single-run (5 in-process seeds, *not* restart-averaged); the
+HNSW index + RRF fusion-weight selection sit near a noise floor (cf. *The FID
+Lottery*) — the swept "best" hybrid config flips between runs, so treat sub-0.05
+gaps as ties; `vector_only` is the one stable strong mode. This is *retrieval*
+quality + token efficiency, **not** an LLM-judged QA-accuracy or leaderboard
+claim (45-record LongMemEval_M, not _S; QA accuracy needs a generative LLM not
+run here). Full tables + JSON: [`bench/RESULTS.md`](bench/RESULTS.md) and the
+dated [`bench/locomo/results/`](bench/locomo/results/) report. Reproduce:
+`ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.
 
 **Phase-aware cost attribution + agent-memory characterization scorecard (bench-only).** Anchored on [arXiv:2606.06448](https://arxiv.org/abs/2606.06448) (*Agent Memory: Characterization and System Implications of Stateful Long-Horizon Workloads*). The new [`phase_cost`](bench/locomo/src/bin/phase_cost.rs) bin splits every benchmark scenario's cost into the paper's **three phases** — **construction** (remember-path: embedding calls, prefill tokens, write latency), **retrieval** (recall-path: ANN + BM25 + graph + RRF latency, query tokens), and **generation** (downstream, *estimated* — mnemo does not generate) — and emits a per-phase table (tokens, wall-ms, $-estimate at configurable per-1K rates) per scenario. The `--scorecard-2606-06448` flag instead renders mnemo's PASS / PARTIAL / FAIL position against the paper's 10 §5 recommendations (quoted verbatim) as a 10-row table; mnemo currently scores **5 PASS · 5 PARTIAL · 0 FAIL** (PASS on the latency / feasibility / compaction recommendations R5/R7/R8/R9/R10; PARTIAL on the operator-side lifecycle-policy ones R1–R4/R6). Run via `cargo run --release --bin phase_cost -p mnemo-locomo-bench` (add `-- --scorecard-2606-06448` for the scorecard). **This is bench-only** — no access protocol (MCP / REST / gRPC / pgwire) and no retrieval default is touched; token counts are `ceil(chars/4)` estimates and the generation phase is never an LLM call. Sample per-phase table (default rates, 64 records / 16 queries, `NoopEmbedding`):
 

@@ -1,0 +1,81 @@
+{
+  "embedder": {
+    "backend": "ollama",
+    "dim": 768,
+    "model": "nomic-embed-text"
+  },
+  "eval": [
+    {
+      "detail": "-",
+      "failures_mean": 1.0,
+      "mode": "bm25_only",
+      "mrr": 0.586231884057971,
+      "n": 23,
+      "p50_ms": 24.6412664,
+      "p95_ms": 30.6305252,
+      "recall@1": 0.5217391304347826,
+      "recall@3": 0.6086956521739131,
+      "recall@5": 0.7391304347826086,
+      "repeats": 5
+    },
+    {
+      "detail": "-",
+      "failures_mean": 0.0,
+      "mode": "vector_only",
+      "mrr": 0.8048136645962731,
+      "n": 23,
+      "p50_ms": 34.6573498,
+      "p95_ms": 37.6134,
+      "recall@1": 0.7391304347826086,
+      "recall@3": 0.826086956521739,
+      "recall@5": 0.826086956521739,
+      "repeats": 5
+    },
+    {
+      "detail": "default equal weights",
+      "failures_mean": 1.0,
+      "mode": "rrf_hybrid",
+      "mrr": 0.6077329192546583,
+      "n": 23,
+      "p50_ms": 45.419166800000006,
+      "p95_ms": 58.44760000000001,
+      "recall@1": 0.43478260869565216,
+      "recall@3": 0.7391304347826086,
+      "recall@5": 0.8173913043478261,
+      "repeats": 5
+    },
+    {
+      "detail": "[1.0, 1.0, 1.0, 1.0] k=60",
+      "failures_mean": 1.0,
+      "mode": "rrf_hybrid_tuned",
+      "mrr": 0.6222981366459628,
+      "n": 23,
+      "p50_ms": 51.354991399999996,
+      "p95_ms": 73.7908834,
+      "recall@1": 0.4521739130434782,
+      "recall@3": 0.7478260869565216,
+      "recall@5": 0.808695652173913,
+      "repeats": 5
+    }
+  ],
+  "token_efficiency": {
+    "framing": "Engram arXiv:2606.09900 lean-slice-vs-full-history",
+    "full_history_tokens": 893,
+    "mean_slice_tokens": 97.13636363636364,
+    "note": "memory-layer token accounting only; QA accuracy needs a generative LLM (not run)",
+    "slice_k": 5,
+    "token_estimate": "ceil(chars/4)",
+    "token_reduction": 0.8912246767789881,
+    "tuned_config": "equal_k60(default)"
+  },
+  "tuned_config": {
+    "label": "equal_k60(default)",
+    "rrf_k": 60.0,
+    "weights": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+}
