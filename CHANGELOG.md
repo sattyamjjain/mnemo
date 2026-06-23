@@ -4,6 +4,30 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-06-23) — v0.5.3 cut, typed `BackendUnsupported` for Postgres semantic recall
+
+Workspace `0.5.2 → 0.5.3` (patch bump — error-type hardening + docs, no API break).
+
+- **fix: Postgres `semantic_recall` now returns a typed `BackendUnsupported`
+  error instead of silently returning empty; document DuckDB as the supported
+  semantic backend.** The pgvector ANN path (`semantic` / `auto` / `graph` /
+  `domain_scoped` / `reconstruct`) already failed loud, but with a generic
+  `Error::Index(String)`. It now returns the structured
+  `Error::BackendUnsupported { backend: "postgres", capability:
+  "semantic_recall", detail }` so callers can match on `backend` / `capability`
+  programmatically instead of string-sniffing the message; `detail` keeps the
+  actionable guidance + tracking link ([#99]).
+  - **New typed variant** `Error::BackendUnsupported` in
+    `crates/mnemo-core/src/error.rs` (additive; the gRPC/REST error mappers
+    fall through their existing wildcard arms → 500/internal).
+  - **README backend capability matrix**: an explicit per-capability does/does-NOT
+    table (DuckDB ✅ vs Postgres ❌-on-vector); crate-level doc note on
+    `mnemo-postgres`.
+  - **Test** `ann_search_fails_loud_not_silent_empty` upgraded to assert the
+    structured variant (`backend`/`capability`), not just `is_err()`.
+
+[#99]: https://github.com/sattyamjjain/mnemo/issues/99
+
 ### Added (2026-06-22) — v0.5.2 cut, real-embedder memory-quality result + Postgres semantic stub hard-errors
 
 Workspace `0.5.1 → 0.5.2` (patch bump — bench + docs + a credibility-bug confirmation, no API change).

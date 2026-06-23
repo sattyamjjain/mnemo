@@ -24,6 +24,18 @@ pub enum Error {
     #[error("index error: {0}")]
     Index(String),
 
+    /// A storage/index backend does not implement a requested capability.
+    /// Returned (not silently empty) when a caller asks a backend to do
+    /// something it cannot — e.g. semantic/vector recall on the PostgreSQL
+    /// backend, whose pgvector ANN search is not wired. `detail` carries the
+    /// actionable guidance (which backend to use + a tracking link).
+    #[error("backend '{backend}' does not support capability '{capability}': {detail}")]
+    BackendUnsupported {
+        backend: String,
+        capability: String,
+        detail: String,
+    },
+
     #[error("index error: {message}")]
     IndexSource {
         message: String,

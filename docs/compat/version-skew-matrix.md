@@ -1,9 +1,11 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-06-22 for the v0.5.2 cut (real-embedder memory-quality result
-> in [`bench/RESULTS.md`](../../bench/RESULTS.md) — `nomic-embed-text` via
-> Ollama, Engram-style token efficiency; plus the Postgres pgvector ANN stub
-> hard-erroring instead of silent-empty). No engine/protocol API change. The
+> Updated 2026-06-23 for the v0.5.3 cut (Postgres semantic recall now returns
+> a typed `Error::BackendUnsupported { backend, capability, detail }` instead
+> of a generic string error; README gains an explicit backend capability
+> matrix). No engine/protocol API break. The v0.5.2 cut added the
+> real-embedder memory-quality result in
+> [`bench/RESULTS.md`](../../bench/RESULTS.md). The
 > v0.4.5 → v0.4.9 cuts are not reproduced here; consult the
 > [CHANGELOG](../../CHANGELOG.md) for the per-cut substrate / SDK matrix in
 > those windows.
@@ -17,7 +19,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.5.2** (2026-06-22) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.5.3** (2026-06-23) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.5.2 (2026-06-22) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.1 (2026-06-21) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.0 (2026-06-21) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.4.15 (2026-06-13) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -34,7 +37,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.5.2** (2026-06-22) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.5.3** (2026-06-23) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.5.2 (2026-06-22) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.1 (2026-06-21) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.0 (2026-06-21) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.4.15 (2026-06-13) | 0.4.15 | 0.4.15 | 0.4.15 | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
@@ -101,7 +105,9 @@ follow-up.
   topic-document primitive; v0.5.1 adds the `reconstruct` recall
   strategy (active reconstruction, MRAgent arXiv:2606.06036); v0.5.2 is
   a bench + docs cut (real-embedder memory-quality result in
-  `bench/RESULTS.md`, Postgres ANN stub hard-errors) with no API change
+  `bench/RESULTS.md`, Postgres ANN stub hard-errors); v0.5.3 makes that
+  Postgres error a typed `BackendUnsupported` variant + adds the README
+  backend capability matrix — all with no API change
   — both v0.5.0/v0.5.1 land in the Rust workspace (crates.io) and the
   MCP/REST/gRPC(/pgwire) surfaces.
   The language SDKs (`mnemo-db` Python, `@mndfreek/mnemo-sdk` TS, Go) are

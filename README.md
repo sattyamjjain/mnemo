@@ -309,19 +309,41 @@ _, _ = client.Share(mnemo.ShareInput{MemoryID: result.ID, TargetAgentID: "audito
 
 ## Storage Backends
 
+Two backends implement the same `StorageBackend` trait. They are **not**
+feature-equivalent — semantic/vector recall is DuckDB-only today. The matrix
+below is explicit about what each backend **does** and **does NOT** do.
+
 | Backend | Best For |
 |---------|----------|
-| **DuckDB** (default) | Single-agent, embedded, zero-config — **the supported vector backend** |
-| **PostgreSQL** + pgvector | Multi-agent CRUD / ACL / audit at scale — *vector ANN search WIP (see note)* |
+| **DuckDB** (default) | Single-agent, embedded, zero-config — **the supported semantic/vector backend** |
+| **PostgreSQL** + pgvector | Multi-agent CRUD / ACL / audit at scale — lexical/exact recall; **semantic recall errors (see matrix)** |
 
-> **Postgres vector-recall status (honest).** Embeddings are persisted to the
-> pgvector `vector` column and the HNSW index is created, but ANN *search* is
-> not yet wired — so `semantic` / `auto` (hybrid) / `graph` / `domain_scoped`
-> recall on the PostgreSQL backend currently **return a clear error** rather
-> than silently returning nothing. Use the embedded **DuckDB** backend for
-> vector recall today; `lexical` / `exact` recall and all CRUD / ACL /
-> checkpoint / audit features work on Postgres. Real pgvector ANN is tracked
-> in [#99](https://github.com/sattyamjjain/mnemo/issues/99).
+### Backend capability matrix
+
+| Capability | DuckDB + USearch | PostgreSQL + pgvector |
+|---|:---:|:---:|
+| Semantic / vector recall (`strategy="semantic"`) | ✅ | ❌ **typed error** ¹ |
+| Hybrid RRF recall (`strategy="auto"`) | ✅ | ❌ **typed error** ¹ |
+| Graph recall (`strategy="graph"`) | ✅ | ❌ **typed error** ¹ |
+| Domain-scoped recall (`strategy="domain_scoped"`) | ✅ | ❌ **typed error** ¹ |
+| Active-reconstruction recall (`strategy="reconstruct"`) | ✅ | ❌ **typed error** ¹ |
+| Lexical / BM25 recall (`strategy="lexical"`) | ✅ | ✅ |
+| Exact / filter recall (`strategy="exact"`) | ✅ | ✅ |
+| Remember / CRUD / soft+hard delete | ✅ | ✅ |
+| ACL / sharing / delegation | ✅ | ✅ |
+| Checkpoint / branch / merge / replay | ✅ | ✅ |
+| Hash-chain audit / `verify` | ✅ | ✅ |
+
+¹ **Postgres semantic recall fails loud, never silent-empty.** Embeddings are
+persisted to the pgvector `vector` column and the HNSW index is created, but
+ANN *search* is not yet wired (the synchronous `VectorIndex` trait cannot run
+pgvector SQL). Any strategy that touches the vector lane therefore returns a
+typed [`Error::BackendUnsupported { backend: "postgres", capability:
+"semantic_recall", .. }`](crates/mnemo-core/src/error.rs) — a clear, matchable
+error rather than silently returning nothing. Use the embedded **DuckDB**
+backend for vector recall today; `lexical` / `exact` recall and all CRUD / ACL
+/ checkpoint / audit features work on Postgres. Real pgvector ANN is tracked in
+[#99](https://github.com/sattyamjjain/mnemo/issues/99).
 
 ## Key Features
 

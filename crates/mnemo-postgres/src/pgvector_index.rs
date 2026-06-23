@@ -45,19 +45,24 @@ impl Default for PgVectorIndex {
     }
 }
 
-/// The error returned by the not-yet-implemented ANN search paths.
-/// Centralised so the message and the tracking link stay consistent.
+/// The typed error returned by the not-yet-implemented ANN search paths.
+/// Centralised so the backend/capability/detail stay consistent. Uses the
+/// structured [`Error::BackendUnsupported`] variant so callers can match on
+/// `backend` / `capability` programmatically instead of string-sniffing the
+/// message.
 fn ann_unsupported() -> Error {
-    Error::Index(
-        "pgvector ANN search is not implemented in the PostgreSQL backend: \
-         semantic / auto (hybrid) / graph / domain-scoped recall are \
-         unsupported on Postgres. Embeddings are persisted to the pgvector \
-         column, but the synchronous VectorIndex trait cannot run pgvector \
-         SQL. Use the embedded DuckDB backend for vector recall, or \
-         strategy=\"lexical\"/\"exact\" on Postgres. Tracking: \
-         https://github.com/sattyamjjain/mnemo/issues/99"
+    Error::BackendUnsupported {
+        backend: "postgres".to_string(),
+        capability: "semantic_recall".to_string(),
+        detail: "pgvector ANN search is not implemented: semantic / auto \
+                 (hybrid) / graph / domain-scoped recall are unsupported on \
+                 the PostgreSQL backend. Embeddings are persisted to the \
+                 pgvector column, but the synchronous VectorIndex trait \
+                 cannot run pgvector SQL. Use the embedded DuckDB backend for \
+                 vector recall, or strategy=\"lexical\"/\"exact\" on Postgres. \
+                 Tracking: https://github.com/sattyamjjain/mnemo/issues/99"
             .to_string(),
-    )
+    }
 }
 
 impl VectorIndex for PgVectorIndex {
@@ -130,11 +135,24 @@ mod tests {
             "filtered_search must fail loud, not return Ok(empty)"
         );
 
-        // The error must name the tracking issue so operators find the path forward.
-        let msg = idx.search(&[0.0], 1).unwrap_err().to_string();
-        assert!(
-            msg.contains("issues/99"),
-            "error should reference the tracking issue: {msg}"
-        );
+        // It must be the structured, typed variant — callers match on
+        // backend/capability, not the message string.
+        match idx.search(&[0.0], 1).unwrap_err() {
+            Error::BackendUnsupported {
+                backend,
+                capability,
+                detail,
+            } => {
+                assert_eq!(backend, "postgres");
+                assert_eq!(capability, "semantic_recall");
+                // detail still names the tracking issue so operators find the
+                // path forward.
+                assert!(
+                    detail.contains("issues/99"),
+                    "detail should reference the tracking issue: {detail}"
+                );
+            }
+            other => panic!("expected BackendUnsupported, got: {other}"),
+        }
     }
 }
