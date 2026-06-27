@@ -3,24 +3,40 @@ pub mod handlers;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::http::{Method, StatusCode, header};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::{get, post};
 use mnemo_core::query::MnemoEngine;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
-/// Construct the full Axum router for the Mnemo REST API.
+/// Construct the full Axum router for the Mnemo REST API, reading the
+/// bearer-token secret from the `MNEMO_AUTH_TOKEN` environment variable.
+///
+/// When `MNEMO_AUTH_TOKEN` is set (non-empty), every request except
+/// `/v1/health` and CORS preflight (`OPTIONS`) must carry a matching
+/// `Authorization: Bearer <token>` header or it is rejected with `401`. When
+/// the variable is unset, the server runs **open** and logs a warning — the
+/// floor for "don't run an unauthenticated memory server" is opt-in but loud.
 ///
 /// All routes are nested under `/v1/` and the router carries
-/// `Arc<MnemoEngine>` as shared state.
-///
-/// CORS is restrictive by default (localhost only). Set the
-/// `MNEMO_CORS_ORIGINS` environment variable to a comma-separated
-/// list of allowed origins to override (e.g. `https://app.example.com`).
-/// Set it to `*` to allow all origins (not recommended for production).
+/// `Arc<MnemoEngine>` as shared state. CORS is restrictive by default
+/// (localhost only); set `MNEMO_CORS_ORIGINS` to override.
 pub fn router(engine: Arc<MnemoEngine>) -> Router {
+    let token = std::env::var("MNEMO_AUTH_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty());
+    router_with_auth(engine, token)
+}
+
+/// Like [`router`] but with the bearer secret passed explicitly (so tests and
+/// embedders can configure auth without touching the process environment).
+/// `Some(token)` enables bearer auth; `None` runs open (with a warning).
+pub fn router_with_auth(engine: Arc<MnemoEngine>, auth_token: Option<String>) -> Router {
     let cors = build_cors_layer();
 
-    Router::new()
+    let app = Router::new()
         .route(
             "/v1/memories",
             post(handlers::remember_handler).get(handlers::recall_handler),
@@ -46,8 +62,53 @@ pub fn router(engine: Arc<MnemoEngine>) -> Router {
         .route("/v1/health", get(handlers::health_handler))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024)) // 2 MB max request body
         .layer(cors)
-        .layer(tower_http::trace::TraceLayer::new_for_http())
-        .with_state(engine)
+        .layer(tower_http::trace::TraceLayer::new_for_http());
+
+    // Bearer-token gate (outermost so it runs before handlers). When unset,
+    // run open but log loudly — never silently serve an unauthenticated
+    // memory database without surfacing it.
+    let app = match auth_token {
+        Some(token) if !token.is_empty() => {
+            tracing::info!(
+                "REST bearer-token auth ENABLED (Authorization: Bearer <MNEMO_AUTH_TOKEN>)"
+            );
+            app.layer(middleware::from_fn_with_state(
+                Arc::new(token),
+                require_bearer,
+            ))
+        }
+        _ => {
+            tracing::warn!(
+                "REST API running WITHOUT authentication — set MNEMO_AUTH_TOKEN to require a \
+                 bearer token. Do not expose an unauthenticated memory server."
+            );
+            app
+        }
+    };
+
+    app.with_state(engine)
+}
+
+/// Axum middleware: require `Authorization: Bearer <expected>` on every request
+/// except `/v1/health` and CORS preflight (`OPTIONS`). Returns `401` otherwise.
+async fn require_bearer(
+    State(expected): State<Arc<String>>,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // Liveness probes and CORS preflight must not require the secret.
+    if req.method() == Method::OPTIONS || req.uri().path() == "/v1/health" {
+        return Ok(next.run(req).await);
+    }
+    let provided = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    if mnemo_core::auth::bearer_token_matches(provided, &expected) {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
 }
 
 fn build_cors_layer() -> CorsLayer {

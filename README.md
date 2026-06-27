@@ -370,8 +370,8 @@ backend for vector recall today; `lexical` / `exact` recall and all CRUD / ACL
 - **Evidence-weighted conflict resolution** — resolve multi-agent conflicts using source reliability scoring
 - **Memory-provenance signing on reads** — every `recall(..., with_provenance=True)` returns an HMAC-SHA256 receipt binding the cited records to a server-side key; supports key rotation. Verify offline from Python via `mnemo.provenance.verify_read_provenance`. New in v0.4.0-rc3.
 - **Hardened MCP launcher** — `mnemo mcp-server --manifest <path>` runs a safe-spawn gauntlet (refuse inherited secrets, refuse `--config` argv injection, refuse untrusted parents) BEFORE engine state is constructed. Direct response to the OX-MCP "exfiltrate-then-act" disclosure (2026-04-24). All privileged knobs come from a chmod-restricted TOML manifest. New in v0.4.0-rc3.
-- **DPDPA consent-token-per-write** — Mannsetu adapter + `ConsentTokenGuard` (expiry / scope / revocation) refuses every `remember` that is not authorized by a fresh consent token. Per-subject "data passport" PDF for Section 11 / 12 access requests. New in v0.4.0-rc3.
-- **MCP tool-catalog attestation** — `mnemo mcp-server` pins the advertised MCP tool list, refuses to start when the catalog gains an unauthorized tool or any tool's `inputSchema` mutates, and emits `MNEMO_MCP_TOOL_DRIFT` audit rows. Direct response to arXiv 2604.20994 (function-hijacking via tool-list poisoning). New in v0.4.0.
+- **DPDPA consent-token guard (library — not enforced by default)** — `mnemo-compliance::ConsentTokenGuard` validates a consent token's expiry / scope / revocation, and `MannsetuConsentSource` binds a DPB-registered consent manager. **The core engine does not require a consent token** — `engine.remember` performs no consent check; this is an opt-in guard a caller wires in front of writes, not a default gate. New in v0.4.0-rc3. _(See the enforcement table below.)_
+- **MCP tool-catalog pin (parsed + validated; serve-time attestation not yet wired)** — `mnemo mcp-server` loads and validates an optional tool-catalog pin from the manifest (a malformed pin refuses startup), and the attestation + drift-classification logic is implemented and unit-tested. **Attestation of the advertised tool list against the pin is not yet enforced in the MCP boot path** — the server logs a warning saying so at startup. Direct response to arXiv 2604.20994 (function-hijacking via tool-list poisoning). New in v0.4.0. _(See the enforcement table below.)_
 - **Cloudflare Mesh runtime adapter** — SPIFFE-style `MeshIdentity` + per-namespace `MemOp` ACL + `MeshAuditEnvelope` chained into the existing HMAC ledger. First OSS embedded memory DB to speak Cloudflare Mesh attestation natively. New in v0.4.0.
 - **Code-mode WIT recall** — `mnemo:memory@0.4` WIT world plus a wasmtime-friendly host runner. Agents call `recall` as a sandboxed WASM function instead of a JSON tool envelope, dropping per-turn token cost ~96% on 200-turn LongMemEval_S samples. New in v0.4.0.
 - **Decay-curve score lane** — `DecayLane` (Ebbinghaus + reinforcement) fuses with vector + BM25 + recency in the default recall path. `letta_mode` flag bypasses it for parity with Letta's published numbers. New in v0.4.0.
@@ -381,7 +381,49 @@ backend for vector recall today; `lexical` / `exact` recall and all CRUD / ACL
 - **Agent behavioural-baseline exporter** — `mnemo-baseline` crate emits per-agent profiles in OpenTelemetry semconv 1.31 + OCSF 1.4 Application-Activity formats with z-score+EWMA drift detection; anti-leak regex test ensures payloads never carry memory contents. Plugs into the RSAC 2026 SOC telemetry gap. New in v0.4.1.
 - **1M-context recall budget planner** — `mnemo-core::budget` adds `ContextBudget::for_model` + `plan_recall` covering `deepseek-v4-1m`, `claude-3.7-sonnet-1m`, `gpt-5.1-400k`, `gemini-2.5-pro-2m`; typed `FallbackStrategy`; property test asserts no model overflows. New in v0.4.1.
 - **mnemo doctor + Grafana dashboard** — typed `DoctorReport` + `DoctorFix` recommendations and a committed `dashboards/mnemo-grafana.json` (schemaVersion 39) covering recall p50/p99, tool-catalog drift, HMAC continuity, code-mode token reduction. New in v0.4.1.
-- **MCP role-aware tool filter** — manifest `[role_filter]` block with `caller_roles`, `default = "allow_all" | "deny_all"`, per-tool `allow` / `deny` maps (deny wins), and an `McpRoleDenied` audit row on every blocked call. Aligned with the [2025-11-25 MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). Omitting the block keeps pre-v0.4.2 behaviour byte-for-byte. New in v0.4.2.
+- **MCP role-aware tool filter (parsed + validated; not yet dispatched)** — the manifest `[role_filter]` block (`caller_roles`, `default = "allow_all" | "deny_all"`, per-tool `allow` / `deny`, deny-wins) is parsed and validated at startup, and the filter logic + `McpRoleDenied` decision is implemented and unit-tested. **It is not yet invoked at tool-dispatch time** — tool calls are not filtered by role (the server logs a warning saying so at startup). Aligned with the [2025-11-25 MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). New in v0.4.2. _(See the enforcement table below.)_
+
+### Security: what is and isn't enforced today
+
+mnemo ships a lot of security *machinery*; not all of it is on the default
+request path yet. This table is the honest picture — verified against the code,
+not the roadmap. "Enforced" means a live code path rejects/acts; "library /
+parsed-only" means the logic exists and is tested but nothing on the default
+path calls it.
+
+| Control | Enforced by default? | Where / how |
+|---|---|---|
+| **Network bearer-token auth (REST + gRPC)** | ✅ when `MNEMO_AUTH_TOKEN` is set — else **open + loud warning** | axum middleware / tonic interceptor → `401` / `UNAUTHENTICATED` |
+| Per-record ACL / RBAC (private/shared/public scopes) | ✅ | `check_permission` on `recall` (shared scope) + `share` (admin) |
+| Permission-safe ANN (post-filter to accessible ids) | ✅ | `recall` ANN path |
+| Scoped, depth-limited delegation | ✅ | `delegate` + ACL checks |
+| At-rest AES-256-GCM content encryption | ✅ when `MNEMO_ENCRYPTION_KEY` set | engine `remember`/`recall` |
+| Hash-chain integrity + `verify` | ✅ | events + memories |
+| Read-provenance HMAC receipt | ✅ opt-in per call (`with_provenance=true`) | `recall` |
+| Memory-poisoning anomaly + quarantine | ✅ | `remember` |
+| Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |
+| **MCP role-filter** (manifest `[role_filter]`) | ❌ **parsed + validated only** — not invoked at tool dispatch | `mnemo-mcp::role_filter` (library + tests); startup logs a warning |
+| **MCP tool-catalog attestation** | ❌ **pin parsed + validated only** — no serve-time check | `mnemo-cli::attest` (library + tests); startup logs a warning |
+| **Consent-token-per-write** | ❌ **library only** — core engine never calls it | `mnemo-compliance::ConsentTokenGuard` |
+| Lease tokens | ❌ store runs, but no operation is gated on a lease | `mnemo-cli::lease` (`#![allow(dead_code)]`) |
+| Cloudflare Mesh / Agent-Deal / baseline exporter / CMA shim | ❌ standalone adapter crates — not invoked by the running server | `mnemo-mesh` / `mnemo-deal` / `mnemo-baseline` / `mnemo-cma` |
+
+#### Bearer-token auth (the floor)
+
+The REST and gRPC servers are **unauthenticated unless you set a shared secret**:
+
+```bash
+export MNEMO_AUTH_TOKEN="$(openssl rand -hex 32)"
+```
+
+With it set, every REST request (except `GET /v1/health` and CORS preflight)
+must send `Authorization: Bearer <token>` or get `401`; every gRPC RPC must send
+an `authorization` metadata value or get `UNAUTHENTICATED`. The token is compared
+in constant time. With it **unset**, both servers run open and log a warning on
+every startup — they never silently serve an unauthenticated memory database.
+This is a single operator-held secret (the floor for "don't run an open memory
+server"), distinct from the per-record ACL/RBAC layer above; it is not user
+accounts, scopes, or rotation.
 
 ### Memory curation interop (Dreams, Routines, and substrate primitives)
 

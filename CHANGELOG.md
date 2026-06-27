@@ -4,6 +4,37 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Security (2026-06-27) — v0.5.4 cut, bearer-token auth + truth-in-advertising
+
+Workspace `0.5.3 → 0.5.4` (patch bump — adds a network auth floor, no breaking API change).
+
+- **security: bearer-token auth on REST/gRPC; align README security claims with
+  wired behavior; typed errors for unsupported features.**
+  - **Network auth floor.** REST (`mnemo-rest`) and gRPC (`mnemo-grpc`) now read
+    `MNEMO_AUTH_TOKEN`; when set, every REST request (except `GET /v1/health` +
+    CORS preflight) must send `Authorization: Bearer <token>` → `401`, and every
+    gRPC RPC must send matching `authorization` metadata → `UNAUTHENTICATED`.
+    Constant-time compare via the new `mnemo_core::auth::bearer_token_matches`.
+    When unset, both servers run open **and log a warning on startup** — never
+    silently unauthenticated. New `router_with_auth(engine, Option<String>)` on
+    both crates; `router()` reads the env var.
+  - **Truth-in-advertising.** Audited every README security claim against the
+    live code path. Corrected three over-claims to match reality and added a
+    "Security: what is and isn't enforced today" table:
+    - **MCP role-filter** — manifest block is *parsed + validated*, but **not
+      invoked at tool dispatch**; the README no longer implies tool calls are
+      filtered, and the CLI now logs a **warning** (was an info "loaded" line).
+    - **MCP tool-catalog attestation** — pin is *parsed + validated*, but
+      serve-time attestation is **not enforced**; CLI logs a warning.
+    - **DPDPA consent-token-per-write** — `ConsentTokenGuard` is a **library**;
+      the core `engine.remember` performs **no** consent check. README no longer
+      claims it "refuses every remember."
+  - **Typed errors for unsupported features** carry over the structured
+    `Error::BackendUnsupported` variant (v0.5.3) — no security feature silently
+    no-ops; loaded-but-unenforced features warn loudly.
+  - Tests: `mnemo_core::auth` unit tests + REST auth integration tests
+    (reject-missing / reject-wrong / accept-correct / health-exempt / open-mode).
+
 ### Fixed (2026-06-23) — v0.5.3 cut, typed `BackendUnsupported` for Postgres semantic recall
 
 Workspace `0.5.2 → 0.5.3` (patch bump — error-type hardening + docs, no API break).

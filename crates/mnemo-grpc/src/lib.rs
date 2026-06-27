@@ -990,9 +990,55 @@ impl MnemoService for MnemoGrpcServer {
 ///     .await
 ///     .unwrap();
 /// ```
+/// Reads the bearer secret from `MNEMO_AUTH_TOKEN`. When set (non-empty),
+/// every RPC must carry a matching `authorization` metadata value or it is
+/// rejected with `UNAUTHENTICATED`. When unset, the server runs **open** and
+/// logs a warning.
 pub fn router(engine: Arc<MnemoEngine>) -> tonic::transport::server::Router {
+    let token = std::env::var("MNEMO_AUTH_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty());
+    router_with_auth(engine, token)
+}
+
+/// Like [`router`] but with the bearer secret passed explicitly. `Some(token)`
+/// installs a tonic interceptor that requires `authorization: <token>` (a bare
+/// token or `Bearer <token>`) on every RPC; `None` runs open (with a warning).
+pub fn router_with_auth(
+    engine: Arc<MnemoEngine>,
+    auth_token: Option<String>,
+) -> tonic::transport::server::Router {
     let svc = MnemoGrpcServer::new(engine);
-    tonic::transport::Server::builder().add_service(MnemoServiceServer::new(svc))
+    match auth_token {
+        Some(token) if !token.is_empty() => {
+            tracing::info!(
+                "gRPC bearer-token auth ENABLED (authorization metadata = MNEMO_AUTH_TOKEN)"
+            );
+            let expected = Arc::new(token);
+            let interceptor = move |req: Request<()>| -> Result<Request<()>, Status> {
+                let provided = req
+                    .metadata()
+                    .get("authorization")
+                    .and_then(|v| v.to_str().ok());
+                if mnemo_core::auth::bearer_token_matches(provided, &expected) {
+                    Ok(req)
+                } else {
+                    Err(Status::unauthenticated(
+                        "missing or invalid bearer token (set `authorization` metadata)",
+                    ))
+                }
+            };
+            tonic::transport::Server::builder()
+                .add_service(MnemoServiceServer::with_interceptor(svc, interceptor))
+        }
+        _ => {
+            tracing::warn!(
+                "gRPC API running WITHOUT authentication — set MNEMO_AUTH_TOKEN to require a \
+                 bearer token. Do not expose an unauthenticated memory server."
+            );
+            tonic::transport::Server::builder().add_service(MnemoServiceServer::new(svc))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,11 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-06-23 for the v0.5.3 cut (Postgres semantic recall now returns
-> a typed `Error::BackendUnsupported { backend, capability, detail }` instead
-> of a generic string error; README gains an explicit backend capability
-> matrix). No engine/protocol API break. The v0.5.2 cut added the
+> Updated 2026-06-27 for the v0.5.4 cut (bearer-token auth on REST + gRPC via
+> `MNEMO_AUTH_TOKEN` → `401`/`UNAUTHENTICATED`, else open + warn; README
+> security claims aligned to wired behavior + a "what is/isn't enforced today"
+> table). No engine/protocol API break — additive `router_with_auth`. The
+> v0.5.3 cut returned a typed `Error::BackendUnsupported` for Postgres semantic
+> recall. The v0.5.2 cut added the
 > real-embedder memory-quality result in
 > [`bench/RESULTS.md`](../../bench/RESULTS.md). The
 > v0.4.5 → v0.4.9 cuts are not reproduced here; consult the
@@ -19,7 +21,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.5.3** (2026-06-23) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.5.4** (2026-06-27) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.5.3 (2026-06-23) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.2 (2026-06-22) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.1 (2026-06-21) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.0 (2026-06-21) | 1.3 | 0.26 | 2.21 | 1.10502.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -37,7 +40,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.5.3** (2026-06-23) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.5.4** (2026-06-27) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.5.3 (2026-06-23) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.2 (2026-06-22) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.1 (2026-06-21) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.0 (2026-06-21) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
@@ -107,7 +111,9 @@ follow-up.
   a bench + docs cut (real-embedder memory-quality result in
   `bench/RESULTS.md`, Postgres ANN stub hard-errors); v0.5.3 makes that
   Postgres error a typed `BackendUnsupported` variant + adds the README
-  backend capability matrix — all with no API change
+  backend capability matrix; v0.5.4 adds bearer-token auth on REST/gRPC
+  (`MNEMO_AUTH_TOKEN`) + aligns the README security claims with wired
+  behavior — all with no API change
   — both v0.5.0/v0.5.1 land in the Rust workspace (crates.io) and the
   MCP/REST/gRPC(/pgwire) surfaces.
   The language SDKs (`mnemo-db` Python, `@mndfreek/mnemo-sdk` TS, Go) are

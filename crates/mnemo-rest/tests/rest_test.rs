@@ -286,3 +286,84 @@ async fn test_rest_not_found_memory() {
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+// --- Bearer-token auth (MNEMO_AUTH_TOKEN floor) --------------------------
+
+#[tokio::test]
+async fn auth_rejects_missing_token() {
+    let app = mnemo_rest::router_with_auth(create_test_engine(), Some("s3cret".to_string()));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/memories?query=x&limit=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn auth_rejects_wrong_token() {
+    let app = mnemo_rest::router_with_auth(create_test_engine(), Some("s3cret".to_string()));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/memories?query=x&limit=1")
+                .header("authorization", "Bearer nope")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn auth_accepts_correct_token() {
+    let app = mnemo_rest::router_with_auth(create_test_engine(), Some("s3cret".to_string()));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/memories?query=x&limit=1")
+                .header("authorization", "Bearer s3cret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn auth_exempts_health_endpoint() {
+    // Health must be reachable for liveness probes even with auth enabled.
+    let app = mnemo_rest::router_with_auth(create_test_engine(), Some("s3cret".to_string()));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn no_token_runs_open() {
+    // None = open mode: requests pass without an Authorization header.
+    let app = mnemo_rest::router_with_auth(create_test_engine(), None);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/memories?query=x&limit=1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}

@@ -647,10 +647,11 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
     // Attestor parked here for the rmcp-side wiring follow-up. Touch
     // it in a debug log so the binary doesn't hold a dead reference.
     if let Some(ref a) = tool_attestor {
-        tracing::debug!(
+        tracing::warn!(
             allow_removed_drift = manifest.allow_removed_drift,
             attestor_baseline_tools = a.baseline().tools.len(),
-            "tool-catalog attestor ready"
+            "MCP tool-catalog pin parsed and validated, but serve-time attestation is NOT \
+             enforced in this build — the advertised tool list is not checked against the pin yet"
         );
     }
 
@@ -661,13 +662,14 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
     // even before per-tool dispatch wiring lands.
     let role_filter = manifest.role_filter.as_ref().map(|cfg| {
         let filter = mnemo_mcp::role_filter::ManifestRoleFilter::new(cfg.clone());
-        tracing::info!(
+        tracing::warn!(
             default_policy = ?cfg.default,
             caller_role_count = cfg.caller_roles.len(),
             allow_entries = cfg.allow.len(),
             deny_entries = cfg.deny.len(),
             is_noop = filter.is_noop(),
-            "MCP role filter loaded (manifest [role_filter])"
+            "MCP [role_filter] manifest block parsed and validated, but per-tool dispatch \
+             enforcement is NOT active in this build — tool calls are NOT filtered by role yet"
         );
         Arc::new(filter)
     });

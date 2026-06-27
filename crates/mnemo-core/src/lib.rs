@@ -1,4 +1,5 @@
 pub mod anomaly;
+pub mod auth;
 pub mod budget;
 pub mod cache;
 pub mod embedding;
