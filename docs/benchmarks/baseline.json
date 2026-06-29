@@ -1,16 +1,86 @@
 {
-  "_comment": "Last-known-good benchmark numbers. Populated by .github/workflows/benchmarks-nightly.yml after its first successful run with ANTHROPIC_API_KEY + OPENAI_API_KEY + HF_TOKEN secrets configured. Until then the nightly gate is a no-op (first-run exception documented in the workflow). Any subsequent nightly run with recall@10 regressing by more than MNEMO_BENCH_REGRESSION_PP (default 3.0) percentage points vs the values here will fail the job.",
-  "version": "0.3.3",
-  "updated_at": null,
+  "_comment": "First authenticated benchmark baseline, published 2026-06-29 at commit 640b7b1. METRIC IS RETRIEVAL QUALITY (gold recall@k / MRR over a real local semantic embedder), NOT end-to-end LLM-judged QA accuracy — no generative LLM runs in this harness. The nightly gate (.github/workflows/benchmarks-nightly.yml) compares subsequent runs against the `results` rows below; a recall@k regression beyond MNEMO_BENCH_REGRESSION_PP (default 3.0 pp) fails the job. Reproduce: `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.",
+  "version": "0.5.4",
+  "updated_at": "2026-06-29",
+  "commit": "640b7b1626e714b94bd3ba7146915011e1dcbf28",
+  "metric": "retrieval_gold_recall_and_mrr",
+  "harness": "mnemo-locomo-bench :: semantic_recall_bench",
+  "embedder": {
+    "backend": "ollama",
+    "model": "nomic-embed-text",
+    "dim": 768,
+    "note": "real local semantic embedder — never NoopEmbedding"
+  },
   "datasets": {
-    "locomo": {
-      "split": "train",
-      "commit": null,
-      "results": []
+    "longmemeval_m_slice": {
+      "split": "longmemeval_m_cleaned (bundled 45-record slice)",
+      "n": 23,
+      "repeats": 5,
+      "seed_averaging": "5 in-process seeds (not restart-averaged)",
+      "commit": "640b7b1626e714b94bd3ba7146915011e1dcbf28",
+      "results": [
+        {
+          "mode": "vector_only",
+          "strategy": "semantic",
+          "recall@1": 0.739,
+          "recall@3": 0.826,
+          "recall@5": 0.826,
+          "mrr": 0.805,
+          "p50_ms": 33.9,
+          "p95_ms": 48.4,
+          "failures_mean": 0.0,
+          "note": "headline / stable strong mode"
+        },
+        {
+          "mode": "bm25_only",
+          "strategy": "lexical",
+          "recall@1": 0.522,
+          "recall@3": 0.609,
+          "recall@5": 0.739,
+          "mrr": 0.586,
+          "p50_ms": 29.0,
+          "p95_ms": 35.5,
+          "failures_mean": 1.0
+        },
+        {
+          "mode": "rrf_hybrid",
+          "strategy": "auto (default equal weights)",
+          "recall@1": 0.478,
+          "recall@3": 0.757,
+          "recall@5": 0.809,
+          "mrr": 0.638,
+          "p50_ms": 46.0,
+          "p95_ms": 65.9,
+          "failures_mean": 1.0
+        },
+        {
+          "mode": "rrf_hybrid_tuned",
+          "strategy": "auto (swept weights v6_b1_r0_g0_k30)",
+          "weights": [6.0, 1.0, 0.0, 0.0],
+          "rrf_k": 30.0,
+          "recall@1": 0.696,
+          "recall@3": 0.783,
+          "recall@5": 0.826,
+          "mrr": 0.765,
+          "p50_ms": 44.5,
+          "p95_ms": 62.4,
+          "failures_mean": 1.0
+        }
+      ],
+      "token_efficiency": {
+        "framing": "Engram arXiv:2606.09900 lean-slice-vs-full-history",
+        "full_history_tokens": 893,
+        "mean_slice_tokens": 100.6,
+        "slice_k": 5,
+        "token_reduction": 0.887,
+        "token_estimate": "ceil(chars/4)",
+        "note": "memory-layer token accounting only; QA accuracy needs a generative LLM (not run)"
+      }
     },
-    "longmemeval": {
+    "longmemeval_qa_accuracy": {
       "split": "longmemeval_s_cleaned",
       "commit": null,
+      "note": "End-to-end LLM-judged QA accuracy (the Mem0/Letta/Hindsight leaderboard axis) is NOT measured here — requires a generative LLM + judge key. Left null on purpose; do not confuse with the retrieval rows above.",
       "results": []
     }
   }

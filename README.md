@@ -452,12 +452,12 @@ that matter when an auditor or regulator must reconstruct exactly what
 an agent saw and decided, three months later, without depending on a
 cloud account staying live.
 
-The full bench harness against Cloudflare Agent Memory ships in v0.4.3
-as a `mnemo-bench-cf` crate. Until then,
+A full bench harness against Cloudflare Agent Memory (a planned
+`mnemo-bench-cf` crate) was scoped but **has not been built** — it is not a
+workspace member and the numbers have not been run.
 [`docs/comparisons/cloudflare-agent-memory.md`](docs/comparisons/cloudflare-agent-memory.md)
 documents the differentiation scenario list with empty-bench
-placeholders so the comparison's contract is explicit before the
-numbers land.
+placeholders so the comparison's contract is explicit.
 
 Retrieval-strategy framing matters here too: [arXiv 2605.15184](https://arxiv.org/abs/2605.15184)
 (Sen et al., May 2026) measured BM25 keyword retrieval outperforming
@@ -635,7 +635,7 @@ class_name = "MnemoTenantFacet"
 # matching mnemo's embedded DuckDB-per-agent contract.
 ```
 
-What stays Rust-native vs. crosses the JS boundary, the file-format compatibility story (mnemo writes DuckDB; the Workers Facet exposes SQLite — the bench crate quantifies the gap), and which mnemo surfaces require the operator-held HMAC keystore vs. which can run inside the Worker — all in [`docs/src/integrations/cloudflare-workers-deploy.md`](docs/src/integrations/cloudflare-workers-deploy.md). The bench numbers land with the v0.4.3 `mnemo-bench-cf` crate.
+What stays Rust-native vs. crosses the JS boundary, the file-format compatibility story (mnemo writes DuckDB; the Workers Facet exposes SQLite — a planned bench crate would quantify the gap), and which mnemo surfaces require the operator-held HMAC keystore vs. which can run inside the Worker — all in [`docs/src/integrations/cloudflare-workers-deploy.md`](docs/src/integrations/cloudflare-workers-deploy.md). The Cloudflare-vs-mnemo bench numbers would ship with that `mnemo-bench-cf` crate, which **has not been built** — it is not a workspace member and those numbers have not been run.
 
 ## Development
 
@@ -696,11 +696,15 @@ dumping the full history (Engram-style lean-slice framing,
 [arXiv:2606.09900](https://arxiv.org/abs/2606.09900) — a reference point, not a
 parity claim).
 
+First authenticated baseline, **2026-06-29 @ `640b7b1`** (recorded in
+[`docs/benchmarks/baseline.json`](docs/benchmarks/baseline.json); `n=23`, mean of 5 seeds):
+
 | mode | recall@1 | recall@3 | recall@5 | MRR | errored |
 |---|---:|---:|---:|---:|---:|
 | `bm25_only` (`lexical`) | 0.522 | 0.609 | 0.739 | 0.586 | ~1/23 |
 | `vector_only` (`semantic`) | **0.739** | 0.826 | 0.826 | **0.805** | 0/23 |
-| `rrf_hybrid` (`auto`, default weights) | 0.435 | 0.739 | 0.817 | 0.608 | ~1/23 |
+| `rrf_hybrid` (`auto`, default weights) | 0.478 | 0.757 | 0.809 | 0.638 | ~1/23 |
+| `rrf_hybrid` (`auto`, swept `v6_b1_r0_g0_k30`) | 0.696 | 0.783 | 0.826 | 0.765 | ~1/23 |
 
 **One caveat:** single-run (5 in-process seeds, *not* restart-averaged); the
 HNSW index + RRF fusion-weight selection sit near a noise floor (cf. *The FID
@@ -711,6 +715,28 @@ claim (45-record LongMemEval_M, not _S; QA accuracy needs a generative LLM not
 run here). Full tables + JSON: [`bench/RESULTS.md`](bench/RESULTS.md) and the
 dated [`bench/locomo/results/`](bench/locomo/results/) report. Reproduce:
 `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.
+
+### Where mnemo sits vs. the published systems (two different axes)
+
+These are **not directly comparable** — they measure different things on different
+data, and we publish only the row we actually ran. mnemo's number is a *retrieval*
+metric (did the gold memory land in the top-k); Mem0/Letta publish *end-to-end QA
+accuracy* (did an LLM, reading the retrieved memories, answer the question correctly).
+mnemo has **not** run the end-to-end QA-accuracy pipeline — that needs a generative
+LLM + judge, which this harness does not include.
+
+| system | what's measured | metric | score | source |
+|---|---|---|---:|---|
+| **mnemo** (this repo, `vector_only`) | **retrieval** — gold recall@1 over a real local embedder | recall@1 (LongMemEval_M slice, n=23) | **0.739** | [`baseline.json`](docs/benchmarks/baseline.json), measured 2026-06-29 @ `640b7b1` |
+| Mem0 | end-to-end QA accuracy (different axis) | LLM-judged answer accuracy (LongMemEval) | 93.4% | [reported](https://mem0.ai) |
+| Letta | end-to-end QA accuracy (different axis) | LLM-judged answer accuracy (LoCoMo) | ~83% | [reported](https://docs.letta.com) |
+
+**Read this honestly:** the 0.739 is *not* a win over 93.4% — they are on different
+axes (recall vs. QA accuracy) and different datasets, so a head-to-head number does
+not exist yet. What the mnemo row claims, and all it claims, is that the retrieval
+layer surfaces the right memory ~74% of the time at k=1 with a real embedder, fully
+reproducible from the command above. Closing the gap to a comparable QA-accuracy row
+is tracked as the open end-to-end-eval work, not something we are reporting here.
 
 **Phase-aware cost attribution + agent-memory characterization scorecard (bench-only).** Anchored on [arXiv:2606.06448](https://arxiv.org/abs/2606.06448) (*Agent Memory: Characterization and System Implications of Stateful Long-Horizon Workloads*). The new [`phase_cost`](bench/locomo/src/bin/phase_cost.rs) bin splits every benchmark scenario's cost into the paper's **three phases** — **construction** (remember-path: embedding calls, prefill tokens, write latency), **retrieval** (recall-path: ANN + BM25 + graph + RRF latency, query tokens), and **generation** (downstream, *estimated* — mnemo does not generate) — and emits a per-phase table (tokens, wall-ms, $-estimate at configurable per-1K rates) per scenario. The `--scorecard-2606-06448` flag instead renders mnemo's PASS / PARTIAL / FAIL position against the paper's 10 §5 recommendations (quoted verbatim) as a 10-row table; mnemo currently scores **5 PASS · 5 PARTIAL · 0 FAIL** (PASS on the latency / feasibility / compaction recommendations R5/R7/R8/R9/R10; PARTIAL on the operator-side lifecycle-policy ones R1–R4/R6). Run via `cargo run --release --bin phase_cost -p mnemo-locomo-bench` (add `-- --scorecard-2606-06448` for the scorecard). **This is bench-only** — no access protocol (MCP / REST / gRPC / pgwire) and no retrieval default is touched; token counts are `ceil(chars/4)` estimates and the generation phase is never an LLM call. Sample per-phase table (default rates, 64 records / 16 queries, `NoopEmbedding`):
 

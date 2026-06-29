@@ -4,6 +4,47 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-06-29)
+
+`v0.5.4` cut today — the prior `[Unreleased]` accumulator (0.5.0 → 0.5.4 work)
+becomes the `## [0.5.4]` section below, and this fresh accumulator opens here.
+The release is cut from `main` at
+[`640b7b1`](https://github.com/sattyamjjain/mnemo/commit/640b7b1626e714b94bd3ba7146915011e1dcbf28)
+(security hardening — bearer-token auth + README truth-in-advertising); the
+authenticated-benchmark + release-drift docs commit lands on top of it as the
+`v0.5.4` tag target.
+
+## [0.5.4] — 2026-06-29
+
+First GitHub Release cut since `v0.4.9`. This section consolidates the `0.5.0 → 0.5.4`
+work (tagged but never released) under the current `v0.5.4` version, plus the
+benchmark + release-drift work below. No new version bump — the workspace was
+already at `0.5.4`; this cuts the release rather than bumping past it.
+
+### Added (2026-06-29) — first authenticated benchmark baseline + two-axis parity table
+
+- **bench: publish the first authenticated retrieval baseline (real local embedder,
+  not `NoopEmbedding`).** Ran `mnemo-locomo-bench :: semantic_recall_bench` against a
+  real `nomic-embed-text` (768-dim, via Ollama) over the bundled LongMemEval_M slice
+  and recorded the scored result — recall@k / MRR per mode, embedder config, swept
+  hybrid weights, commit SHA, and date — into
+  [`docs/benchmarks/baseline.json`](docs/benchmarks/baseline.json) so the nightly
+  regression gate has real numbers to compare against. Headline: `vector_only`
+  **recall@1 = 0.739 (MRR 0.805)**, measured 2026-06-29 @ `640b7b1`. Reproduce:
+  `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.
+- **docs: two-axis parity table in the README Benchmarks section.** Places mnemo's
+  **measured retrieval** row (recall@1, the axis we actually ran) next to the
+  **reported end-to-end QA-accuracy** numbers for Mem0 (93.4% LongMemEval) and Letta
+  (~83% LoCoMo), with a bold caveat that these are **not directly comparable** —
+  different metrics, different datasets — and that mnemo has **not** run the
+  end-to-end QA-accuracy pipeline (no generative LLM in this harness). No win is
+  claimed that was not measured; only the real retrieval row is published.
+- **docs(drift, [#74]): removed the phantom `mnemo-bench-cf` references.** The
+  Cloudflare-vs-mnemo bench crate was scoped but never built; the README now says so
+  explicitly (not a workspace member, numbers not run) instead of implying it ships.
+
+[#74]: https://github.com/sattyamjjain/mnemo/issues/74
+
 ### Security (2026-06-27) — v0.5.4 cut, bearer-token auth + truth-in-advertising
 
 Workspace `0.5.3 → 0.5.4` (patch bump — adds a network auth floor, no breaking API change).
