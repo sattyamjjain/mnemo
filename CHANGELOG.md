@@ -16,8 +16,9 @@ authenticated-benchmark + release-drift docs commit lands on top of it as the
 
 ## [0.5.4] — 2026-06-29
 
-First GitHub Release cut since `v0.4.9`. This section consolidates the `0.5.0 → 0.5.4`
-work (tagged but never released) under the current `v0.5.4` version, plus the
+First GitHub Release cut since `v0.4.15`. The `v0.5.0 → v0.5.4` tags were pushed
+(and auto-published to crates.io) but never got a GitHub Release; this section
+consolidates that 0.5.x work under the current `v0.5.4` version, plus the
 benchmark + release-drift work below. No new version bump — the workspace was
 already at `0.5.4`; this cuts the release rather than bumping past it.
 
@@ -244,6 +245,12 @@ Workspace `0.4.15 → 0.5.0` (minor bump — new public primitive).
   - **Bench-only**: no engine API, access protocol, or retrieval default is
     changed; not the official LLM-judged LongMemEval / LoCoMo QA score
     (gated; #44).
+
+## [0.4.15] — 2026-06-13
+
+The v0.4.10 → v0.4.15 accumulator (tags + GitHub Releases through `v0.4.15`
+already exist). Sectioned here on the 2026-06-29 cut so the `[0.5.4]` section
+above stays scoped to the 0.5.x line.
 
 ### Added (2026-06-13) — v0.4.15 cut, domain-scoped recall (MASDR-RAG, arXiv:2606.11350)
 
