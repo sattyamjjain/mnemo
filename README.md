@@ -400,7 +400,7 @@ path calls it.
 | At-rest AES-256-GCM content encryption | ✅ when `MNEMO_ENCRYPTION_KEY` set | engine `remember`/`recall` |
 | Hash-chain integrity + `verify` | ✅ | events + memories |
 | Read-provenance HMAC receipt | ✅ opt-in per call (`with_provenance=true`) | `recall` |
-| Memory-poisoning anomaly + quarantine | ✅ | `remember` |
+| Memory-poisoning anomaly + quarantine | ✅ — provenance-aware recall + a published **ASI06 resistance micro-bench** (100.0% vs canonical query-only MINJA, Wilson 95% [98.1%, 100.0%], n=200; 0% vs marker-free paraphrase — honest limitation) | `remember` + `recall` quarantine filter; [`docs/security/ASI06.md`](docs/security/ASI06.md) |
 | Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |
 | **MCP role-filter** (manifest `[role_filter]`) | ❌ **parsed + validated only** — not invoked at tool dispatch | `mnemo-mcp::role_filter` (library + tests); startup logs a warning |
 | **MCP tool-catalog attestation** | ❌ **pin parsed + validated only** — no serve-time check | `mnemo-cli::attest` (library + tests); startup logs a warning |

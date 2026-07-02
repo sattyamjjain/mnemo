@@ -4,6 +4,36 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-02) — v0.5.6, first memory-poisoning resistance micro-bench + OWASP ASI06 mapping
+
+Workspace `0.5.5 → 0.5.6` (patch bump — a new bench bin + a security doc + one
+README row; no new detector, no engine/protocol API change).
+
+- **bench(security): publish mnemo's first memory-poisoning *resistance* number
+  (OWASP ASI06).** New bin
+  [`bench/locomo/src/bin/asi06_resistance.rs`](bench/locomo/src/bin/asi06_resistance.rs)
+  (`cargo run --release -p mnemo-locomo-bench --bin asi06_resistance`) quantifies
+  how well the **existing** poisoning defense (`check_for_anomaly` → `quarantine`
+  → recall skips quarantined) resists a query-only MINJA-style attack
+  ([arXiv:2503.03704](https://arxiv.org/abs/2503.03704)). This adds **no**
+  detector — it measures the one already shipped. DEFENDED vs UNDEFENDED isolates
+  exactly one variable (the `quarantined` flag on a byte-identical record).
+  - **Result (200 deterministic trials/class, top-5, seed `0xa510062026`):**
+    canonical MINJA (bridging markers) → **100.0% resistance, Wilson 95%
+    [98.1%, 100.0%]**, 200/200 quarantined; the same poison is recalled 100% of
+    the time in an undefended store.
+  - **Honest limitation, published alongside:** a marker-free *evasive*
+    paraphrase → **0.0%** resistance [0.0%, 1.9%] — the always-on lexical layer
+    keys on bridging phrasing; the opt-in embedding z-score baseline gate
+    (`PoisoningPolicy::with_outlier_threshold`) is the intended defense there and
+    is **not** exercised in this single-embedder run.
+- **docs: [`docs/security/ASI06.md`](docs/security/ASI06.md)** maps mnemo's
+  REMEMBER anomaly scan / quarantine / RECALL quarantine-filter / hash-chain to
+  OWASP **ASI06 (Memory & Context Poisoning)**, states the number + full
+  methodology + limitations (query-only MINJA variant, not a full adversarial
+  suite, single embedder). README enforcement-table poisoning row updated to
+  cite the published number.
+
 ### Fixed (2026-07-03) — v0.5.5, workspace-member drift ([#74])
 
 Workspace `0.5.4 → 0.5.5` (patch bump — docs + a CI fence + version stamps; no

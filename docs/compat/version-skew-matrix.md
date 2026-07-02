@@ -1,9 +1,12 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-07-03 for the v0.5.5 cut (workspace-member drift fix, #74 —
-> phantom crate references removed / relabelled Planned, a `README.md`
-> crate-claim CI fence added; docs-and-tests only, no dependency or API
-> change from v0.5.4). The v0.5.4 cut added bearer-token auth on REST + gRPC via
+> Updated 2026-07-02 for the v0.5.6 cut (first memory-poisoning **resistance**
+> micro-bench + OWASP **ASI06** mapping — a new bench bin + `docs/security/ASI06.md`
+> + one README row; no new detector, no dependency or API change from v0.5.5).
+> The v0.5.5 cut was the workspace-member drift fix (#74 — phantom crate
+> references removed / relabelled Planned, a `README.md` crate-claim CI fence
+> added; docs-and-tests only, no dependency or API change from v0.5.4). The
+> v0.5.4 cut added bearer-token auth on REST + gRPC via
 > `MNEMO_AUTH_TOKEN` → `401`/`UNAUTHENTICATED`, else open + warn; README
 > security claims aligned to wired behavior + a "what is/isn't enforced today"
 > table). No engine/protocol API break — additive `router_with_auth`. The
@@ -24,7 +27,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.5.5** (2026-07-03) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.5.6** (2026-07-02) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.5.5 (2026-07-03) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.4 (2026-06-27) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.3 (2026-06-23) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.2 (2026-06-22) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -44,7 +48,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.5.5** (2026-07-03) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.5.6** (2026-07-02) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.5.5 (2026-07-03) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.4 (2026-06-27) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.3 (2026-06-23) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.2 (2026-06-22) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
