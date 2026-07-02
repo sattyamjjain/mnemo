@@ -174,8 +174,9 @@ and the three integration tests under
 - Per-tool-method enforcement of the role filter at `tools/call`
   dispatch — the manifest schema, the filter trait/impl, and the
   audit emission are shipped in v0.4.2; threading the filter through
-  every `MnemoServer` tool method body lands in v0.4.3 with the
-  `mnemo-envelope` exporter.
+  every `MnemoServer` tool method body is still pending. The
+  `mnemo-envelope` OTel exporter kind that a later step depends on is
+  **not built** — see [`docs/roadmap/planned-crates.md`](../../roadmap/planned-crates.md).
 
 For the threat model and the full design notes, see the rationale at
 the top of `crates/mnemo-cli/src/safe_spawn.rs`.

@@ -4,15 +4,48 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-06-29)
+### Fixed (2026-07-03) — v0.5.5, workspace-member drift ([#74])
 
-`v0.5.4` cut today — the prior `[Unreleased]` accumulator (0.5.0 → 0.5.4 work)
-becomes the `## [0.5.4]` section below, and this fresh accumulator opens here.
-The release is cut from `main` at
-[`640b7b1`](https://github.com/sattyamjjain/mnemo/commit/640b7b1626e714b94bd3ba7146915011e1dcbf28)
-(security hardening — bearer-token auth + README truth-in-advertising); the
-authenticated-benchmark + release-drift docs commit lands on top of it as the
-`v0.5.4` tag target.
+Workspace `0.5.4 → 0.5.5` (patch bump — docs + a CI fence + version stamps; no
+dependency, engine, or protocol API change).
+
+- **chore(workspace,docs): close the phantom-crate drift ([#74]).** Seven
+  `mnemo-*` crate names asserted by the daily-prompt ledger
+  (`mnemo-envelope`, `mnemo-aas01`, `mnemo-mgt`, `mnemo-bench-cf`,
+  `mnemo-langgraph`, `mnemo-purview`, `mnemo-toolhive`) have **no source tree
+  and are not `[workspace] members`**. None were stubbed — each is an
+  external-system adapter with no consumer, and an empty shell is exactly the
+  drift the repo already *retired* `mnemo-langgraph` for. Instead every
+  reference is now truthful:
+  - **New single source of truth**
+    [`docs/roadmap/planned-crates.md`](docs/roadmap/planned-crates.md) — all
+    seven listed as **Planned / not built** (or **Retired**, for the
+    `mnemo-langgraph` Rust shell superseded by the Python `MnemoCheckpointer`).
+  - **Residual shipment-assertions corrected.** `docs/src/integrations/mcp-server.md`
+    no longer says the `mnemo-envelope` exporter "lands in v0.4.3";
+    `docs/comparisons/cloudflare-agent-memory.md` no longer says bench numbers
+    "ship in v0.4.3 as the `mnemo-bench-cf` crate" — both now say **not built**
+    and link the roadmap. The already-honest "Parked"/"Retired"/"has not been
+    built" notes elsewhere are unchanged.
+  - **CI fence against recurrence.** New
+    `crates/mnemo-cli/tests/readme_crate_claims_are_real.rs` fails the build if
+    a `mnemo-*` name in `README.md` is neither a real workspace member (matched
+    live against member dir basenames + declared package names) nor on an
+    explicit allowlist of non-crate references (PyPI/npm dist names, JSON
+    filenames, labelled sketches, prose hypotheticals). Mirrors the AAK
+    rule-count fence + the existing `readme_no_marketing_phrases` lint.
+- Version stamps bumped to `0.5.5`: `Cargo.toml`, `version_metadata` test,
+  `docs/compat/version-skew-matrix.md`.
+
+[#74]: https://github.com/sattyamjjain/mnemo/issues/74
+
+### Landing trace (2026-07-03)
+
+The `v0.5.4` release is cut and on `main` at
+[`04a1145`](https://github.com/sattyamjjain/mnemo/commit/04a1145cd50adf15c033b2dce6ac2991ff7893c0)
+(the `[0.5.4]` section below). This fresh `[Unreleased]` accumulator carries the
+v0.5.5 `#74` drift fix above; it lands via PR `fix/issue-74-workspace-member-drift`
+(no push-to-`main` publish this cut — the fix is docs + a CI fence only).
 
 ## [0.5.4] — 2026-06-29
 

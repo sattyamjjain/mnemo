@@ -1,10 +1,12 @@
 # mnemo vs Cloudflare Agent Memory — long-form comparison
 
 > Living doc, last updated 2026-05-03 for the v0.4.2 cut. The full
-> bench numbers ship in v0.4.3 as the `mnemo-bench-cf` crate. Until
-> then, this file is the **contract** that the bench will produce
-> against — every "TBD" placeholder below corresponds to a metric the
-> v0.4.3 harness will fill in.
+> bench numbers were planned to ship as the `mnemo-bench-cf` crate,
+> which is **not built** — it is not a workspace member and has never
+> been run (see [`docs/roadmap/planned-crates.md`](../roadmap/planned-crates.md)).
+> This file is therefore a design **contract** only: every "TBD"
+> placeholder below corresponds to a metric the harness *would* fill
+> in, not a result.
 
 ## Why this comparison exists
 
