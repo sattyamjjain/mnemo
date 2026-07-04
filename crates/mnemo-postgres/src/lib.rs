@@ -1,16 +1,22 @@
 //! PostgreSQL + pgvector backend for mnemo (`StorageBackend` + `VectorIndex`).
 //!
-//! **Capability note — semantic recall is NOT supported on this backend.**
-//! Embeddings are persisted to the pgvector `vector` column and the HNSW index
-//! is created, but ANN *search* is not yet wired: the synchronous
-//! [`VectorIndex`](mnemo_core::index::VectorIndex) trait cannot run pgvector
-//! SQL. So `semantic` / `auto` (hybrid) / `graph` / `domain_scoped` /
-//! `reconstruct` recall on Postgres **fail loud** with a typed
-//! [`Error::BackendUnsupported`](mnemo_core::error::Error::BackendUnsupported)
+//! **Capability note — semantic recall is supported (v0.5.7, #99).** Embeddings
+//! are persisted to the pgvector `vector` column and, when [`PgVectorIndex`] is
+//! constructed with a pool ([`PgVectorIndex::with_pool`]), `semantic` / `auto`
+//! (hybrid) / `graph` / `domain_scoped` / `reconstruct` recall run a real
+//! cosine-distance ANN query against the `idx_memories_embedding_hnsw` HNSW
+//! index. The synchronous [`VectorIndex`](mnemo_core::index::VectorIndex) trait
+//! is bridged to async `sqlx` with `block_in_place` + `Handle::block_on`, so the
+//! Postgres vector path **requires the multi-threaded Tokio runtime** (the
+//! CLI/server is `#[tokio::main]`). `filtered_search` uses the same
+//! permission-safe oversample-then-filter as the USearch backend.
+//!
+//! If the pgvector extension / `<=>` operator is genuinely absent at runtime, or
+//! the index is built without a pool, the vector path still **fails loud** with a
+//! typed [`Error::BackendUnsupported`](mnemo_core::error::Error::BackendUnsupported)
 //! (`backend = "postgres"`, `capability = "semantic_recall"`) — never a silent
-//! empty result. `lexical` / `exact` recall and all CRUD / ACL / checkpoint /
-//! audit features work. Use the DuckDB backend for vector recall. Real
-//! pgvector ANN is tracked at <https://github.com/sattyamjjain/mnemo/issues/99>.
+//! empty result. The long-term async-`VectorIndex` refactor is tracked at
+//! <https://github.com/sattyamjjain/mnemo/issues/99>.
 
 pub mod migrations;
 pub mod pgvector_index;

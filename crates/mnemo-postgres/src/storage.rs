@@ -20,7 +20,6 @@ use uuid::Uuid;
 /// little-endian byte order), matching the DuckDB backend convention.
 pub struct PgStorage {
     pool: sqlx::PgPool,
-    #[allow(dead_code)]
     dimensions: usize,
 }
 
@@ -42,6 +41,18 @@ impl PgStorage {
     pub async fn from_pool(pool: sqlx::PgPool, dimensions: usize) -> Result<Self> {
         crate::migrations::run_migrations(&pool, dimensions).await?;
         Ok(Self { pool, dimensions })
+    }
+
+    /// A clone of the connection pool, so a [`crate::PgVectorIndex`] can share
+    /// the same connections for ANN search. `sqlx::PgPool` is `Arc`-backed, so
+    /// the clone is cheap and points at the same pool.
+    pub fn pool(&self) -> sqlx::PgPool {
+        self.pool.clone()
+    }
+
+    /// The pgvector `vector(dim)` column width this storage was migrated with.
+    pub fn dimensions(&self) -> usize {
+        self.dimensions
     }
 }
 

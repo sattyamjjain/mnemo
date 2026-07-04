@@ -79,3 +79,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-audit --locked
       - run: cargo audit
+
+  postgres:
+    name: Postgres integration (pgvector ANN)
+    runs-on: ubuntu-latest
+    # Live pgvector database so the MNEMO_TEST_POSTGRES_URL-gated ANN test
+    # (crates/mnemo-postgres/tests/pgvector_ann.rs) actually runs instead of
+    # skipping — this is the #99 acceptance gate.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mnemo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MNEMO_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/mnemo_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mnemo-postgres --test pgvector_ann -- --nocapture
