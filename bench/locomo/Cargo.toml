@@ -46,6 +46,10 @@ path = "src/bin/reconstruct_ab.rs"
 name = "asi06_resistance"
 path = "src/bin/asi06_resistance.rs"
 
+[[bin]]
+name = "beam_bench"
+path = "src/bin/beam_bench.rs"
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }

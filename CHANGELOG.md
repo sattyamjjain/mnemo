@@ -4,6 +4,41 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-04) — v0.5.8, reproducible BEAM-style multi-hop/open-domain retrieval bench
+
+Workspace `0.5.7 → 0.5.8` (patch bump — a new bench bin + a shared stats helper
++ docs; no engine/protocol API change).
+
+- **bench(locomo): reproducible BEAM-style multi-hop/open-domain number over
+  hybrid recall.** New bin
+  [`bench/locomo/src/bin/beam_bench.rs`](bench/locomo/src/bin/beam_bench.rs)
+  (`cargo run --release -p mnemo-locomo-bench --bin beam_bench`) runs two
+  BEAM-style subtasks — multi-hop (answer reachable only via a `related_to`
+  graph edge) and open-domain (gold among same-schema distractors) — over
+  mnemo's default hybrid `auto`/RRF recall (semantic + BM25 + graph + recency),
+  reporting per-subtask accuracy with a **Wilson 95%** interval.
+  - **Deterministic + offline by default:** a hashed bag-of-tokens embedder (no
+    network, no LLM), fixed seed `0xbea320262026`, 100 queries × 5 pooled
+    repeats/subtask (repeats pooled to average the USearch HNSW approximate-NN
+    noise floor into the CI — the same treatment `semantic_recall_bench`
+    documents). A real-embedder path is gated behind `--ollama-model` and fails
+    loud if Ollama is unreachable — never a silent/unreproducible number.
+  - **Result (this run):** `multi_hop` **0.6%** (3/500, [0.2%, 1.7%]),
+    `open_domain` **68.6%** (343/500, [64.4%, 72.5%]). The low multi-hop figure
+    is reported as-is — default `auto` RRF barely surfaces a graph-only answer
+    against lexically-equivalent distractors; `graph`/`reconstruct` are the
+    multi-hop tools.
+  - **Honest framing (no over-claim):** `bench/RESULTS.md` + README add a BEAM
+    row with an explicit **reproduced (this fixture) vs. self-reported
+    (upstream)** column and a note that self-reported memory scores (e.g.
+    Hindsight BEAM 64.1% @ 10M tokens) are a vendor-run **upper bound**, not
+    independently reproduced, and **not comparable** to a small synthetic
+    fixture. No "first"/"best" claim.
+  - **Refactor:** extracted the shared `wilson_95` CI helper into
+    `mnemo_locomo_bench::stats` (reused by `beam_bench` and `asi06_resistance`
+    instead of a per-bin copy). Also corrected `bench/RESULTS.md`'s stale
+    backend note (pgvector semantic recall is implemented as of v0.5.7, #99).
+
 ### Fixed (2026-07-04) — v0.5.7, real pgvector ANN search on the Postgres backend ([#99])
 
 Workspace `0.5.6 → 0.5.7` (patch bump — implements a previously-stubbed backend

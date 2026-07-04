@@ -67,6 +67,7 @@ use mnemo_core::query::recall::RecallRequest;
 use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::search::tantivy_index::TantivyFullTextIndex;
 use mnemo_core::storage::duckdb::DuckDbStorage;
+use mnemo_locomo_bench::stats::wilson_95;
 
 const AGENT: &str = "asi06-resistance-agent";
 /// Fixed default seed → fully reproducible run.
@@ -213,22 +214,6 @@ async fn recall_hits_poison(
     req.limit = Some(k);
     let resp = engine.recall(req).await.unwrap();
     resp.memories.iter().any(|m| m.id == poison_id)
-}
-
-/// Wilson 95% score interval for `successes`/`n` (z = 1.96). Returns
-/// `(low, high)` clamped to `[0, 1]`.
-fn wilson_95(successes: usize, n: usize) -> (f64, f64) {
-    if n == 0 {
-        return (0.0, 0.0);
-    }
-    let z = 1.959_963_984_540_054_f64;
-    let n = n as f64;
-    let p = successes as f64 / n;
-    let z2 = z * z;
-    let denom = 1.0 + z2 / n;
-    let center = (p + z2 / (2.0 * n)) / denom;
-    let margin = (z / denom) * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt();
-    ((center - margin).max(0.0), (center + margin).min(1.0))
 }
 
 struct ClassResult {

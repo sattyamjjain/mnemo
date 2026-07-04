@@ -77,9 +77,39 @@ with Engram or any hosted memory service. The full per-mode tables, the
 held-out RRF sweep, and the raw JSON live at
 [`bench/locomo/results/semantic_recall_2026-06-22.md`](locomo/results/semantic_recall_2026-06-22.md).
 
+## BEAM-style retrieval — reproduced vs. self-reported
+
+A second, **deterministic** number over mnemo's default hybrid recall
+(`strategy="auto"`: semantic + BM25 + graph-expansion + recency, RRF-fused) on
+two BEAM-style subtasks. Run with the offline hashed embedder (no network, no
+LLM), 100 queries × 5 pooled repeats/subtask, top-5, seed `0xbea320262026`
+(2026-07-04):
+
+| subtask | **reproduced** (this run, seed `0xbea320262026`) | self-reported (upstream) |
+|---|---:|---:|
+| `multi_hop` (graph-linked answer, no shared query token) | **0.6%** (3/500) [Wilson 95% 0.2%–1.7%] | — (BEAM reports one overall accuracy, not per-subtask) |
+| `open_domain` (gold among same-schema distractors) | **68.6%** (343/500) [Wilson 95% 64.4%–72.5%] | Hindsight BEAM **64.1%** @ 10M tokens ([source](https://hindsight.vectorize.io/blog/2026/04/02/beam-sota)) |
+
+**Honesty note — do not read the two columns as a ranking.** The reproduced
+numbers are on a *small synthetic fixture* with a lexical offline embedder and
+**no LLM judge**; the upstream **64.1%** is on the real BEAM benchmark (10M-token
+corpus, LLM-graded). Self-reported memory scores are a vendor-run **upper
+bound** — not independently reproduced across labs (the reproducibility gap the
+[Hindsight paper](https://arxiv.org/abs/2512.12818) itself flags for pre-LoCoMo
+memory evals) — and a synthetic-fixture number is **not comparable** to it. The
+low `multi_hop` figure is an honest result, not a bug: mnemo's default `auto`
+RRF barely surfaces an answer reachable *only* through a graph edge against
+lexically-equivalent distractors — the `graph` / `reconstruct` strategies are
+the tools aimed at multi-hop (see [`bench/locomo/src/bin/reconstruct_ab.rs`](locomo/src/bin/reconstruct_ab.rs)).
+No "first" / "best" claim is made. Reproduce:
+`cargo run --release -p mnemo-locomo-bench --bin beam_bench`
+(writes `bench/locomo/results/beam_<date>.{md,json}`).
+
 ## Backend note
 
-Semantic recall is supported on the **DuckDB + USearch** backend (used above).
-The PostgreSQL/pgvector ANN path is **not** implemented and **hard-errors**
-rather than silently returning empty results — see
-`crates/mnemo-postgres/src/pgvector_index.rs`. Use DuckDB for semantic recall.
+Semantic recall is supported on **both** backends: **DuckDB + USearch**
+(default, used for the headline above) and, since v0.5.7,
+**PostgreSQL + pgvector** — the pgvector HNSW ANN path is implemented
+(`crates/mnemo-postgres/src/pgvector_index.rs`, [#99](https://github.com/sattyamjjain/mnemo/issues/99));
+if the pgvector extension is genuinely absent it still hard-errors rather than
+returning empty. The numbers above were measured on the DuckDB backend.
