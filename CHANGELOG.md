@@ -4,6 +4,39 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-07-04) — v0.5.7, real pgvector ANN search on the Postgres backend ([#99])
+
+Workspace `0.5.6 → 0.5.7` (patch bump — implements a previously-stubbed backend
+capability; no public API change to the `VectorIndex` trait).
+
+- **fix(postgres): implement pgvector ANN search — semantic/hybrid/graph recall
+  now returns results on the Postgres backend ([#99]).** `PgVectorIndex::search`
+  / `filtered_search` previously returned a typed `BackendUnsupported` error
+  (they had been `Ok(vec![])` before 2026-06-23). They now run a real
+  cosine-distance ANN query (`embedding <=> $1 … ORDER BY … LIMIT k`) against the
+  `idx_memories_embedding_hnsw` HNSW index (`vector_cosine_ops`), returning the
+  stored memory ids + distances in the same `(id, distance)` shape as USearch —
+  so recall's `score = 1.0 - distance` conversion is identical across backends.
+  - **Permission-safe.** `filtered_search` mirrors the USearch backend's
+    iterative oversample-then-filter (3× → double until `limit` accessible hits
+    or the table is exhausted), so scoped/filtered recall never under-returns.
+  - **Wiring.** `PgVectorIndex::with_pool(pool, dims)` shares `PgStorage`'s
+    `sqlx::PgPool` (new `PgStorage::pool()` / `dimensions()` accessors); the CLI
+    now constructs the index with the pool. The synchronous `VectorIndex` trait
+    is bridged to async `sqlx` via `block_in_place` + `Handle::block_on`, which
+    requires the multi-threaded Tokio runtime (the CLI/server is `#[tokio::main]`).
+  - **Still fails loud.** A pool-less index, or a genuinely-absent pgvector
+    extension / `<=>` operator at runtime, returns the typed
+    `Error::BackendUnsupported` — never a silent empty result.
+  - **Test.** New `MNEMO_TEST_POSTGRES_URL`-gated integration test
+    `crates/mnemo-postgres/tests/pgvector_ann.rs` (skips cleanly when unset):
+    inserts 3 known-embedding memories, asserts `semantic` + `auto` return the
+    nearest in rank order, and that a nearer *private* record owned by another
+    agent is excluded (permission filter + oversample). README backend
+    capability matrix updated: Postgres vector recall flips from ❌ to ✅.
+
+[#99]: https://github.com/sattyamjjain/mnemo/issues/99
+
 ### Added (2026-07-02) — v0.5.6, first memory-poisoning resistance micro-bench + OWASP ASI06 mapping
 
 Workspace `0.5.5 → 0.5.6` (patch bump — a new bench bin + a security doc + one

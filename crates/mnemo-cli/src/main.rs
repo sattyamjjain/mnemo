@@ -258,7 +258,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let pg_storage =
                 Arc::new(mnemo_postgres::PgStorage::connect(_pg_url, cli.dimensions).await?);
-            let pg_index = Arc::new(mnemo_postgres::PgVectorIndex::new());
+            // Share the storage pool so pgvector ANN search (semantic / auto /
+            // graph / domain_scoped recall) runs against the HNSW index (#99).
+            let pg_index = Arc::new(mnemo_postgres::PgVectorIndex::with_pool(
+                pg_storage.pool(),
+                cli.dimensions,
+            ));
             tracing::info!("Using PostgreSQL backend");
             let mut eng = MnemoEngine::new(
                 pg_storage,
