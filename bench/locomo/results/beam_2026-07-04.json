@@ -1,0 +1,37 @@
+{
+  "bench": "beam_bench",
+  "date": "2026-07-04",
+  "distractors_per_gold": 4,
+  "embedder": "hash-bag-of-tokens (deterministic, offline)",
+  "hnsw_noise_note": "vector lane is USearch HNSW (approximate NN); repeats pooled to average the run-to-run ranking noise floor into the Wilson CI",
+  "note": "synthetic deterministic fixture; NOT the upstream 10M-token BEAM dataset; no LLM judge",
+  "queries_per_repeat": 100,
+  "repeats": 5,
+  "results": [
+    {
+      "accuracy": 0.006,
+      "accuracy_ci95_high": 0.01749025210405338,
+      "accuracy_ci95_low": 0.002042596271960237,
+      "hits": 3,
+      "queries": 500,
+      "subtask": "multi_hop"
+    },
+    {
+      "accuracy": 0.686,
+      "accuracy_ci95_high": 0.7251321441639025,
+      "accuracy_ci95_low": 0.6440316011844003,
+      "hits": 343,
+      "queries": 500,
+      "subtask": "open_domain"
+    }
+  ],
+  "seed": 209607828316198,
+  "style": "BEAM-style multi-hop + open-domain retrieval over hybrid auto/RRF recall",
+  "top_k": 5,
+  "upstream_self_reported": {
+    "beam_accuracy": 0.641,
+    "scale": "10M tokens",
+    "source": "https://hindsight.vectorize.io/blog/2026/04/02/beam-sota",
+    "system": "Hindsight"
+  }
+}

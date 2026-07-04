@@ -743,6 +743,25 @@ layer surfaces the right memory ~74% of the time at k=1 with a real embedder, fu
 reproducible from the command above. Closing the gap to a comparable QA-accuracy row
 is tracked as the open end-to-end-eval work, not something we are reporting here.
 
+### BEAM-style multi-hop / open-domain (reproduced vs. self-reported)
+
+A separate **deterministic** number over mnemo's default hybrid recall
+(`strategy="auto"`), offline embedder, no LLM — 100 queries × 5 pooled repeats/subtask,
+top-5, seed `0xbea320262026`, via [`beam_bench`](bench/locomo/src/bin/beam_bench.rs):
+
+| subtask | **reproduced** (this fixture) | self-reported (upstream) |
+|---|---:|---:|
+| `multi_hop` (answer only via a graph edge) | **0.6%** (3/500) [95% 0.2–1.7%] | — (BEAM reports one overall score) |
+| `open_domain` (gold among same-schema distractors) | **68.6%** (343/500) [95% 64.4–72.5%] | Hindsight BEAM **64.1%** @ 10M tokens ([source](https://hindsight.vectorize.io/blog/2026/04/02/beam-sota)) |
+
+**Not a ranking.** The reproduced figures are on a *small synthetic fixture* with a
+lexical offline embedder and no LLM judge; upstream 64.1% is the real 10M-token,
+LLM-graded BEAM. Self-reported memory scores are a vendor-run **upper bound** (not
+independently reproduced) — so the columns are **not comparable**. The low `multi_hop`
+figure is honest, not a bug: default `auto` RRF barely surfaces an answer reachable
+only through a graph edge (the `graph` / `reconstruct` strategies target multi-hop).
+No "first"/"best" claim. Full note + reproduce command: [`bench/RESULTS.md`](bench/RESULTS.md).
+
 **Phase-aware cost attribution + agent-memory characterization scorecard (bench-only).** Anchored on [arXiv:2606.06448](https://arxiv.org/abs/2606.06448) (*Agent Memory: Characterization and System Implications of Stateful Long-Horizon Workloads*). The new [`phase_cost`](bench/locomo/src/bin/phase_cost.rs) bin splits every benchmark scenario's cost into the paper's **three phases** — **construction** (remember-path: embedding calls, prefill tokens, write latency), **retrieval** (recall-path: ANN + BM25 + graph + RRF latency, query tokens), and **generation** (downstream, *estimated* — mnemo does not generate) — and emits a per-phase table (tokens, wall-ms, $-estimate at configurable per-1K rates) per scenario. The `--scorecard-2606-06448` flag instead renders mnemo's PASS / PARTIAL / FAIL position against the paper's 10 §5 recommendations (quoted verbatim) as a 10-row table; mnemo currently scores **5 PASS · 5 PARTIAL · 0 FAIL** (PASS on the latency / feasibility / compaction recommendations R5/R7/R8/R9/R10; PARTIAL on the operator-side lifecycle-policy ones R1–R4/R6). Run via `cargo run --release --bin phase_cost -p mnemo-locomo-bench` (add `-- --scorecard-2606-06448` for the scorecard). **This is bench-only** — no access protocol (MCP / REST / gRPC / pgwire) and no retrieval default is touched; token counts are `ceil(chars/4)` estimates and the generation phase is never an LLM call. Sample per-phase table (default rates, 64 records / 16 queries, `NoopEmbedding`):
 
 ```

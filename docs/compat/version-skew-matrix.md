@@ -1,6 +1,9 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-07-04 for the v0.5.7 cut (real **pgvector ANN search** on the
+> Updated 2026-07-04 for the v0.5.8 cut (reproducible **BEAM-style** multi-hop /
+> open-domain retrieval bench — a new `beam_bench` bin + a shared `stats::wilson_95`
+> helper + docs; bench-and-docs only, no dependency or API change from v0.5.7).
+> The v0.5.7 cut added real **pgvector ANN search** on the
 > PostgreSQL backend — semantic/hybrid/graph/domain-scoped recall now returns
 > results via the HNSW cosine index; #99. Implements a previously-stubbed
 > capability; no `VectorIndex` trait API change, no dependency change from
@@ -31,7 +34,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.5.7** (2026-07-04) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.5.8** (2026-07-04) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.5.7 (2026-07-04) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.6 (2026-07-02) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.5 (2026-07-03) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.4 (2026-06-27) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -53,7 +57,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.5.7** (2026-07-04) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.5.8** (2026-07-04) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.5.7 (2026-07-04) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.6 (2026-07-02) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.5 (2026-07-03) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.4 (2026-06-27) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |

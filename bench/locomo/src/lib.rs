@@ -27,6 +27,7 @@ pub mod judge;
 pub mod phase_cost;
 pub mod runner;
 pub mod scoring;
+pub mod stats;
 
 pub use judge::{JudgeModel, JudgeVerdict, LoCoMoJudge, MockJudge};
 pub use phase_cost::{
