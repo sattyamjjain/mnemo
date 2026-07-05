@@ -1,0 +1,27 @@
+[package]
+name = "mnemo-audit-conformance-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Offline, deterministic audit-conformance proof for mnemo's tamper-evident, SHA-256 hash-chained memory-write log (EU AI Act Art.12 / DPDPA record-keeping)."
+
+[[bin]]
+name = "audit_conformance"
+path = "src/main.rs"
+
+[dependencies]
+# The bench builds ENTIRELY on top of mnemo-core's shipped, wired primitives
+# (remember / forget / verify_integrity / verify_event_integrity / hash::*).
+# It never re-implements hashing or verification — see src/main.rs.
+mnemo-core = { workspace = true }
+# Reuse the shared Wilson 95% helper the other benches use instead of
+# re-deriving the formula (bench/locomo/src/stats.rs).
+mnemo-locomo-bench = { path = "../locomo" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+clap = { workspace = true }
+uuid = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }

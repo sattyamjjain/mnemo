@@ -4,6 +4,49 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-05) — v0.5.9, regulated-memory audit-conformance artifact
+
+Workspace `0.5.8 → 0.5.9` (patch bump — a new offline bench crate + compliance
+docs + positioning; no engine/protocol API change). Apache-2.0, offline-
+verifiable, **no managed-cloud dependency added to core**.
+
+- **bench: offline, deterministic audit-conformance proof.** New crate
+  [`bench/audit_conformance/`](bench/audit_conformance/)
+  (`cargo run --release -p mnemo-audit-conformance-bench`) proves — with no
+  network and no LLM — that mnemo's memory-write log is tamper-evident and
+  externally verifiable **without trusting the store**. It is a driver+reporter
+  built **entirely on shipped `mnemo-core` primitives** (`hash::verify_chain`,
+  `hash::verify_event_chain`, `MnemoEngine::verify_integrity`,
+  `verify_event_integrity`) — it never re-implements cryptography.
+  - **Six properties, all `PASS`:** the write chain verifies through the real
+    `remember()` path; the append-only `agent_events` log verifies; a single-byte
+    content mutation is caught **100% over 256 trials (Wilson 95% ≥ 98.5%)** and
+    the first broken record is named; `forget` **appends** a signed
+    `MemoryDelete` event and **retains** the original write row (append-only
+    retention, not erasure); plus a fixed, **recomputable SHA-256 crypto vector**
+    anyone can reproduce offline (`printf … | shasum -a 256`).
+  - **Byte-stable report.** No timestamps or run-varying hashes in the body — two
+    runs `diff` identically; the run prints the report's own SHA-256. Report at
+    [`bench/audit_conformance/results/conformance.md`](bench/audit_conformance/results/conformance.md).
+  - Reuses the shared `mnemo_locomo_bench::stats::wilson_95` helper (no per-bin
+    copy). Registered in `[workspace] members`.
+- **docs(compliance): regulatory mappings (honest, hedged, not legal advice).**
+  [`docs/compliance/eu-ai-act-art12.md`](docs/compliance/eu-ai-act-art12.md)
+  maps the append-only log + retention to EU AI Act Art.12 record-keeping and
+  Art.26(6) six-month deployer log retention, with the hedge that the May-2026
+  Digital Omnibus proposal may move high-risk dates toward Dec-2027.
+  [`docs/compliance/dpdp-2027.md`](docs/compliance/dpdp-2027.md) maps to the
+  India DPDP Rules 2025 obligations (full-compliance working date 2027-05-13),
+  and states the DPDPA-erasure vs AI-Act-retention tension explicitly (mnemo
+  ships both `HardDelete` and `Redact` and logs which was used).
+- **docs(results): auditability comparison.** `bench/RESULTS.md` gains an
+  auditability table (mnemo offline hash-chain verify vs Mem0 vs Zep
+  cloud/managed audit), sourced from each vendor's docs +
+  developersdigest.tech, with a dated hedge and no "best" claim.
+- **docs(README): regulated-AI positioning block** — "on-prem, MCP-native,
+  cryptographically-auditable memory for regulated AI (EU AI Act / DPDPA /
+  HIPAA)", linking the bench and the two compliance docs.
+
 ### Added (2026-07-04) — v0.5.8, reproducible BEAM-style multi-hop/open-domain retrieval bench
 
 Workspace `0.5.7 → 0.5.8` (patch bump — a new bench bin + a shared stats helper
@@ -137,13 +180,16 @@ dependency, engine, or protocol API change).
 
 [#74]: https://github.com/sattyamjjain/mnemo/issues/74
 
-### Landing trace (2026-07-03)
+### Landing trace (2026-07-05)
 
-The `v0.5.4` release is cut and on `main` at
-[`04a1145`](https://github.com/sattyamjjain/mnemo/commit/04a1145cd50adf15c033b2dce6ac2991ff7893c0)
-(the `[0.5.4]` section below). This fresh `[Unreleased]` accumulator carries the
-v0.5.5 `#74` drift fix above; it lands via PR `fix/issue-74-workspace-member-drift`
-(no push-to-`main` publish this cut — the fix is docs + a CI fence only).
+This `[Unreleased]` accumulator sits on `main` at
+[`4ef5f36`](https://github.com/sattyamjjain/mnemo/commit/4ef5f36) (the v0.5.8
+BEAM bench cut). It now also carries the **v0.5.9** regulated-memory audit-
+conformance artifact above, landing via branch
+`feat/audit-conformance-eu-art12-dpdp` (push-to-`main`; the workspace version
+bump `0.5.8 → 0.5.9` triggers the crates.io publish of changed crates — the new
+bench crate is `publish = false`). Earlier cuts `v0.5.4` (`04a1145`) through
+`v0.5.8` remain documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 

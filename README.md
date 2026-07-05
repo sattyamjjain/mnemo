@@ -8,6 +8,31 @@
 
 Mnemo (from Greek *mneme* — memory) is an embedded database whose primitives are **REMEMBER**, **RECALL**, **FORGET**, and **SHARE** — exposed as [MCP](https://modelcontextprotocol.io/) tools that any AI agent can connect to directly.
 
+## On-prem, MCP-native, cryptographically-auditable memory for regulated AI
+
+Mnemo runs **in-process on your own infrastructure** (embedded DuckDB or your
+PostgreSQL) with **no hosted tier to trust** — and its memory-write log is
+**tamper-evident**: every write and delete is a SHA-256 hash-chained
+`agent_events` entry, and an **external verifier can detect any post-hoc
+mutation offline**, without consulting the store. That is the record-keeping
+substrate regulated AI deployments need (EU AI Act Art.12 / Art.26(6), India
+DPDPA, HIPAA §164.312(b) audit controls).
+
+This is **proven, not asserted** — a deterministic, offline bench writes memories
+through the real path, then shows an outside verifier accepts the pristine log,
+catches 100% of single-byte mutations (256 trials, Wilson 95% ≥ 98.5%), and
+confirms `forget` appends a signed delete event rather than erasing the trail:
+
+```bash
+cargo run --release -p mnemo-audit-conformance-bench
+# → bench/audit_conformance/results/conformance.md  (byte-stable report + recomputable SHA-256 crypto vector)
+```
+
+Regulatory mappings (honest, hedged, *not legal advice*):
+[EU AI Act Art.12](docs/compliance/eu-ai-act-art12.md) ·
+[India DPDP (Rules 2025)](docs/compliance/dpdp-2027.md) ·
+[ASI06 memory-poisoning resistance](docs/security/ASI06.md). Apache-2.0, no SaaS.
+
 ## Quickstart
 
 ### 1. Build

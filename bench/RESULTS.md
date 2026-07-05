@@ -105,6 +105,32 @@ No "first" / "best" claim is made. Reproduce:
 `cargo run --release -p mnemo-locomo-bench --bin beam_bench`
 (writes `bench/locomo/results/beam_<date>.{md,json}`).
 
+## Auditability — mnemo vs Mem0 vs Zep
+
+Retrieval quality is one axis; **whether you can prove what the memory did** is
+another, and it is the axis regulated deployments (EU AI Act Art.12, DPDPA,
+HIPAA §164.312(b)) actually turn on. This is a *capability* comparison, not a
+score — sourced from each vendor's own docs and the
+[Developers Digest 2026 memory-provider survey](https://www.developersdigest.tech/blog/best-ai-agent-memory-providers-2026).
+
+| system | audit model | tamper-evident | offline-verifiable (no vendor/store trust) |
+|---|---|---|---|
+| **mnemo** (this repo) | append-only SHA-256 **hash-chained** `agent_events` log; `verify_event_integrity` names the first broken link | **yes** — proven by [`bench/audit_conformance`](audit_conformance/) (100% single-byte-mutation detection over 256 trials, Wilson 95% ≥ 98.5%) | **yes** — an external verifier reads the exported log; the store is not consulted, and there is no hosted tier to trust |
+| **Mem0** | vector store + extract-and-retrieve; no cryptographic / tamper-evident audit-log model documented (governance/audit is not a documented Mem0 primitive) | not documented | n/a |
+| **Zep** | ABAC + retention policies + **audit in the managed platform** (SOC 2 Type II / HIPAA service) | not a documented public hash-chain model; audit is a managed-service feature | **no** — audit is tied to the hosted Zep platform (or BYOC), not a self-verifiable local hash-chain |
+
+**Sourcing + hedge.** Mem0 and Zep rows reflect each vendor's public
+documentation and the Developers Digest survey **as of 2026-07** — the survey
+describes Zep's managed platform as adding "attribute-based access control,
+retention policies, and audit," and positions Mem0 as vector-plus-extraction
+without that governance layer ([getzep.com](https://www.getzep.com/),
+[Developers Digest](https://www.developersdigest.tech/blog/best-ai-agent-memory-providers-2026)).
+Vendor features change; verify against current docs before relying on this. The
+mnemo row is the only one an outside party can reproduce from this repo today:
+`cargo run --release -p mnemo-audit-conformance-bench`. No "best" claim — the
+point is the *offline, cryptographic* audit model, which is a different design
+choice, not a leaderboard win.
+
 ## Backend note
 
 Semantic recall is supported on **both** backends: **DuckDB + USearch**
