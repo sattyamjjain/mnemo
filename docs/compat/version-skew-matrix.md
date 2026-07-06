@@ -1,6 +1,10 @@
 # Mnemo Version Skew Matrix
 
-> Updated 2026-07-05 for the v0.5.9 cut (regulated-memory **audit-conformance**
+> Updated 2026-07-06 for the v0.5.10 cut (LoCoMo **claimed-vs-observed**
+> reproduction bench — a new `reproduction_bench` bin + a shared `dataset` loader
+> + a byte-stable test + docs; bench-and-docs only, no dependency or API change
+> from v0.5.9, no managed-cloud dep). The v0.5.9 cut added the regulated-memory
+> **audit-conformance**
 > artifact — a new offline `mnemo-audit-conformance-bench` crate + `docs/compliance/`
 > Art.12/DPDP mappings + README positioning; bench-and-docs only, no dependency
 > or API change from v0.5.8, no managed-cloud dependency added to core). The
@@ -38,7 +42,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` (Cargo workspace) | `rmcp` | `tantivy` | `usearch` | `duckdb` | `pgvector` | `sqlx` | Cloudflare substrate ³ |
 |---|---|---|---|---|---|---|---|
-| **0.5.9** (2026-07-05) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| **0.5.10** (2026-07-06) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
+| 0.5.9 (2026-07-05) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.8 (2026-07-04) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.7 (2026-07-04) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
 | 0.5.6 (2026-07-02) | 1.3 | 0.26 | 2.21 | 1.10504.0 ⁴ | 0.8.2 | 0.8 | Workers KV+Vectorize + DO Facets SQLite ³ |
@@ -62,7 +67,8 @@ source-of-truth — see [CHANGELOG](../../CHANGELOG.md)).
 
 | `mnemo` | Python SDK (`mnemo-db`) | TS SDK (`@mndfreek/mnemo-sdk`) | Go SDK (`mnemo.Version`) | `mcp-python` ⁵ | `mcp-go` ⁵ | `mcp-ruby` ⁵ | `mcp-csharp` ⁵ |
 |---|---|---|---|---|---|---|---|
-| **0.5.9** (2026-07-05) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| **0.5.10** (2026-07-06) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
+| 0.5.9 (2026-07-05) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.8 (2026-07-04) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.7 (2026-07-04) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |
 | 0.5.6 (2026-07-02) ⁶ | (unchanged) | (unchanged) | (unchanged) | 1.13.x | 0.31.x | 0.5.x | 0.4.x |

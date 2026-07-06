@@ -4,7 +4,49 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-06) — v0.5.10, claimed-vs-observed LoCoMo reproduction
+
+Workspace `0.5.9 → 0.5.10` (patch bump — a new bench bin + a shared loader + a
+byte-stable test + docs; no engine/protocol API change). Offline, Apache-2.0,
+**no managed-cloud dependency added to core**.
+
+- **bench(locomo): claimed-vs-observed reproduction.** New
+  [`reproduction_bench.rs`](bench/locomo/src/bin/reproduction_bench.rs)
+  (`cargo run --release -p mnemo-locomo-bench --bin reproduction_bench`) re-runs a
+  LoCoMo single-hop split under mnemo's disclosed **offline hybrid-recall harness**
+  (`strategy="auto"`: BM25 + graph + RRF fusion; fixed seed; Wilson-95) and tables
+  mnemo's **observed** number against vendors' **published, cited, not-re-run**
+  claims (Mem0 92.5; Zep 84→58.44 corrected; MemPalace 100→60.3 R@10 corrected;
+  Supermemory ~99 self-reported PoC) — riding the 2026 memory-benchmark
+  reproducibility crisis. Only mnemo's row is reproducible here; the report is
+  explicit that the claimed figures are **not a ranking** (retrieval vs
+  end-to-end QA, different scale/judge). No "best"/"first" claim.
+  - **Reproducible by disclosure.** The report
+    ([`bench/locomo/results/reproduction_2026-07-06.md`](bench/locomo/results/reproduction_2026-07-06.md))
+    is **byte-stable** — two runs `diff` identically — via two *disclosed*
+    methodological choices: an **exact brute-force cosine** vector index (the
+    deterministic reference mnemo's approximate USearch HNSW tracks) and a
+    **neutralised recency lane** (a batch-seeded corpus has no recency signal, so
+    the wall-clock lane is pinned to a constant). A new
+    [`bench/locomo/tests/reproduction_byte_stable.rs`](bench/locomo/tests/reproduction_byte_stable.rs)
+    gates the byte-stability. Observed (offline hashed embedder, n=45 single-hop):
+    recall@1 **24.4%** [Wilson 95% 14.2%, 38.7%], recall@3 37.8%, recall@5 46.7%
+    (2/45 queries errored in the BM25 lane on natural-language punctuation and are
+    disclosed + counted as misses).
+  - **Real-embedder path** gated behind `--ollama-model` (fail-loud, never a
+    silent number), matching the sibling benches.
+  - **Refactor:** extracted the shared LoCoMo fixture loader into
+    `mnemo_locomo_bench::dataset` (`LongMemRecord` + `load_dataset` +
+    `default_dataset_path` + `dataset_sha`), reused by `reproduction_bench`.
+- **docs:** `bench/RESULTS.md` gains a claimed-vs-observed section; `README.md`
+  adds a "reproducible-by-disclosure" line to the regulated-AI block.
+
 ### Added (2026-07-05) — v0.5.9, regulated-memory audit-conformance artifact
+
+Workspace `0.5.8 → 0.5.9` (patch bump — a new offline bench crate + compliance
+docs + positioning; no engine/protocol API change). Apache-2.0, offline-
+verifiable, **no managed-cloud dependency added to core**.
+
 
 Workspace `0.5.8 → 0.5.9` (patch bump — a new offline bench crate + compliance
 docs + positioning; no engine/protocol API change). Apache-2.0, offline-
@@ -180,16 +222,16 @@ dependency, engine, or protocol API change).
 
 [#74]: https://github.com/sattyamjjain/mnemo/issues/74
 
-### Landing trace (2026-07-05)
+### Landing trace (2026-07-06)
 
 This `[Unreleased]` accumulator sits on `main` at
-[`4ef5f36`](https://github.com/sattyamjjain/mnemo/commit/4ef5f36) (the v0.5.8
-BEAM bench cut). It now also carries the **v0.5.9** regulated-memory audit-
-conformance artifact above, landing via branch
-`feat/audit-conformance-eu-art12-dpdp` (push-to-`main`; the workspace version
-bump `0.5.8 → 0.5.9` triggers the crates.io publish of changed crates — the new
-bench crate is `publish = false`). Earlier cuts `v0.5.4` (`04a1145`) through
-`v0.5.8` remain documented in the sections below.
+[`b60e727`](https://github.com/sattyamjjain/mnemo/commit/b60e727) (the v0.5.9
+audit-conformance cut). It now also carries the **v0.5.10** claimed-vs-observed
+LoCoMo reproduction bench above, landing via branch `bench/claimed-vs-observed`
+(push-to-`main`; the workspace version bump `0.5.9 → 0.5.10` triggers the
+crates.io publish of changed crates — the bench crate is `publish = false`).
+Earlier cuts `v0.5.4` (`04a1145`) through `v0.5.9` remain documented in the
+sections below.
 
 ## [0.5.4] — 2026-06-29
 

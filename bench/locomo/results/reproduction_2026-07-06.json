@@ -1,0 +1,54 @@
+{
+  "bench": "reproduction_bench",
+  "claimed_not_rerun_here": [
+    {
+      "claimed": "92.5 (LoCoMo, LLM-judged QA)",
+      "note": "vendor-published; independent/community re-runs land materially lower (the reproducibility gap this bench rides)",
+      "source": "https://mem0.ai/research",
+      "system": "Mem0"
+    },
+    {
+      "claimed": "84 → 58.44 (corrected)",
+      "note": "the 84% LoCoMo claim was re-scored to 58.44% under corrected evaluation",
+      "source": "https://github.com/getzep/zep-papers/issues/5",
+      "system": "Zep"
+    },
+    {
+      "claimed": "100 → 60.3 R@10 (corrected)",
+      "note": "100% used top_k=50 (> sessions/conversation, i.e. every session returned); honest retrieval R@10 is 60.3%",
+      "source": "https://github.com/MemPalace/mempalace/issues/29",
+      "system": "MemPalace"
+    },
+    {
+      "claimed": "~99 (self-reported, not verified)",
+      "note": "QA accuracy from an 8-/12-agent ensemble the authors frame as an experimental proof-of-concept, not production",
+      "source": "https://dev.to/varun_pratapbhardwaj_b13/5-ai-agent-memory-systems-compared-mem0-zep-letta-supermemory-superlocalmemory-2026-benchmark-59p3",
+      "system": "Supermemory"
+    }
+  ],
+  "dataset_sha256": "9ed6e435558d25cad1ead016cdf9ed87dbeda80edd18ae6fd5a9aed7cd5314ed",
+  "date": "2026-07-06",
+  "embedder": "hash-bag-of-tokens (deterministic, offline)",
+  "harness": "mnemo default auto/RRF recall, deterministic offline",
+  "honesty": "claimed figures are vendors' own published numbers, cited not re-run; only the observed row is reproducible in this harness; not a ranking (retrieval vs end-to-end QA, different scale/judge)",
+  "n": 45,
+  "observed": {
+    "errored_as_miss": 2,
+    "errored_note": "queries that erred in the default auto BM25 lane (unsanitized natural-language punctuation); counted as misses, already reflected in the rates above",
+    "mrr": 0.35811765788013145,
+    "recall@1": 0.24444444444444444,
+    "recall@1_ci95": [
+      0.1423547943377172,
+      0.3867338005702035
+    ],
+    "recall@3": 0.37777777777777777,
+    "recall@5": 0.4666666666666667
+  },
+  "reproducibility_method": {
+    "fusion": "mnemo default auto/RRF over vector + BM25 + graph unchanged",
+    "recency": "neutralised (half-life -> infinity); batch-seeded corpus has no recency signal",
+    "vector_index": "exact brute-force cosine (deterministic reference; mnemo default is approximate USearch HNSW)"
+  },
+  "seed": 18417359134758,
+  "subtask": "LoCoMo single-hop retrieval"
+}

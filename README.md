@@ -28,6 +28,12 @@ cargo run --release -p mnemo-audit-conformance-bench
 # → bench/audit_conformance/results/conformance.md  (byte-stable report + recomputable SHA-256 crypto vector)
 ```
 
+**Reproducible-by-disclosure memory:** mnemo publishes its LoCoMo numbers with a
+fixed seed + a Wilson-95 you can re-run offline (`cargo run --release -p
+mnemo-locomo-bench --bin reproduction_bench`), tabled against vendors' cited,
+not-re-run claims — see
+[`bench/locomo/results/reproduction_2026-07-06.md`](bench/locomo/results/reproduction_2026-07-06.md).
+
 Regulatory mappings (honest, hedged, *not legal advice*):
 [EU AI Act Art.12](docs/compliance/eu-ai-act-art12.md) ·
 [India DPDP (Rules 2025)](docs/compliance/dpdp-2027.md) ·

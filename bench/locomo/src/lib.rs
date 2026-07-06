@@ -23,6 +23,7 @@
 //! lands at `docs/benchmarks/locomo-<date>.md` with a SHA of the raw
 //! run log so anyone can recompute.
 
+pub mod dataset;
 pub mod judge;
 pub mod phase_cost;
 pub mod runner;

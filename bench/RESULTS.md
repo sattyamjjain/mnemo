@@ -105,6 +105,33 @@ No "first" / "best" claim is made. Reproduce:
 `cargo run --release -p mnemo-locomo-bench --bin beam_bench`
 (writes `bench/locomo/results/beam_<date>.{md,json}`).
 
+## LoCoMo claimed vs observed — reproducible by disclosure
+
+The 2026 memory-benchmark reproducibility crisis: several headline LoCoMo scores
+collapsed under independent re-evaluation. So mnemo publishes an **observed**
+LoCoMo single-hop number that anyone can **re-run offline and get the same
+bytes**, next to the vendors' **own published** figures — cited, **not re-run in
+mnemo's harness**. Only mnemo's row is reproducible here; this is **not a
+ranking** (retrieval vs end-to-end QA, different scale and judge).
+
+| system | LoCoMo figure | reproducible here? | source |
+|---|---|:--:|---|
+| **mnemo** (this repo, single-hop retrieval) | **recall@1 24.4%** [Wilson 95% 14.2%, 38.7%], recall@5 46.7% | ✅ offline, fixed seed, byte-stable | [`reproduction_bench`](locomo/results/reproduction_2026-07-06.md) |
+| Mem0 | 92.5 (LLM-judged QA) — community re-runs land materially lower | ❌ vendor-published | [mem0.ai/research](https://mem0.ai/research) |
+| Zep | 84 → **58.44** (corrected evaluation) | ❌ vendor/third-party | [zep-papers#5](https://github.com/getzep/zep-papers/issues/5) |
+| MemPalace | 100 → **60.3 R@10** (without an oversized `top_k`) | ❌ third-party audit | [mempalace#29](https://github.com/MemPalace/mempalace/issues/29) |
+| Supermemory | ~99 (self-reported, 8-/12-agent ensemble PoC) | ❌ self-reported | [comparison](https://dev.to/varun_pratapbhardwaj_b13/5-ai-agent-memory-systems-compared-mem0-zep-letta-supermemory-superlocalmemory-2026-benchmark-59p3) |
+
+**Honesty.** mnemo's number is a *retrieval* metric on a small bundled slice with
+a lexical offline embedder — deliberately modest and **not comparable** to the
+vendors' LLM-judged full-dataset QA claims. The point is not the magnitude; it is
+that the number is **re-runnable** (`cargo run --release -p mnemo-locomo-bench
+--bin reproduction_bench`) and byte-stable, via two disclosed choices (an exact
+brute-force vector index as the deterministic reference for the default
+approximate HNSW, and a neutralised recency lane on a batch-seeded corpus). The
+corrected competitor columns are exactly why a re-runnable number beats a
+headline. No "best"/"first" claim.
+
 ## Auditability — mnemo vs Mem0 vs Zep
 
 Retrieval quality is one axis; **whether you can prove what the memory did** is
