@@ -33,6 +33,11 @@ fixed seed + a Wilson-95 you can re-run offline (`cargo run --release -p
 mnemo-locomo-bench --bin reproduction_bench`), tabled against vendors' cited,
 not-re-run claims — see
 [`bench/locomo/results/reproduction_2026-07-06.md`](bench/locomo/results/reproduction_2026-07-06.md).
+And the **memory-poisoning defense delta** is measured, not asserted: ASR with
+the poisoning-quarantine defense OFF vs ON (`cargo run --release -p
+mnemo-poisoning-bench`) — MINJA 100%→0% (+100 pts), AgentPoison 100%→3.5%
+(+96.5 pts), 0/200 benign false-quarantine; see
+[`bench/poisoning/`](bench/poisoning/).
 
 Regulatory mappings (honest, hedged, *not legal advice*):
 [EU AI Act Art.12](docs/compliance/eu-ai-act-art12.md) ·

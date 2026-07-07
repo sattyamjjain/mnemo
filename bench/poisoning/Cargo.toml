@@ -1,0 +1,29 @@
+[package]
+name = "mnemo-poisoning-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Reproducible memory-poisoning DEFENSE-DELTA benchmark: ASR with mnemo's poisoning-quarantine defense ON vs OFF, for MINJA + AgentPoison-style attacks."
+
+[[bin]]
+name = "poisoning_bench"
+path = "src/main.rs"
+
+[dependencies]
+# Toggles the REAL, shipped defense: check_for_anomaly -> quarantine_memory on
+# the remember() write path + recall's quarantined-skip, plus the opt-in
+# PoisoningPolicy z-score gate. See src/lib.rs for the verified API.
+mnemo-core = { workspace = true }
+# Reuse the shared Wilson-95 helper instead of re-deriving it.
+mnemo-locomo-bench = { path = "../locomo" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+clap = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

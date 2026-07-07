@@ -4,6 +4,45 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-07) — v0.5.11, memory-poisoning defense-delta benchmark
+
+Workspace `0.5.10 → 0.5.11` (patch bump — a new bench crate + tests + docs; no
+engine/protocol API change). Offline, Apache-2.0, **no managed-cloud dependency
+added to core**.
+
+- **bench(security): memory-poisoning defense delta.** New crate
+  [`bench/poisoning`](bench/poisoning/) (`cargo run --release -p
+  mnemo-poisoning-bench`) measures the **Attack Success Rate (ASR)** of two
+  named, published attacks with mnemo's shipped poisoning-quarantine defense
+  **OFF vs ON** — the **delta** is the headline. It toggles the *real* defense
+  (`check_for_anomaly` → `quarantine_memory` on the `remember` write path +
+  recall's `quarantined` skip, plus the opt-in `PoisoningPolicy` z-score gate) —
+  **not** provenance HMAC (which is per-read receipts, not a retrieval filter),
+  stated honestly in the crate docs.
+  - **Attacks:** MINJA-style memory injection
+    ([arXiv:2503.03704](https://arxiv.org/abs/2503.03704), indirect-ingest poison
+    with self-referential bridging phrasing) and an AgentPoison-style low-rate
+    trigger (single novel-token poison among 1001 benign, **0.0998% < 0.1%** of
+    the store).
+  - **Observed (seed `0x901504202607`, 200 trials/attack, top-5):** MINJA
+    canonical ASR 100%→0% (**delta +100 pts**, lexical lane); AgentPoison
+    100%→3.5% (**delta +96.5 pts**, z-score gate); **benign control 0/200
+    false-quarantine**. Evasive MINJA (markers stripped) stays 100%→100% — a
+    disclosed lexical-lane blind spot, not hidden.
+  - **Deterministic + byte-stable:** fixed corpus, deterministic hashed embedder,
+    exact brute-force vector index (the reference mnemo's approximate HNSW
+    tracks), neutralised recency lane; every ASR carries a Wilson 95% interval.
+    Tests in [`bench/poisoning/tests/`](bench/poisoning/tests/) gate the delta,
+    the 0% benign control, and byte-stability. Observed numbers only, never a
+    claimed one; no "best"/"first" claim.
+  - Reuses the shared `mnemo_locomo_bench::stats::wilson_95` helper.
+- **chore(python): close the PyPI publish gap.** The `mnemo-db` PyPI SDK version
+  was stale at `0.4.9` while the workspace moved to `0.5.x` — a stale published
+  artifact undercuts the benchmark-credibility story. Bumped
+  `python/pyproject.toml` + `python/mnemo/__init__.py` to `0.5.11` (PyO3 wheel
+  verified to build against the current core with `maturin build --release`); the
+  push-to-`main` `pypi-publish` workflow publishes `mnemo-db 0.5.11`.
+
 ### Added (2026-07-06) — v0.5.10, claimed-vs-observed LoCoMo reproduction
 
 Workspace `0.5.9 → 0.5.10` (patch bump — a new bench bin + a shared loader + a
@@ -222,16 +261,16 @@ dependency, engine, or protocol API change).
 
 [#74]: https://github.com/sattyamjjain/mnemo/issues/74
 
-### Landing trace (2026-07-06)
+### Landing trace (2026-07-07)
 
 This `[Unreleased]` accumulator sits on `main` at
-[`b60e727`](https://github.com/sattyamjjain/mnemo/commit/b60e727) (the v0.5.9
-audit-conformance cut). It now also carries the **v0.5.10** claimed-vs-observed
-LoCoMo reproduction bench above, landing via branch `bench/claimed-vs-observed`
-(push-to-`main`; the workspace version bump `0.5.9 → 0.5.10` triggers the
-crates.io publish of changed crates — the bench crate is `publish = false`).
-Earlier cuts `v0.5.4` (`04a1145`) through `v0.5.9` remain documented in the
-sections below.
+[`d764de6`](https://github.com/sattyamjjain/mnemo/commit/d764de6) (the v0.5.10
+claimed-vs-observed LoCoMo cut). It now also carries the **v0.5.11**
+memory-poisoning defense-delta benchmark above, landing via branch
+`feat/poisoning-defense-bench` (push-to-`main`, tagged `0.5.11`; the workspace
+version bump `0.5.10 → 0.5.11` triggers the crates.io publish of changed crates
+— the bench crate is `publish = false`). Earlier cuts `v0.5.4` (`04a1145`)
+through `v0.5.10` remain documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 

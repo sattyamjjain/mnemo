@@ -61,6 +61,6 @@ def test_python_sdk_version_matches_pyproject() -> None:
     )
 
 
-def test_v0_4_9_pinned() -> None:
+def test_v0_5_11_pinned() -> None:
     """Sanity-check this exact release. Bump alongside CHANGELOG."""
-    assert mnemo.__version__ == "0.4.9"
+    assert mnemo.__version__ == "0.5.11"

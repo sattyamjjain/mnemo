@@ -25,11 +25,12 @@ members = [
     "bench/locomo",
     "bench/embeddings",
     "bench/audit_conformance",
+    "bench/poisoning",
     "python",
 ]
 
 [workspace.package]
-version = "0.5.10"
+version = "0.5.11"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"
