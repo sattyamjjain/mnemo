@@ -8,6 +8,8 @@
 
 Mnemo (from Greek *mneme* — memory) is an embedded database whose primitives are **REMEMBER**, **RECALL**, **FORGET**, and **SHARE** — exposed as [MCP](https://modelcontextprotocol.io/) tools that any AI agent can connect to directly.
 
+**→ [Positioning: on-prem, MCP-native, cryptographically-auditable memory for regulated AI](docs/POSITIONING.md)** — how mnemo compares to Mem0, Letta, and native provider memory on the compliance-audit axis, wired to the shipped bench numbers.
+
 ## On-prem, MCP-native, cryptographically-auditable memory for regulated AI
 
 Mnemo runs **in-process on your own infrastructure** (embedded DuckDB or your

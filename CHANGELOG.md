@@ -4,6 +4,24 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Docs (2026-07-08) — compliance-axis positioning one-pager
+
+Docs-only; **no version bump** (no code, bench, or protocol change).
+
+- **docs: POSITIONING.md — compliance-audit-axis comparison vs Mem0/Letta/native
+  memory, wired to shipped bench numbers.** New
+  [`docs/POSITIONING.md`](docs/POSITIONING.md) converts the already-published
+  benchmarks into a single credibility one-pager: a capability table across
+  on-prem/self-host, MCP-native primitives, cryptographic hash-chain audit log,
+  memory-poisoning defense (shipped delta), and regulatory mapping (EU AI Act
+  Art.12 2026-08-02 · India DPDP 2027-05-13 · OWASP ASI06). Every mnemo cell
+  cites a reproducible bench already in the repo — LongMemEval semantic recall@1
+  0.739, audit-conformance 100%/256-trial tamper detection (Wilson-95), poisoning
+  defense delta MINJA +100 / AgentPoison +96.5 pts with 0/200 benign FPR, and the
+  byte-stable LoCoMo reproduction — and the page states plainly where mnemo does
+  **not** lead (recall/QA quality vs Mem0's funded team). No invented numbers; no
+  gating; Apache-2.0. README gains a top-of-file link to it.
+
 ### Added (2026-07-07) — v0.5.11, memory-poisoning defense-delta benchmark
 
 Workspace `0.5.10 → 0.5.11` (patch bump — a new bench crate + tests + docs; no
@@ -269,8 +287,11 @@ claimed-vs-observed LoCoMo cut). It now also carries the **v0.5.11**
 memory-poisoning defense-delta benchmark above, landing via branch
 `feat/poisoning-defense-bench` (push-to-`main`, tagged `0.5.11`; the workspace
 version bump `0.5.10 → 0.5.11` triggers the crates.io publish of changed crates
-— the bench crate is `publish = false`). Earlier cuts `v0.5.4` (`04a1145`)
-through `v0.5.10` remain documented in the sections below.
+— the bench crate is `publish = false`). It also carries the **2026-07-08
+compliance-axis positioning one-pager** (`docs/POSITIONING.md`) above — a
+docs-only change landing via branch `docs/positioning-compliance-axis`
+(push-to-`main`, **no version bump**, no crate republish). Earlier cuts `v0.5.4`
+(`04a1145`) through `v0.5.10` remain documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 
