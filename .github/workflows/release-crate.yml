@@ -65,33 +65,17 @@ jobs:
           cargo clippy --all-targets \
             -p mnemo-core -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp -- -D warnings
-      # A few mnemo-core integration tests are recall-QUALITY benchmarks (e.g.
-      # domain_scoped_dilution's P@10 dilution curve) that assert thresholds over
-      # the DEFAULT approximate-HNSW recall path. That path is nondeterministic by
-      # design (HNSW level-RNG + wall-clock recency), so those thresholds can jitter
-      # run-to-run and machine-to-machine — a documented property, not a regression.
-      # A crates.io PUBLISH must not be blocked by an RNG draw, so we retry the
-      # closure suite up to 3×: a genuinely broken crate fails every attempt, while
-      # a flaky recall threshold clears within a couple of draws. Full coverage is
-      # preserved (nothing is skipped); the deterministic full suite also runs in CI.
-      - name: Test (publish closure, retry recall-nondeterminism)
+      # Full closure test suite. The recall-QUALITY benchmark
+      # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
+      # degrade" assertion now accepts the floor case where the approximate HNSW
+      # surfaces no gold in top-k on some platforms — e.g. flat P@10 = 0 at every
+      # corpus size on Linux; the headline "scoped beats flat by >= 0.05" claim is
+      # still asserted), so the gate runs the whole suite with no skips.
+      - name: Test (publish closure)
         run: |
-          set +e
-          for attempt in 1 2 3; do
-            echo "::group::test attempt ${attempt}/3"
-            cargo test \
-              -p mnemo-core -p mnemo-attention-state \
-              -p mnemo-compliance -p mnemo-mcp
-            code=$?
-            echo "::endgroup::"
-            if [ "$code" = "0" ]; then
-              echo "tests passed on attempt ${attempt}"
-              exit 0
-            fi
-            echo "::warning::test attempt ${attempt} failed (code ${code}); approximate-HNSW recall tests are nondeterministic — retrying"
-          done
-          echo "::error::publish-closure tests failed after 3 attempts"
-          exit 1
+          cargo test \
+            -p mnemo-core -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp
 
   publish:
     name: Publish to crates.io
