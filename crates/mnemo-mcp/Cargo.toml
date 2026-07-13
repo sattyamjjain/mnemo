@@ -3,7 +3,12 @@ name = "mnemo-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "MCP server interface for Mnemo memory database"
+readme = "README.md"
+keywords = ["mcp", "memory", "ai-agents", "llm", "database"]
+categories = ["api-bindings", "database"]
 
 [dependencies]
 mnemo-core = { workspace = true }

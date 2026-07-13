@@ -1,0 +1,139 @@
+name: release-crate
+
+# Publish the 0.5.x **compliance line** to crates.io on a `v*.*.*` tag.
+#
+# Scope — the minimal importable set a user needs to run auditable memory,
+# published in dependency order:
+#
+#     mnemo-core  →  mnemo-attention-state  →  mnemo-compliance  →  mnemo-mcp
+#
+# `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
+# (server.rs uses `mnemo_attention_state::AttentionStateStore`); it was
+# introduced after the last 0.4.4 crates.io publish, so it must be published for
+# `mnemo-mcp` to resolve.
+#
+# Why a separate, tag-gated workflow (vs. cargo-publish.yml's push-to-main run):
+#   - It gates on ONLY the publish closure, so the pre-existing golem-wit WASM
+#     link failure (which reddens the workspace-wide build in cargo-publish.yml)
+#     cannot block a release of these four crates.
+#   - It publishes in the CORRECT dependency order (core before its dependents;
+#     compliance before mcp) — cargo-publish.yml lists mcp before compliance.
+#   - A tag is an explicit, intentional release trigger; a docs push is not.
+#
+# Prerequisites
+#   - CARGO_REGISTRY_TOKEN repo secret (already configured for cargo-publish.yml).
+#   - Every internal path dep in the root Cargo.toml carries `version` alongside
+#     `path` (required for `cargo publish` to accept it).
+#
+# Idempotency: crates.io publishes are PERMANENT. Each crate publishes only if
+# its version is not already on crates.io (404 check), so re-running a tag is a
+# safe no-op for crates already up.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run only (package + verify, no upload)"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    name: Gate (fmt + clippy + tests, publish closure)
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      # Format is a whole-repo invariant and cheap.
+      - run: cargo fmt --all -- --check
+      # Clippy + tests are scoped to the crates being published (and their
+      # transitive deps, pulled automatically) so an unrelated, pre-existing
+      # WASM/golem link failure elsewhere in the workspace can never gate a
+      # release of this compliance line. `-D warnings` matches CI.
+      - name: Clippy (publish closure)
+        run: |
+          cargo clippy --all-targets \
+            -p mnemo-core -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp -- -D warnings
+      - name: Test (publish closure)
+        run: |
+          cargo test \
+            -p mnemo-core -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp
+
+  publish:
+    name: Publish to crates.io
+    needs: gate
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/mnemo-core
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # --- Dry-run first (task step 4) --------------------------------------
+      # Package + metadata check for every crate before any upload. Dependents
+      # use --no-verify here because core@<ver> is not yet on the registry, so a
+      # verify build would fail on the (not-yet-published) internal dep. This
+      # validates the manifest, README, keywords/categories, and packaging.
+      - name: Dry-run (packaging + metadata)
+        run: |
+          set -euo pipefail
+          for crate in mnemo-core mnemo-attention-state mnemo-compliance mnemo-mcp; do
+            echo "::group::dry-run ${crate}"
+            cargo publish -p "${crate}" --dry-run --no-verify
+            echo "::endgroup::"
+          done
+
+      # --- Real publish, dependency order -----------------------------------
+      - name: Publish (dependency order, idempotent)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '' }}
+        run: |
+          set -euo pipefail
+          ver=$(grep -E '^version\s*=' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "workspace version: ${ver}"
+          # crates.io's API rejects requests without a User-Agent (403).
+          UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
+          crates="mnemo-core mnemo-attention-state mnemo-compliance mnemo-mcp"
+          for crate in $crates; do
+            http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
+              "https://crates.io/api/v1/crates/${crate}/${ver}")
+            if [ "$http" = "200" ]; then
+              echo "  ${crate}@${ver} — already on crates.io, skipping"
+              continue
+            elif [ "$http" != "404" ]; then
+              echo "  ${crate}@${ver} — unexpected HTTP ${http} from crates.io; failing"
+              exit 1
+            fi
+            if [ -n "$DRY_RUN" ]; then
+              echo "::group::dry-run publish ${crate} (workflow_dispatch dry_run)"
+              cargo publish -p "${crate}" --dry-run --no-verify
+              echo "::endgroup::"
+              continue
+            fi
+            echo "::group::Publish ${crate}@${ver}"
+            cargo publish -p "${crate}"
+            echo "::endgroup::"
+            # Let the sparse index propagate before publishing a crate that
+            # depends on the one just uploaded (verify build resolves it live).
+            if [ "${crate}" != "mnemo-mcp" ]; then
+              echo "Waiting 60s for crates.io index propagation"
+              sleep 60
+            fi
+          done

@@ -46,6 +46,35 @@ Regulatory mappings (honest, hedged, *not legal advice*):
 [India DPDP (Rules 2025)](docs/compliance/dpdp-2027.md) ·
 [ASI06 memory-poisoning resistance](docs/security/ASI06.md). Apache-2.0, no SaaS.
 
+## Install from crates.io
+
+The 0.5.x **compliance line** is on crates.io — the minimal set to run
+on-prem, hash-chain-audited memory in your own Rust service:
+
+```bash
+cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
+cargo add mnemo-mcp                      # (optional) expose it as MCP tools
+```
+
+The wedge — a memory-write log an auditor can verify **offline, without trusting
+the store** — is the [`mnemo-core`](https://crates.io/crates/mnemo-core)
+hash-chain verify API:
+
+```rust
+use mnemo_core::hash::{verify_chain, ChainVerificationResult};
+
+// `records` is the exported, hash-chained write log. The store is never
+// consulted — the verifier is a pure function an auditor runs on their machine.
+let result: ChainVerificationResult = verify_chain(&records);
+assert!(result.valid);          // false + `first_broken_at` names any post-hoc mutation
+```
+
+Signed NDJSON export and DPDPA consent records live in
+[`mnemo-compliance`](https://crates.io/crates/mnemo-compliance)
+(`export_audit_log`, `verify_ndjson_signed`). Why this matters, and how mnemo
+compares to Mem0 / Letta / native provider memory on the compliance-audit axis:
+**[docs/POSITIONING.md](docs/POSITIONING.md)**.
+
 ## Quickstart
 
 ### 1. Build

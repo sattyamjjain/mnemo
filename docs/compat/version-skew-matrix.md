@@ -1,5 +1,12 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-13 for the **v0.5.12** cut — a **distribution-only** change
+> (crates.io publishing metadata for the `mnemo-core` / `mnemo-attention-state` /
+> `mnemo-compliance` / `mnemo-mcp` compliance line + a tag-triggered
+> `release-crate.yml` publish workflow). **No dependency or API change from
+> v0.5.11**, so every dependency column below is unchanged; the version pins move
+> 0.5.11 → 0.5.12 in lockstep.
+>
 > Updated 2026-07-07 for the v0.5.11 cut (memory-poisoning **defense-delta**
 > benchmark — a new `bench/poisoning` crate measuring ASR with the shipped
 > poisoning-quarantine defense ON vs OFF for MINJA + AgentPoison-style attacks;

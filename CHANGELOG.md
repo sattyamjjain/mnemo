@@ -4,6 +4,35 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Distribution (2026-07-13) — v0.5.12, crates.io compliance line
+
+Workspace `0.5.11 → 0.5.12` (patch bump — a **distribution-only** change: no
+engine, protocol, or bench code change; the bump exists so the compliance line
+gets a clean, previously-unpublished crates.io version and a fresh release tag).
+
+- **distribution: 0.5.x compliance line published to crates.io.** The minimal
+  importable set to run on-prem, hash-chain-audited memory —
+  [`mnemo-core`](https://crates.io/crates/mnemo-core),
+  [`mnemo-attention-state`](https://crates.io/crates/mnemo-attention-state),
+  [`mnemo-compliance`](https://crates.io/crates/mnemo-compliance), and
+  [`mnemo-mcp`](https://crates.io/crates/mnemo-mcp) — now carries full
+  `[package]` metadata (description, `license = "Apache-2.0"`, repository,
+  homepage, keywords, categories, and a per-crate README) and publishes via a new
+  tag-triggered [`release-crate.yml`](.github/workflows/release-crate.yml).
+  - `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
+    (introduced after the last 0.4.4 crates.io publish); publish order is
+    `core → attention-state → compliance → mcp`.
+  - The workflow gates on **only the publish closure** (fmt + clippy + tests for
+    those four crates), so the pre-existing golem-wit WASM link failure that
+    reddens the workspace-wide build cannot block a release; it version-gates
+    each crate (404 check) for idempotent re-runs, and dry-runs before uploading.
+  - Internal path deps in the root `Cargo.toml` carry `version` alongside `path`
+    (bumped `0.5.0 → 0.5.12` in lockstep) so `cargo publish` accepts them.
+  - No crate name collision: `mnemo-core`/`mnemo-mcp`/`mnemo-compliance` are
+    already owned by this project on crates.io (last at 0.4.x); no rename needed.
+  - README gains an **Install from crates.io** section leading with the offline
+    hash-chain verify API, pointing at [`docs/POSITIONING.md`](docs/POSITIONING.md).
+
 ### Docs (2026-07-08) — compliance-axis positioning one-pager
 
 Docs-only; **no version bump** (no code, bench, or protocol change).
@@ -290,8 +319,15 @@ version bump `0.5.10 → 0.5.11` triggers the crates.io publish of changed crate
 — the bench crate is `publish = false`). It also carries the **2026-07-08
 compliance-axis positioning one-pager** (`docs/POSITIONING.md`) above — a
 docs-only change landing via branch `docs/positioning-compliance-axis`
-(push-to-`main`, **no version bump**, no crate republish). Earlier cuts `v0.5.4`
-(`04a1145`) through `v0.5.10` remain documented in the sections below.
+(push-to-`main`, **no version bump**, no crate republish). And it carries the
+**v0.5.12** crates.io compliance-line distribution change above — landing via
+branch `chore/crates-io-0.5.x`, workspace bump `0.5.11 → 0.5.12`, tagged
+`v0.5.12` to fire the new tag-triggered `release-crate.yml` (publishing
+`mnemo-core` → `mnemo-attention-state` → `mnemo-compliance` → `mnemo-mcp`). The
+prior `v0.5.11` tag already points at the poisoning cut (`3d21e63`) and predates
+`release-crate.yml`, so a fresh `v0.5.12` tag is what carries the workflow.
+Earlier cuts `v0.5.4` (`04a1145`) through `v0.5.10` remain documented in the
+sections below.
 
 ## [0.5.4] — 2026-06-29
 

@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "DPDPA consent-manager and EU AI Act audit-log primitives for Mnemo."
+readme = "README.md"
+keywords = ["compliance", "audit-log", "eu-ai-act", "dpdp", "provenance"]
+categories = ["database", "cryptography"]
 
 [dependencies]
 mnemo-core = { workspace = true }

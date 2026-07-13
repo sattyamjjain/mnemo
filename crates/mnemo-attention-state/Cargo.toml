@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "Attention-state-memory storage substrate for mnemo (v0.4.5; anchored on arXiv:2605.18226 Context Memorization)."
+readme = "README.md"
+keywords = ["memory", "kv-cache", "ai-agents", "llm", "database"]
+categories = ["database", "data-structures"]
 
 [dependencies]
 mnemo-core = { workspace = true }
