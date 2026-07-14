@@ -92,18 +92,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # --- Dry-run first (task step 4) --------------------------------------
-      # Package + metadata check for every crate before any upload. Dependents
-      # use --no-verify here because core@<ver> is not yet on the registry, so a
-      # verify build would fail on the (not-yet-published) internal dep. This
-      # validates the manifest, README, keywords/categories, and packaging.
-      - name: Dry-run (packaging + metadata)
+      # A PER-CRATE dry-run cannot resolve the not-yet-published internal deps
+      # (mnemo-core@<ver> is not on the registry until the real publish below), so
+      # the dependents' packaging step fails with "no matching package". Instead
+      # dry-run the whole set in ONE coordinated invocation: cargo computes the
+      # publish order and satisfies inter-member deps from the local workspace,
+      # packaging AND verify-building all four before any upload.
+      - name: Dry-run (coordinated packaging + verify)
         run: |
-          set -euo pipefail
-          for crate in mnemo-core mnemo-attention-state mnemo-compliance mnemo-mcp; do
-            echo "::group::dry-run ${crate}"
-            cargo publish -p "${crate}" --dry-run --no-verify
-            echo "::endgroup::"
-          done
+          cargo publish --dry-run \
+            -p mnemo-core -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp
 
       # --- Real publish, dependency order -----------------------------------
       - name: Publish (dependency order, idempotent)
