@@ -4,6 +4,32 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Docs (2026-07-13) — contributor IP + regulated-AI README wedge
+
+Docs/governance only; **no version bump** (no engine, protocol, crate, or
+compliance-module change; workspace stays at `0.5.12`).
+
+- **docs(governance): add DCO+CLA; narrow README positioning to regulated-AI
+  memory.**
+  - **Contributor IP hygiene.** [`CONTRIBUTING.md`](CONTRIBUTING.md) now requires
+    a per-commit **Developer Certificate of Origin** sign-off (`git commit -s`,
+    full DCO 1.1 text inline); a new self-contained
+    [`.github/workflows/dco.yml`](.github/workflows/dco.yml) enforces it on every
+    PR (matching `Signed-off-by` ↔ author, no third-party action); a new
+    [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) carries
+    the sign-off checkbox + Summary/Test-Plan sections. New [`CLA.md`](CLA.md)
+    adds the standard Apache-style **ICLA + CCLA** for substantial contributions.
+    The project stays **Apache-2.0**; `LICENSE` is unchanged; neither the DCO nor
+    the CLA transfers copyright.
+  - **README wedge.** The top-of-README tagline moves from the generic
+    "MCP-native memory database for AI agents" to the survivor position —
+    **on-prem, MCP-native, cryptographically-auditable memory for regulated AI
+    (EU AI Act Art.12 · India DPDP · HIPAA)** — while keeping the
+    REMEMBER/RECALL/FORGET/SHARE primitives and the DuckDB-embedded (+ your
+    PostgreSQL) wedge intact, and calling out the hash-chained `agent_events`
+    audit log + `mnemo-compliance` as the differentiator. Links the already-
+    shipped [`docs/POSITIONING.md`](docs/POSITIONING.md) (unchanged).
+
 ### Distribution (2026-07-13) — v0.5.12, crates.io compliance line
 
 Workspace `0.5.11 → 0.5.12` (patch bump — a **distribution-only** change: no
@@ -326,8 +352,11 @@ branch `chore/crates-io-0.5.x`, workspace bump `0.5.11 → 0.5.12`, tagged
 `mnemo-core` → `mnemo-attention-state` → `mnemo-compliance` → `mnemo-mcp`). The
 prior `v0.5.11` tag already points at the poisoning cut (`3d21e63`) and predates
 `release-crate.yml`, so a fresh `v0.5.12` tag is what carries the workflow.
-Earlier cuts `v0.5.4` (`04a1145`) through `v0.5.10` remain documented in the
-sections below.
+Finally it carries the **2026-07-13 contributor-IP + regulated-AI README wedge**
+governance change above (DCO + CLA + PR template + README tagline) — a
+docs/governance-only change landing via branch `docs/cla-and-positioning`
+(push-to-`main`, **no version bump**, no crate republish). Earlier cuts `v0.5.4`
+(`04a1145`) through `v0.5.10` remain documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 

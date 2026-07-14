@@ -1,0 +1,61 @@
+name: DCO
+
+# Lightweight, self-contained Developer Certificate of Origin check.
+#
+# Every non-merge commit in a pull request must carry a `Signed-off-by:` trailer
+# whose email matches the commit author (i.e. it was added with `git commit -s`).
+# This enforces the DCO documented in CONTRIBUTING.md without a third-party
+# GitHub App or action. Fix a missing sign-off with `git commit --amend -s` (last
+# commit) or `git rebase --signoff <base>` (a whole branch), then force-push.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Sign-off (DCO)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify Signed-off-by on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          fail=0
+          # Non-merge commits introduced by this PR.
+          commits=$(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")
+          if [ -z "${commits}" ]; then
+            echo "No non-merge commits to check."
+            exit 0
+          fi
+          for c in ${commits}; do
+            author_email=$(git show -s --format='%ae' "${c}")
+            subject=$(git show -s --format='%s' "${c}")
+            body=$(git show -s --format='%B' "${c}")
+            # Must have at least one Signed-off-by line whose email matches the author.
+            if ! printf '%s\n' "${body}" | grep -qiE '^Signed-off-by: .+<.+@.+>'; then
+              echo "::error::commit ${c} (\"${subject}\") is missing a Signed-off-by line (DCO)."
+              fail=1
+              continue
+            fi
+            if ! printf '%s\n' "${body}" | grep -i '^Signed-off-by:' | grep -qF "<${author_email}>"; then
+              echo "::error::commit ${c} (\"${subject}\") has a Signed-off-by that does not match the author <${author_email}>."
+              fail=1
+            fi
+          done
+          if [ "${fail}" != "0" ]; then
+            echo ""
+            echo "Fix: 'git commit --amend -s' for the last commit, or"
+            echo "     'git rebase --signoff ${BASE_SHA}' for the whole branch, then force-push."
+            exit 1
+          fi
+          echo "All commits carry a matching Signed-off-by (DCO). ✔"

@@ -4,9 +4,9 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange.svg)](https://www.rust-lang.org/)
 
-**MCP-native memory database for AI agents.**
+**On-prem, MCP-native, cryptographically-auditable memory for regulated AI** (EU AI Act Art.12 · India DPDP · HIPAA §164.312(b)).
 
-Mnemo (from Greek *mneme* — memory) is an embedded database whose primitives are **REMEMBER**, **RECALL**, **FORGET**, and **SHARE** — exposed as [MCP](https://modelcontextprotocol.io/) tools that any AI agent can connect to directly.
+Mnemo (from Greek *mneme* — memory) is an **embedded** database (DuckDB in-process, or your own PostgreSQL) whose primitives — **REMEMBER**, **RECALL**, **FORGET**, **SHARE** — are exposed as [MCP](https://modelcontextprotocol.io/) tools any AI agent connects to directly. What sets it apart for regulated deployments: every write and delete is a **SHA-256 hash-chained `agent_events` entry an external verifier can check offline** (no store, no hosted tier to trust), and [`mnemo-compliance`](crates/mnemo-compliance) layers signed audit-log export + DPDPA consent records on top.
 
 **→ [Positioning: on-prem, MCP-native, cryptographically-auditable memory for regulated AI](docs/POSITIONING.md)** — how mnemo compares to Mem0, Letta, and native provider memory on the compliance-audit axis, wired to the shipped bench numbers.
 

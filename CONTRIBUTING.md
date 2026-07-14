@@ -47,6 +47,10 @@ cargo clippy --all-targets --all-features -- -D warnings
 4. Update documentation if you changed any public APIs
 5. Add tests for new functionality
 6. Keep commits focused and write clear commit messages
+7. **Sign off every commit** with `git commit -s` — this repo requires a
+   Developer Certificate of Origin sign-off (see
+   [Developer Certificate of Origin (DCO)](#developer-certificate-of-origin-dco)
+   below). The [DCO check](.github/workflows/dco.yml) enforces it on every PR.
 
 ## Code Style
 
@@ -88,6 +92,77 @@ deprecating a backend), please:
    `mnemo-langgraph` Rust adapter the skill template anticipated),
    call that out explicitly in the PR body so the schedule pipeline
    can retire that anchor row.
+
+## Developer Certificate of Origin (DCO)
+
+Every contribution to Mnemo must be signed off under the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/). The
+DCO is a lightweight, per-commit attestation that you wrote the patch (or
+otherwise have the right to submit it under the project's Apache-2.0 license). It
+is **not** a copyright assignment — you keep your copyright.
+
+Sign off by adding a `Signed-off-by` trailer to each commit, which `git` does for
+you with the `-s` flag:
+
+```bash
+git commit -s -m "fix: correct recall ordering under recency tie"
+# adds:  Signed-off-by: Your Name <your.email@example.com>
+```
+
+The `Signed-off-by` name and email **must match the commit author**. To sign off
+a branch of existing commits: `git rebase --signoff main`. A
+[DCO check workflow](.github/workflows/dco.yml) verifies this on every pull
+request and fails the check if any non-merge commit is missing a matching
+sign-off.
+
+By signing off, you certify the DCO, reproduced here in full:
+
+```
+Developer Certificate of Origin
+Version 1.1
+
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+Developer's Certificate of Origin 1.1
+
+By making a contribution to this project, I certify that:
+
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+```
+
+## Contributor License Agreement (CLA)
+
+For substantial contributions the project may additionally ask you to sign a
+Contributor License Agreement — an individual ICLA, or a corporate CCLA if you
+are contributing on behalf of an employer. Both are the standard Apache-style
+texts and are reproduced in [`CLA.md`](CLA.md). The CLA does **not** change the
+project's license (Mnemo stays Apache-2.0) and does **not** transfer your
+copyright; it grants the project a clear license to redistribute your
+contribution. For everyday contributions the per-commit DCO sign-off above is
+sufficient; the CLA is requested only when scope warrants it.
 
 ## License
 
