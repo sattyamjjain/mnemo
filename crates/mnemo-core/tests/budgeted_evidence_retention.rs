@@ -173,9 +173,14 @@ async fn engine_recall_surfaces_retained_evidence() {
         engine.remember(req).await.expect("remember");
     }
 
+    // Lexical (BM25) recall so the no-op embedder stays valid — every fixture
+    // fact carries the word "preference", so BM25 returns them all. (The
+    // vector-dependent "auto" default now hard-errors under a no-op embedder,
+    // v0.5.13; that path is covered by semantic_recall_hard_error.rs.)
     // Baseline recall (no budget) leaves the response unchanged.
     let mut plain = RecallRequest::new("preference".to_string());
     plain.limit = Some(N_FACTS);
+    plain.strategy = Some("lexical".to_string());
     let plain_resp = engine.recall(plain).await.expect("recall");
     assert!(plain_resp.retained_evidence.is_none());
 
@@ -183,6 +188,7 @@ async fn engine_recall_surfaces_retained_evidence() {
     // memories list is untouched).
     let mut budgeted = RecallRequest::new("preference".to_string());
     budgeted.limit = Some(N_FACTS);
+    budgeted.strategy = Some("lexical".to_string());
     budgeted.retained_token_budget = Some(BUDGET_TOKENS);
     let resp = engine.recall(budgeted).await.expect("recall");
 

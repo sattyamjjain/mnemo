@@ -3,12 +3,12 @@
 //!
 //! The harness's three per-operation probe sets and the canonical
 //! stale-context fixture are exercised against a real
-//! `MnemoEngine` (in-memory DuckDB + USearch + Tantivy + NoopEmbedding)
+//! `MnemoEngine` (in-memory DuckDB + USearch + Tantivy + DeterministicEmbedding)
 //! and the attribution shape is asserted.
 
 use std::sync::Arc;
 
-use mnemo_core::embedding::NoopEmbedding;
+use mnemo_core::embedding::DeterministicEmbedding;
 use mnemo_core::eval::memfail::{
     Stage, run_retrieve_probes, run_stale_context_fixture, run_store_probes, run_summarize_probes,
 };
@@ -22,7 +22,7 @@ const AGENT: &str = "memfail-itest-agent";
 fn build_engine() -> MnemoEngine {
     let storage = Arc::new(DuckDbStorage::open_in_memory().expect("duckdb open"));
     let index = Arc::new(UsearchIndex::new(3).expect("usearch new"));
-    let embedding = Arc::new(NoopEmbedding::new(3));
+    let embedding = Arc::new(DeterministicEmbedding::new(3));
     let ft = Arc::new(TantivyFullTextIndex::open_in_memory().expect("tantivy open"));
     MnemoEngine::new(storage, index, embedding, AGENT.to_string(), None).with_full_text(ft)
 }

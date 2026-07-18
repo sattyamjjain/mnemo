@@ -348,6 +348,23 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         request.strategy.as_deref().unwrap_or("auto")
     };
 
+    // v0.5.13 — fail loud, never silent-empty. Semantic and the semantic legs
+    // of hybrid/auto/graph/domain_scoped all depend on a real query vector. The
+    // no-op embedder returns an all-zero vector, which would make these paths
+    // silently return an empty or meaningless result set. Refuse with a typed
+    // error instead. Purely lexical (BM25) and exact/metadata recall need no
+    // embedder and are unaffected.
+    let needs_semantic = matches!(
+        strategy,
+        "semantic" | "hybrid" | "auto" | "graph" | "domain_scoped"
+    );
+    if needs_semantic && !engine.embedding.is_semantic_capable() {
+        return Err(crate::error::Error::EmbedderNotConfigured {
+            requested: strategy.to_string(),
+            backend: engine.storage.backend_name().to_string(),
+        });
+    }
+
     // Compute query embedding (needed for semantic/hybrid/auto)
     let query_embedding = engine.embedding.embed(&request.query).await?;
 

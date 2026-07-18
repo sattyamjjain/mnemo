@@ -47,7 +47,12 @@ fn recall_req(tag: &str, budget: Option<EvidenceBudget>) -> RecallRequest {
     r.agent_id = Some(AGENT.to_string());
     r.tags = Some(vec![tag.to_string()]);
     r.limit = Some(20);
-    r.strategy = Some("auto".to_string());
+    // Lexical (BM25) recall so the no-op embedder stays valid: this suite
+    // deliberately exercises the evidence scorer's *retrieval-score fallback*
+    // (q_emb is degenerate under NoopEmbedding). All seeds carry the query
+    // tokens, so BM25 returns them; the vector-dependent "auto" path now
+    // hard-errors under a no-op embedder (v0.5.13) and is covered separately.
+    r.strategy = Some("lexical".to_string());
     r.evidence_budget = budget;
     r
 }

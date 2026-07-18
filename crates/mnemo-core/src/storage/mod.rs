@@ -144,4 +144,12 @@ pub trait StorageBackend: Send + Sync {
         thread_id: &str,
         branch: &str,
     ) -> Result<Option<Checkpoint>>;
+
+    /// Short, stable label for the backend implementation (e.g. `"duckdb"`,
+    /// `"postgres"`). Used in diagnostics such as
+    /// [`crate::error::Error::EmbedderNotConfigured`] so an error names the
+    /// backend in play. Defaults to `"unknown"`; real backends override it.
+    fn backend_name(&self) -> &'static str {
+        "unknown"
+    }
 }

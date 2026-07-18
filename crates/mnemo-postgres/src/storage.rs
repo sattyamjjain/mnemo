@@ -296,6 +296,10 @@ fn row_to_delegation(row: &sqlx::postgres::PgRow) -> std::result::Result<Delegat
 
 #[async_trait::async_trait]
 impl StorageBackend for PgStorage {
+    fn backend_name(&self) -> &'static str {
+        "postgres"
+    }
+
     // -----------------------------------------------------------------------
     // Memory CRUD
     // -----------------------------------------------------------------------

@@ -36,6 +36,18 @@ pub enum Error {
         detail: String,
     },
 
+    /// A semantic/vector recall was requested, but the configured embedder
+    /// cannot produce query vectors — the no-op embedder (which returns
+    /// all-zero vectors) or none configured. Returned instead of a silent
+    /// empty result set so the caller sees the misconfiguration. `requested`
+    /// is the recall strategy; `backend` is the storage backend in use.
+    #[error(
+        "embedder not configured for '{requested}' recall on backend '{backend}': \
+         semantic recall requires a configured embedder (OpenAI HTTP or local ONNX); \
+         the noop embedder returns no vectors — refusing to silently return empty"
+    )]
+    EmbedderNotConfigured { requested: String, backend: String },
+
     #[error("index error: {message}")]
     IndexSource {
         message: String,

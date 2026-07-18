@@ -1,5 +1,12 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-18 for the **v0.5.13** cut — a **correctness/safety** change:
+> semantic / hybrid / `auto` / graph / domain-scoped recall now **fail loud**
+> with `Error::EmbedderNotConfigured` when no real embedder is configured (the
+> no-op embedder returns all-zero vectors), instead of silently returning empty.
+> Lexical / exact recall are unchanged. **No dependency change from v0.5.12**; the
+> version pins move 0.5.12 → 0.5.13 in lockstep.
+>
 > Updated 2026-07-13 for the **v0.5.12** cut — a **distribution-only** change
 > (crates.io publishing metadata for the `mnemo-core` / `mnemo-attention-state` /
 > `mnemo-compliance` / `mnemo-mcp` compliance line + a tag-triggered

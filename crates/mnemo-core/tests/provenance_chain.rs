@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use mnemo_core::embedding::NoopEmbedding;
+use mnemo_core::embedding::DeterministicEmbedding;
 use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::provenance::{ProvenanceSigner, verify_read_provenance};
 use mnemo_core::query::MnemoEngine;
@@ -15,7 +15,7 @@ use mnemo_core::storage::duckdb::DuckDbStorage;
 fn make_engine_with_signer() -> Arc<MnemoEngine> {
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(16).unwrap());
-    let embedding = Arc::new(NoopEmbedding::new(16));
+    let embedding = Arc::new(DeterministicEmbedding::new(16));
     let signer = Arc::new(ProvenanceSigner::new("mnemo-prov-test", &[42u8; 32]));
     Arc::new(
         MnemoEngine::new(storage, index, embedding, "prov-agent".to_string(), None)
@@ -107,7 +107,7 @@ async fn recall_with_provenance_when_signer_absent_returns_no_receipt() {
     // Engine intentionally without a signer.
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(16).unwrap());
-    let embedding = Arc::new(NoopEmbedding::new(16));
+    let embedding = Arc::new(DeterministicEmbedding::new(16));
     let engine = Arc::new(MnemoEngine::new(
         storage,
         index,

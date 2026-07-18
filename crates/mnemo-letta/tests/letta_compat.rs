@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use mnemo_core::embedding::NoopEmbedding;
+use mnemo_core::embedding::DeterministicEmbedding;
 use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::storage::duckdb::DuckDbStorage;
@@ -18,7 +18,7 @@ use tower::ServiceExt;
 fn make_engine() -> Arc<MnemoEngine> {
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(3).unwrap());
-    let embedding = Arc::new(NoopEmbedding::new(3));
+    let embedding = Arc::new(DeterministicEmbedding::new(3));
     Arc::new(MnemoEngine::new(
         storage,
         index,

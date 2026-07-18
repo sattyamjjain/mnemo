@@ -122,6 +122,10 @@ fn row_to_memory(row: &duckdb::Row<'_>) -> duckdb::Result<MemoryRecord> {
 
 #[async_trait::async_trait]
 impl StorageBackend for DuckDbStorage {
+    fn backend_name(&self) -> &'static str {
+        "duckdb"
+    }
+
     async fn insert_memory(&self, record: &MemoryRecord) -> Result<()> {
         let conn = self.conn.lock().await;
         let tags_json = serde_json::to_string(&record.tags)?;

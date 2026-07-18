@@ -424,6 +424,32 @@ empty result. Verified by the `MNEMO_TEST_POSTGRES_URL`-gated integration test
 (nearest-in-rank-order + permission filter). The long-term async-`VectorIndex`
 refactor is still tracked in [#99](https://github.com/sattyamjjain/mnemo/issues/99).
 
+### Embedder support matrix — which embedders actually produce semantic results
+
+Semantic recall is only as real as the **embedder** behind it. A backend's vector
+index cannot manufacture meaning from a query that was never embedded — so the
+*supported semantic path is a real embedder + either backend*, and mnemo now
+**fails loud** rather than silently returning empty when the embedder cannot
+produce vectors (v0.5.13).
+
+| Embedder | How it is configured | Semantic / hybrid / `auto` / graph / domain-scoped recall | Lexical / exact recall |
+|---|---|:---:|:---:|
+| **OpenAI** (`OpenAiEmbedding`) | `OPENAI_API_KEY` set | ✅ **supported semantic path** | ✅ |
+| **ONNX, local** (`OnnxEmbedding`) | `MNEMO_ONNX_MODEL_PATH` set + built with `--features onnx` | ✅ **supported semantic path** (fully on-prem) | ✅ |
+| **Deterministic** (`DeterministicEmbedding`) | in-process, offline | ✅ works — but lexical-hashing, **for tests/demos, not production semantics** | ✅ |
+| **No-op** (`NoopEmbedding`, the default when no key/model is configured) | default | ❌ **hard-errors** `EmbedderNotConfigured` | ✅ |
+
+**The supported semantic path is DuckDB (or PostgreSQL) + a real embedder** —
+`OpenAiEmbedding` (HTTP) or, for a fully on-prem deployment, `OnnxEmbedding`
+(local model, `onnx` feature). With no real embedder configured, mnemo runs with
+the no-op embedder, whose query vectors are all-zero; any semantic /
+hybrid (`auto`) / graph / domain-scoped recall then returns a typed
+[`Error::EmbedderNotConfigured`](crates/mnemo-core/src/error.rs) — **never a
+silent empty result set**. Lexical (BM25) and exact/filter recall need no
+embedder and always work. This mirrors the Postgres `BackendUnsupported`
+fail-loud behaviour above: mnemo will not pretend to do semantic recall it cannot
+actually perform.
+
 ## Key Features
 
 - **Hybrid retrieval** — Reciprocal Rank Fusion combining semantic vectors (USearch/pgvector), BM25 keywords (Tantivy), knowledge graph signals, and recency scoring with configurable weights

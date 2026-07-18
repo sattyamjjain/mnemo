@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use mnemo_core::embedding::NoopEmbedding;
+use mnemo_core::embedding::{DeterministicEmbedding, NoopEmbedding};
 use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::model::acl::Permission;
 use mnemo_core::model::delegation::{Delegation, DelegationScope};
@@ -27,6 +27,25 @@ use mnemo_core::query::share::ShareRequest;
 use mnemo_core::storage::duckdb::DuckDbStorage;
 
 fn create_engine(agent_id: &str) -> Arc<MnemoEngine> {
+    let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
+    let index = Arc::new(UsearchIndex::new(128).unwrap());
+    let embedding = Arc::new(DeterministicEmbedding::new(128));
+
+    Arc::new(MnemoEngine::new(
+        storage,
+        index,
+        embedding,
+        agent_id.to_string(),
+        None,
+    ))
+}
+
+/// Engine backed by the no-op embedder — for tests that deliberately exercise
+/// the *degenerate* embedding case (e.g. conflict detection over identical
+/// zero-vectors, similarity = 1.0). Such tests call `detect_conflicts`
+/// directly, not the recall path, so they are unaffected by the v0.5.13
+/// semantic-recall embedder guard.
+fn create_engine_noop(agent_id: &str) -> Arc<MnemoEngine> {
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(128).unwrap());
     let embedding = Arc::new(NoopEmbedding::new(128));
@@ -1561,7 +1580,7 @@ async fn test_trace_causality() {
 
 #[tokio::test]
 async fn test_conflict_detection() {
-    let engine = create_engine("agent-1");
+    let engine = create_engine_noop("agent-1");
 
     // Create two very similar memories (noop embedding → identical vectors)
     engine
@@ -1621,7 +1640,7 @@ async fn test_conflict_detection() {
 
 #[tokio::test]
 async fn test_conflict_resolution_keep_newest() {
-    let engine = create_engine("agent-1");
+    let engine = create_engine_noop("agent-1");
 
     let mem_a = engine
         .remember(RememberRequest {
@@ -2099,7 +2118,7 @@ async fn test_permission_safe_ann() {
     // verify 0 leakage from agent-2.
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(128).unwrap());
-    let embedding = Arc::new(NoopEmbedding::new(128));
+    let embedding = Arc::new(DeterministicEmbedding::new(128));
 
     let engine = Arc::new(MnemoEngine::new(
         storage.clone(),
@@ -2452,7 +2471,7 @@ async fn test_event_integrity_verification() {
 async fn test_evidence_weighted_resolution() {
     use mnemo_core::model::memory::SourceType;
 
-    let engine = create_engine("agent-1");
+    let engine = create_engine_noop("agent-1");
 
     // Create memory from ToolOutput (high reliability)
     let mem_a = engine
@@ -3413,7 +3432,7 @@ async fn test_recall_explain_populates_score_breakdown() {
 
     let storage = Arc::new(mnemo_core::storage::duckdb::DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(mnemo_core::index::usearch::UsearchIndex::new(128).unwrap());
-    let embedding = Arc::new(mnemo_core::embedding::NoopEmbedding::new(128));
+    let embedding = Arc::new(mnemo_core::embedding::DeterministicEmbedding::new(128));
     let full_text = Arc::new(TantivyFullTextIndex::open_in_memory().unwrap());
     let engine = Arc::new(
         MnemoEngine::new(storage, index, embedding, "explain-agent".to_string(), None)
@@ -3586,7 +3605,7 @@ async fn test_zscore_outlier_catches_semantic_drift() {
 
     let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
     let index = Arc::new(UsearchIndex::new(16).unwrap());
-    let embedding = Arc::new(NoopEmbedding::new(16));
+    let embedding = Arc::new(DeterministicEmbedding::new(16));
     let engine = Arc::new(
         MnemoEngine::new(
             storage.clone(),

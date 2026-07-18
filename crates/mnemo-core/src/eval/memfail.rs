@@ -632,7 +632,7 @@ async fn list_active(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedding::NoopEmbedding;
+    use crate::embedding::DeterministicEmbedding;
     use crate::index::usearch::UsearchIndex;
     use crate::search::tantivy_index::TantivyFullTextIndex;
     use crate::storage::duckdb::DuckDbStorage;
@@ -641,7 +641,7 @@ mod tests {
     fn build_engine() -> MnemoEngine {
         let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
         let index = Arc::new(UsearchIndex::new(3).unwrap());
-        let embedding = Arc::new(NoopEmbedding::new(3));
+        let embedding = Arc::new(DeterministicEmbedding::new(3));
         let ft = Arc::new(TantivyFullTextIndex::open_in_memory().unwrap());
         MnemoEngine::new(storage, index, embedding, "memfail-agent".into(), None).with_full_text(ft)
     }

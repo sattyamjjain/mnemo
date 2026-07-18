@@ -4,6 +4,48 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-07-18) — v0.5.13, semantic recall fails loud instead of silent-empty
+
+Workspace `0.5.12 → 0.5.13` (patch bump — a **correctness/safety** fix to the
+recall path; no dependency change).
+
+- **fix(recall): semantic recall hard-errors when no real embedder is configured,
+  instead of silently returning empty.** With the no-op embedder every query
+  embeds to an all-zero vector, so `strategy` ∈ {`semantic`, `hybrid`, `auto`,
+  `graph`, `domain_scoped`} (and the typed `RetrievalMode` equivalents) would feed
+  a degenerate vector to the index and silently return an empty or meaningless
+  result set. These paths now return a typed
+  [`Error::EmbedderNotConfigured { requested, backend }`](crates/mnemo-core/src/error.rs)
+  — *"semantic recall requires a configured embedder (OpenAI HTTP or local ONNX);
+  the noop embedder returns no vectors — refusing to silently return empty."*
+  - **The non-semantic path is untouched.** `strategy="lexical"` (BM25) and
+    `strategy="exact"` (filter) need no embedder and keep working; `remember` /
+    CRUD / ACL / audit are unaffected.
+  - **Mechanism.** A new default trait method `EmbeddingProvider::is_semantic_capable()`
+    (`true` for OpenAI/ONNX/any real provider; overridden to `false` on
+    `NoopEmbedding`) drives a guard in
+    [`recall::execute`](crates/mnemo-core/src/query/recall.rs) that fires before the
+    query is embedded. `StorageBackend::backend_name()` (`"duckdb"` / `"postgres"`)
+    names the backend in the error. This complements the existing Postgres
+    `Error::BackendUnsupported` fail-loud (an *unwired index*); this fix covers an
+    *absent embedder* on either backend.
+  - **New public `DeterministicEmbedding`** — a deterministic, offline
+    bag-of-words hashing embedder (real, non-zero vectors; `is_semantic_capable()`)
+    for tests, examples, and demos that need the vector path without an API key or
+    model. **Not** a production-quality semantic model.
+  - **Docs.** README gains a **supported-embedder matrix** (which embedders
+    actually produce semantic results) naming DuckDB (or PostgreSQL) **+ a real
+    embedder** (OpenAI or on-prem ONNX) as the supported semantic path, and the
+    no-op default as a hard-error.
+  - **Tests.** New [`crates/mnemo-core/tests/semantic_recall_hard_error.rs`](crates/mnemo-core/tests/semantic_recall_hard_error.rs)
+    proves (a) semantic recall under the no-op embedder → typed error, (b) lexical
+    recall under the no-op embedder → still returns results, (c) semantic recall
+    with a real embedder → returns results. Existing Noop-based suites that
+    exercised recall were migrated to `DeterministicEmbedding` (or, for the
+    evidence-scorer retrieval-fallback suites, to `strategy="lexical"`); the
+    conflict-detection tests that intentionally use degenerate identical vectors
+    keep a no-op engine.
+
 ### Added (2026-07-16) — Art.12 audit-log tamper-evidence benchmark + `mnemo-db` defensive crate
 
 - **feat(compliance): adversarial audit-log tamper-evidence benchmark.** New
@@ -393,14 +435,18 @@ prior `v0.5.11` tag already points at the poisoning cut (`3d21e63`) and predates
 It also carries the **2026-07-13 contributor-IP + regulated-AI README wedge**
 governance change above (DCO + CLA + PR template + README tagline) — a
 docs/governance-only change landing via branch `docs/cla-and-positioning`
-(push-to-`main`, **no version bump**, no crate republish). Finally it carries the
+(push-to-`main`, **no version bump**, no crate republish). It also carries the
 **2026-07-16 Art.12 audit-log tamper-evidence benchmark + `mnemo-db` defensive
 crate** change above — landing via branch
 `feat/audit-log-tamper-evidence-bench` (push-to-`main`, **no version bump**); the
 new `mnemo-db` pointer crate is published at the current `0.5.12` via
 `release-crate.yml`'s idempotent loop (the four compliance-line crates 404-gate
-as already-present). Earlier cuts `v0.5.4` (`04a1145`) through `v0.5.10` remain
-documented in the sections below.
+as already-present). Finally it carries the **2026-07-18 semantic-recall
+fail-loud correctness fix** above — landing via branch
+`fix/semantic-recall-hard-error` (push-to-`main`, workspace bump
+`0.5.12 → 0.5.13`); this is an engine (`mnemo-core`) change, so a future `v0.5.13`
+tag would republish the compliance line via `release-crate.yml`. Earlier cuts
+`v0.5.4` (`04a1145`) through `v0.5.10` remain documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 

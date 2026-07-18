@@ -16,7 +16,7 @@ use mnemo_amp::{
     AmpEnvelope, AmpMemoryType, AmpOp, AmpRouter, ClosureApprove, MemoryStore, MnemoAmpStore,
     max_fuse, rrf_fuse,
 };
-use mnemo_core::embedding::NoopEmbedding;
+use mnemo_core::embedding::DeterministicEmbedding;
 use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::search::tantivy_index::TantivyFullTextIndex;
@@ -27,7 +27,7 @@ const AGENT: &str = "amp-conformance-agent";
 fn build_engine() -> Arc<MnemoEngine> {
     let storage = Arc::new(DuckDbStorage::open_in_memory().expect("duckdb open"));
     let index = Arc::new(UsearchIndex::new(3).expect("usearch new"));
-    let embedding = Arc::new(NoopEmbedding::new(3));
+    let embedding = Arc::new(DeterministicEmbedding::new(3));
     let ft = Arc::new(TantivyFullTextIndex::open_in_memory().expect("tantivy open"));
     Arc::new(
         MnemoEngine::new(storage, index, embedding, AGENT.to_string(), None).with_full_text(ft),

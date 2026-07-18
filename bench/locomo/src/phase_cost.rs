@@ -281,9 +281,14 @@ async fn run_one(scenario: &Scenario, opts: &PhaseOpts) -> ScenarioPhases {
     }
     let construction_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    // ---- RETRIEVAL: read-path (ANN + BM25 + graph + RRF). Token cost
-    // here is just the query embed; the assembled context is charged to
-    // generation, matching the paper's phase boundary.
+    // ---- RETRIEVAL: read-path token attribution. Token cost here is just
+    // the query embed; the assembled context is charged to generation,
+    // matching the paper's phase boundary. This bench uses `NoopEmbedding`
+    // (vector lane degenerate by design), so it drives the **lexical (BM25)**
+    // lane — the `NEEDLE-…` query tokens match the seeded facts. (The
+    // vector-dependent `auto`/hybrid path now hard-errors under a no-op
+    // embedder, v0.5.13; measuring the full ANN+RRF path would need a real
+    // embedder.)
     let mut retrieval_tokens: u64 = 0;
     let mut context_tokens: u64 = 0;
     let started = Instant::now();
@@ -293,7 +298,7 @@ async fn run_one(scenario: &Scenario, opts: &PhaseOpts) -> ScenarioPhases {
         retrieval_tokens += est_tokens(&query);
         let mut req = RecallRequest::new(query.clone());
         req.limit = Some(opts.recall_limit);
-        req.strategy = Some("auto".to_string());
+        req.strategy = Some("lexical".to_string());
         let resp = engine.recall(req).await.expect("recall");
         // Assembled-context tokens = the recalled records the downstream
         // generator would be handed, plus the query itself.
