@@ -1,0 +1,16 @@
+[package]
+name = "mnemo-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+description = "Name-reservation pointer crate for the mnemo memory database. mnemo ships as focused crates — install `mnemo-core` (engine) and `mnemo-mcp` (MCP server). This crate is intentionally empty."
+keywords = ["mnemo", "memory", "database", "agents", "mcp"]
+categories = ["database-implementations"]
+
+# Intentionally dependency-free: a defensive stub must never drag the whole
+# workspace into its publish closure. It only carries docs pointing at the real
+# crates.
+[dependencies]

@@ -4,6 +4,44 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-16) — Art.12 audit-log tamper-evidence benchmark + `mnemo-db` defensive crate
+
+- **feat(compliance): adversarial audit-log tamper-evidence benchmark.** New
+  `publish = false` bench [`bench/audit_tamper`](bench/audit_tamper) builds a
+  **real** `agent_events` hash chain through the shipped `remember()` path,
+  exports it, and applies four post-hoc attacks — **delete** (mid-chain),
+  **reorder** (swap two events), **forge** (integrity field `content_hash`), and
+  **truncate** (tail) — scoring each with mnemo's shipped `verify_event_chain`
+  (the verifier `verify_event_integrity` runs). Reports a **detection rate** with
+  a **Wilson 95%** interval per attack, plus a **benign control**. Result
+  (deterministic, offline, byte-stable): delete / reorder / forge-`content_hash`
+  each **200/200 (100.0%)** [Wilson 95% 98.1%–100.0%]; **0/72** benign
+  false-positives; and **honest 0/200** on payload-only forge + tail truncation —
+  two disclosed gaps whose shipped mitigations (memory-record content is
+  hash-bound; Postgres `prevent_event_modification` trigger; signed checkpoints)
+  are named, not oversold. Contract pinned by `bench/audit_tamper/tests/tamper.rs`.
+  - Repro: `cargo run --release -p mnemo-audit-tamper-bench` →
+    [`bench/audit_tamper/results/audit_tamper.md`](bench/audit_tamper/results/audit_tamper.md).
+  - Narrative:
+    [`docs/benchmarks/audit-log-tamper-evidence.md`](docs/benchmarks/audit-log-tamper-evidence.md)
+    (cites EU AI Act Art.12 record-keeping, Art.19(1)/Art.26(6) ≥6-month
+    retention, and the Art.99(4) **€15M / 3%-of-turnover** penalty tier).
+  - Wired into [`docs/POSITIONING.md`](docs/POSITIONING.md) as the Art.12
+    tamper-evidence proof point (new thesis-table row + repro command + penalty
+    citation).
+- **chore(trust): reserve the `mnemo-db` crate name on crates.io.** New
+  dependency-free, `publish = true` pointer crate
+  [`crates/mnemo-db`](crates/mnemo-db) whose docs redirect Rust users to
+  `mnemo-core` + `mnemo-mcp` (the unqualified `mnemo` name on crates.io is an
+  unrelated project). It is explicitly **distinct from the PyPI `mnemo-db`
+  package**, which is the real Python SDK. `mnemo-db` is removed from the
+  README-guard `KNOWN_NON_CRATE` allowlist (it is now a real workspace member),
+  and [`release-crate.yml`](.github/workflows/release-crate.yml) gains it as a
+  leaf in the gate + coordinated dry-run + idempotent publish loop — so on an
+  unchanged workspace version the four compliance-line crates 404-gate and only
+  `mnemo-db` is newly published. **No version bump** (docs + bench + a new
+  never-before-published crate published at the current `0.5.12`).
+
 ### Docs (2026-07-13) — contributor IP + regulated-AI README wedge
 
 Docs/governance only; **no version bump** (no engine, protocol, crate, or
@@ -352,11 +390,17 @@ branch `chore/crates-io-0.5.x`, workspace bump `0.5.11 → 0.5.12`, tagged
 `mnemo-core` → `mnemo-attention-state` → `mnemo-compliance` → `mnemo-mcp`). The
 prior `v0.5.11` tag already points at the poisoning cut (`3d21e63`) and predates
 `release-crate.yml`, so a fresh `v0.5.12` tag is what carries the workflow.
-Finally it carries the **2026-07-13 contributor-IP + regulated-AI README wedge**
+It also carries the **2026-07-13 contributor-IP + regulated-AI README wedge**
 governance change above (DCO + CLA + PR template + README tagline) — a
 docs/governance-only change landing via branch `docs/cla-and-positioning`
-(push-to-`main`, **no version bump**, no crate republish). Earlier cuts `v0.5.4`
-(`04a1145`) through `v0.5.10` remain documented in the sections below.
+(push-to-`main`, **no version bump**, no crate republish). Finally it carries the
+**2026-07-16 Art.12 audit-log tamper-evidence benchmark + `mnemo-db` defensive
+crate** change above — landing via branch
+`feat/audit-log-tamper-evidence-bench` (push-to-`main`, **no version bump**); the
+new `mnemo-db` pointer crate is published at the current `0.5.12` via
+`release-crate.yml`'s idempotent loop (the four compliance-line crates 404-gate
+as already-present). Earlier cuts `v0.5.4` (`04a1145`) through `v0.5.10` remain
+documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 

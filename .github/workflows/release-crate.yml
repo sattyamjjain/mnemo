@@ -12,6 +12,12 @@ name: release-crate
 # introduced after the last 0.4.4 crates.io publish, so it must be published for
 # `mnemo-mcp` to resolve.
 #
+# Plus a fifth leaf crate, `mnemo-db` — a dependency-free name-reservation
+# pointer that redirects Rust users to mnemo-core/mnemo-mcp (the unqualified
+# `mnemo` name on crates.io is an unrelated project). It has no internal deps, so
+# it publishes independently; on an unchanged workspace version the four crates
+# above 404-gate as already-present and only mnemo-db is newly published.
+#
 # Why a separate, tag-gated workflow (vs. cargo-publish.yml's push-to-main run):
 #   - It gates on ONLY the publish closure, so the pre-existing golem-wit WASM
 #     link failure (which reddens the workspace-wide build in cargo-publish.yml)
@@ -64,7 +70,7 @@ jobs:
         run: |
           cargo clippy --all-targets \
             -p mnemo-core -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp -- -D warnings
+            -p mnemo-compliance -p mnemo-mcp -p mnemo-db -- -D warnings
       # Full closure test suite. The recall-QUALITY benchmark
       # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
       # degrade" assertion now accepts the floor case where the approximate HNSW
@@ -75,7 +81,7 @@ jobs:
         run: |
           cargo test \
             -p mnemo-core -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp
+            -p mnemo-compliance -p mnemo-mcp -p mnemo-db
 
   publish:
     name: Publish to crates.io
@@ -102,7 +108,7 @@ jobs:
         run: |
           cargo publish --dry-run \
             -p mnemo-core -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp
+            -p mnemo-compliance -p mnemo-mcp -p mnemo-db
 
       # --- Real publish, dependency order -----------------------------------
       - name: Publish (dependency order, idempotent)
@@ -115,7 +121,11 @@ jobs:
           echo "workspace version: ${ver}"
           # crates.io's API rejects requests without a User-Agent (403).
           UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
-          crates="mnemo-core mnemo-attention-state mnemo-compliance mnemo-mcp"
+          # mnemo-db is a leaf name-reservation pointer (no internal deps); it
+          # publishes last and needs no propagation wait. When the workspace
+          # version is unchanged, the four compliance-line crates 404-gate as
+          # already-present and only mnemo-db publishes.
+          crates="mnemo-core mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-db"
           for crate in $crates; do
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
               "https://crates.io/api/v1/crates/${crate}/${ver}")
@@ -137,7 +147,9 @@ jobs:
             echo "::endgroup::"
             # Let the sparse index propagate before publishing a crate that
             # depends on the one just uploaded (verify build resolves it live).
-            if [ "${crate}" != "mnemo-mcp" ]; then
+            # No wait after the terminal crates (mnemo-mcp / the leaf mnemo-db) —
+            # nothing published later depends on them.
+            if [ "${crate}" != "mnemo-mcp" ] && [ "${crate}" != "mnemo-db" ]; then
               echo "Waiting 60s for crates.io index propagation"
               sleep 60
             fi

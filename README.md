@@ -56,6 +56,13 @@ cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 ```
 
+> **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
+> name on crates.io is an unrelated project. Install `mnemo-core` +
+> `mnemo-mcp` as above. The [`mnemo-db`](https://crates.io/crates/mnemo-db)
+> crate on crates.io is a defensive **name-reservation pointer** that ships no
+> code and simply redirects here (distinct from the PyPI `mnemo-db` package,
+> which *is* the real Python SDK — see [Python](#python) below).
+
 The wedge — a memory-write log an auditor can verify **offline, without trusting
 the store** — is the [`mnemo-core`](https://crates.io/crates/mnemo-core)
 hash-chain verify API:

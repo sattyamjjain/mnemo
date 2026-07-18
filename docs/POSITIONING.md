@@ -24,11 +24,14 @@ That axis is not marketing — it is four already-shipped, reproducible benchmar
 |---|---|---|
 | **Recall quality** (mnemo's own, honest) | LongMemEval_M, real embedder: **semantic recall@1 0.739, MRR 0.805, ~89% fewer context tokens** vs full history | `cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench` |
 | **Tamper-evident audit log** (EU AI Act Art.12) | **100% single-byte-mutation detection over 256 trials, Wilson 95% [98.5%, 100.0%]**; append-only retention verified; recomputable SHA-256 crypto vector | `cargo run --release -p mnemo-audit-conformance-bench` |
+| **Adversarial audit-log tamper-evidence** (EU AI Act Art.12) | **delete / reorder / forge-integrity-field each 100% detected over 200 trials, Wilson 95% [98.1%, 100.0%]**; 0/72 benign false-positives; honest **0%** on payload-only forge + tail truncation (disclosed gaps, shipped mitigations named) | `cargo run --release -p mnemo-audit-tamper-bench` |
 | **Memory-poisoning defense delta** (OWASP ASI06) | MINJA **100% → 0% (+100 pts)**; AgentPoison **100% → 3.5% (+96.5 pts)**; **benign control 0/200 false-quarantine** | `cargo run --release -p mnemo-poisoning-bench` |
 | **Reproducible-by-disclosure LoCoMo** | single-hop retrieval **recall@1 24.4% [Wilson 95% 14.2%, 38.7%]**, byte-stable, tabled against vendors' cited claims | `cargo run --release -p mnemo-locomo-bench --bin reproduction_bench` |
 
 Sources: [`bench/RESULTS.md`](../bench/RESULTS.md),
 [`bench/audit_conformance/results/conformance.md`](../bench/audit_conformance/results/conformance.md),
+[`bench/audit_tamper/results/audit_tamper.md`](../bench/audit_tamper/results/audit_tamper.md)
+([narrative](benchmarks/audit-log-tamper-evidence.md)),
 [`bench/poisoning/results/poisoning_2026-07-07.md`](../bench/poisoning/results/poisoning_2026-07-07.md),
 [`bench/locomo/results/reproduction_2026-07-06.md`](../bench/locomo/results/reproduction_2026-07-06.md).
 
@@ -95,10 +98,17 @@ procurement question, not a someday-nice-to-have:
 
 - **EU AI Act — Art.12 record-keeping, high-risk obligations apply 2026-08-02.**
   Regulation (EU) 2024/1689 phases in high-risk-system obligations (Art.12
-  automatic event logging among them) on **2 August 2026** (Art.113). *Hedge:* a
-  **May-2026 Digital Omnibus** simplification proposal may move several high-risk
-  application dates toward **December 2027** — a proposal, not enacted law.
-  Source & per-clause mapping: [`docs/compliance/eu-ai-act-art12.md`](compliance/eu-ai-act-art12.md).
+  automatic event logging among them) on **2 August 2026** (Art.113), with
+  automatic-log **retention of at least six months** (Art.19(1) provider,
+  Art.26(6) deployer). Breach of these provider/deployer obligations sits in the
+  Art.99(4) penalty tier: **up to €15,000,000 or 3% of total worldwide annual
+  turnover, whichever is higher.** That is the exposure a tamper-evident log
+  offsets — proven by the [adversarial tamper-evidence bench](benchmarks/audit-log-tamper-evidence.md)
+  (delete / reorder / forge-integrity-field each 100% detected, honest about the
+  two disclosed gaps). *Hedge:* a **May-2026 Digital Omnibus** simplification
+  proposal may move several high-risk application dates toward **December 2027** —
+  a proposal, not enacted law. Source & per-clause mapping:
+  [`docs/compliance/eu-ai-act-art12.md`](compliance/eu-ai-act-art12.md).
 - **India DPDP — Data-Fiduciary obligations, working commencement 2027-05-13.**
   The Digital Personal Data Protection Act, 2023 + DPDP Rules, 2025 phase in the
   substantive security-safeguard, retention, and record-keeping duties on a later
@@ -111,7 +121,8 @@ procurement question, not a someday-nice-to-have:
   quarantine defense is measured against it. Source & mapping:
   [`docs/security/ASI06.md`](security/ASI06.md).
 
-Each signal maps to a shipped bench: Art.12 → the audit-conformance report,
+Each signal maps to a shipped bench: Art.12 → the audit-conformance report plus
+the adversarial [tamper-evidence bench](benchmarks/audit-log-tamper-evidence.md),
 ASI06 → the poisoning defense delta, DPDP → the same append-only,
 tamper-evident, encrypted log plus `Redact`/`HardDelete` erasure primitives.
 
@@ -120,6 +131,9 @@ tamper-evident, encrypted log plus `Redact`/`HardDelete` erasure primitives.
 ```bash
 # Tamper-evident audit log (EU AI Act Art.12) — byte-stable report + crypto vector
 cargo run --release -p mnemo-audit-conformance-bench
+
+# Adversarial audit-log tamper-evidence (EU AI Act Art.12) — delete/reorder/forge/truncate, Wilson-95
+cargo run --release -p mnemo-audit-tamper-bench
 
 # Memory-poisoning defense delta (OWASP ASI06) — ASR ON vs OFF, Wilson-95, benign FPR
 cargo run --release -p mnemo-poisoning-bench

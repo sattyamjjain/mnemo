@@ -1,0 +1,74 @@
+{
+  "attacks": [
+    {
+      "caught_by_chain": true,
+      "detected": 200,
+      "n": 200,
+      "name": "delete (mid-chain)",
+      "note": "the successor's prev_hash no longer links to its new predecessor; verifier names the first orphaned event",
+      "rate_pct": 100.0,
+      "threat": "remove one event from the middle of the log",
+      "wilson95_pct": [
+        98.1,
+        100.0
+      ]
+    },
+    {
+      "caught_by_chain": true,
+      "detected": 200,
+      "n": 200,
+      "name": "reorder (swap two events)",
+      "note": "both swapped positions' prev_hash linkage break",
+      "rate_pct": 100.0,
+      "threat": "swap two adjacent events to change ordering",
+      "wilson95_pct": [
+        98.1,
+        100.0
+      ]
+    },
+    {
+      "caught_by_chain": true,
+      "detected": 200,
+      "n": 200,
+      "name": "forge (integrity field content_hash)",
+      "note": "tampering the hashed field breaks the successor's prev_hash",
+      "rate_pct": 100.0,
+      "threat": "rewrite the hashed content_hash of one event",
+      "wilson95_pct": [
+        98.1,
+        100.0
+      ]
+    },
+    {
+      "caught_by_chain": false,
+      "detected": 0,
+      "n": 200,
+      "name": "forge (payload only)",
+      "note": "GAP: verify_event_chain does not recompute content_hash from the payload, so a payload-only rewrite is not caught. Mitigations mnemo ships: the memory record's content is hash-bound (verify_chain recomputes it); Postgres' prevent_event_modification trigger blocks in-place UPDATE",
+      "rate_pct": 0.0,
+      "threat": "rewrite an event's payload JSON, leaving content_hash intact",
+      "wilson95_pct": [
+        0.0,
+        1.9
+      ]
+    },
+    {
+      "caught_by_chain": false,
+      "detected": 0,
+      "n": 200,
+      "name": "truncate (tail)",
+      "note": "GAP: the surviving prefix is a valid chain; a pure verifier has no expected length/head anchor. Mitigations mnemo ships: a signed checkpoint records the expected latest hash + count; Postgres append-only trigger blocks tail deletion",
+      "rate_pct": 0.0,
+      "threat": "drop the last k events from the log",
+      "wilson95_pct": [
+        0.0,
+        1.9
+      ]
+    }
+  ],
+  "benign_false_positives": 0,
+  "benign_n": 72,
+  "chain_len": 64,
+  "date": "2026-07-16",
+  "trials": 200
+}

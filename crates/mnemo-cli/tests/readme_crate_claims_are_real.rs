@@ -28,10 +28,11 @@ use std::path::{Path, PathBuf};
 /// `mnemo-*` tokens that appear in `README.md` but are deliberately NOT
 /// workspace crates. Every entry carries the reason it is legitimate.
 const KNOWN_NON_CRATE: &[(&str, &str)] = &[
-    (
-        "mnemo-db",
-        "PyPI distribution name for the Python bindings (not a Rust crate)",
-    ),
+    // NOTE: `mnemo-db` is intentionally NOT listed here. It is now a real
+    // (name-reservation pointer) workspace crate published to crates.io, so the
+    // `allowlist_has_no_stale_entries` guard requires it be absent from this
+    // list. The README's `pip install mnemo-db` lines still refer to the
+    // separate PyPI distribution of the same name — a different registry.
     (
         "mnemo-sdk",
         "npm package short name (published as @mndfreek/mnemo-sdk)",
