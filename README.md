@@ -450,6 +450,35 @@ embedder and always work. This mirrors the Postgres `BackendUnsupported`
 fail-loud behaviour above: mnemo will not pretend to do semantic recall it cannot
 actually perform.
 
+### Compliance profiles — processing-log retention
+
+Same posture, applied to **retention**: mnemo's `agent_events` log is append-only
+by construction (no `forget` / TTL / decay / cold-tier path removes an event —
+each *appends* one), so [`mnemo-compliance`](https://crates.io/crates/mnemo-compliance)
+ships a [`RetentionProfile`](crates/mnemo-compliance/src/retention.rs) that
+**verifies** a minimum retention floor held across every deletion path, and fails
+loud (`ComplianceError::RetentionFloorUnsupported`, naming the backend) if a
+backend cannot guarantee it. These are **conformance checks for** the obligation
+named — **not** a certification or a claim of compliance.
+
+| Profile | Obligation it maps to | Retention floor | Commencement | Primary source |
+|---|---|---:|---|---|
+| **India DPDP Rules 2025** (`dpdp`) | Retain personal data, **traffic data and processing logs** (Seventh Schedule) | **365 days** | 2027-05-13 (data-fiduciary obligations; Gazette G.S.R. 846(E), 2025-11-13) | [MeitY DPDP Rules 2025](https://www.meity.gov.in/documents/act-and-policies/digital-personal-data-protection-rules-2025-gDOxUjMtQWa) |
+| **EU AI Act Art.19 / 26(6)** (`eu-ai-act-art19`) | Deployers keep automatically-generated logs ≥ 6 months | **180 days** | 2027-12-02 (stand-alone Annex III) / 2028-08-02 (Annex I embedded) per the Digital Omnibus | [Reg (EU) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj) · [Council, 2026-06-29](https://www.consilium.europa.eu/en/press/press-releases/2026/06/29/artificial-intelligence-council-gives-final-green-light-to-simplify-and-streamline-rules/) |
+| **HIPAA §164.312(b)** (`hipaa`) | Audit controls; documentation retained six years (§164.316(b)(2)) | **2190 days** (6 yr) | in force | [eCFR 45 CFR §164.312](https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312) |
+
+Run the reproducible conformance harness (every deletion path × the floor, byte-stable artifact):
+
+```bash
+cargo run --release -p mnemo-retention-conformance-bench                       # DPDP, 365-day floor
+cargo run --release -p mnemo-retention-conformance-bench -- --profile eu-ai-act-art19
+mnemo compliance retention --profile dpdp                                      # print the profile + backend gate
+```
+
+Dates are provisional and depend on the final notified/enacted texts — verify
+against the primary sources before relying on them. Why this matters, and how
+mnemo compares on the compliance-audit axis: **[docs/POSITIONING.md](docs/POSITIONING.md)**.
+
 ## Key Features
 
 - **Hybrid retrieval** — Reciprocal Rank Fusion combining semantic vectors (USearch/pgvector), BM25 keywords (Tantivy), knowledge graph signals, and recency scoring with configurable weights

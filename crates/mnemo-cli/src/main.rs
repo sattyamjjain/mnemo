@@ -120,6 +120,33 @@ enum Command {
     /// no managed-cloud default.
     #[command(subcommand)]
     Bench(BenchCommand),
+    /// Compliance primitives (mnemo-compliance).
+    ///
+    /// Currently exposes `retention`, which prints a processing-log
+    /// retention-conformance profile (DPDP Rules 2025 / EU AI Act Art.19 /
+    /// HIPAA §164.312(b)) and checks that the active storage backend can
+    /// honour its append-only retention floor — failing loud with a typed
+    /// error if it cannot.
+    #[command(subcommand)]
+    Compliance(ComplianceCommand),
+}
+
+#[derive(Subcommand)]
+enum ComplianceCommand {
+    /// Print a retention-conformance profile and gate it against the active
+    /// storage backend's append-only guarantee.
+    Retention(RetentionArgs),
+}
+
+#[derive(clap::Args)]
+struct RetentionArgs {
+    /// Which obligation profile to load.
+    #[arg(long, value_parser = ["dpdp", "eu-ai-act-art19", "hipaa"], default_value = "dpdp")]
+    profile: String,
+    /// Override the retention floor in days (defaults to the obligation's
+    /// legal minimum). An operator may set a *longer* floor for its policy.
+    #[arg(long)]
+    floor_days: Option<u32>,
 }
 
 #[derive(Subcommand)]
@@ -225,6 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::McpServer(args)) => return run_mcp_server(&cli, args).await,
         Some(Command::Eval(args)) => return run_eval(&cli, args).await,
         Some(Command::Bench(sub)) => return run_bench(sub).await,
+        Some(Command::Compliance(sub)) => return run_compliance(sub).await,
         None => {}
     }
 
@@ -962,6 +990,51 @@ async fn run_bench(sub: &BenchCommand) -> Result<(), Box<dyn std::error::Error>>
     match sub {
         BenchCommand::Embeddings(args) => run_bench_embeddings(args).await,
     }
+}
+
+async fn run_compliance(sub: &ComplianceCommand) -> Result<(), Box<dyn std::error::Error>> {
+    match sub {
+        ComplianceCommand::Retention(args) => run_compliance_retention(args).await,
+    }
+}
+
+async fn run_compliance_retention(args: &RetentionArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use mnemo_compliance::RetentionProfile;
+
+    let mut profile = match args.profile.as_str() {
+        "dpdp" => RetentionProfile::dpdp_rules(),
+        "eu-ai-act-art19" => RetentionProfile::eu_ai_act_art19(),
+        "hipaa" => RetentionProfile::hipaa_164_312b(),
+        other => return Err(format!("unknown retention profile '{other}'").into()),
+    };
+    if let Some(days) = args.floor_days {
+        profile = profile.with_floor_days(days);
+    }
+
+    // Gate the floor against the active backend's append-only guarantee. The
+    // default embedded backend is DuckDB, whose `agent_events` log is
+    // append-only, so this passes; a backend that could not honour the floor
+    // would surface `ComplianceError::RetentionFloorUnsupported` naming itself.
+    let storage = DuckDbStorage::open_in_memory()?;
+    let backend = storage.backend_name();
+    let backend_ok = profile
+        .assert_backend_can_retain(backend, storage.events_are_append_only())
+        .is_ok();
+
+    let out = serde_json::json!({
+        "profile": profile.name,
+        "obligation": profile.obligation,
+        "floor_days": profile.floor_days,
+        "commencement": profile.commencement,
+        "source_url": profile.source_url,
+        "backend": backend,
+        "backend_can_honour_floor": backend_ok,
+    });
+    println!("{}", serde_json::to_string_pretty(&out)?);
+
+    // Fail loud (non-zero exit) if the backend cannot honour the floor.
+    profile.assert_backend_can_retain(backend, storage.events_are_append_only())?;
+    Ok(())
 }
 
 async fn run_bench_embeddings(

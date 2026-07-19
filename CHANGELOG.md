@@ -4,6 +4,53 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-19) — v0.5.14, DPDP Rules processing-log retention-conformance profile
+
+Workspace `0.5.13 → 0.5.14` (patch bump — an additive `mnemo-compliance` surface
++ a `StorageBackend` capability method + a CLI command + a bench; no breaking
+API change).
+
+- **feat(compliance): processing-log retention-conformance profiles.** New
+  [`mnemo_compliance::RetentionProfile`](crates/mnemo-compliance/src/retention.rs)
+  expresses a per-obligation retention **floor** (configurable via
+  `with_floor_days`) and *verifies* — over before/after `AgentEvent` snapshots —
+  that no deletion / compaction / cold-tier path dropped or rewrote a log row
+  inside the floor, and that **traffic/processing metadata** (DPDP names "personal
+  data, traffic data and logs" separately) was retained. Defaults:
+  **DPDP Rules 2025 → 365 days**, **EU AI Act Art.19/26(6) → 180 days**,
+  **HIPAA §164.312(b)/§164.316(b)(2) → six years**. Matches the pure-function-over-
+  `&[AgentEvent]` shape of the existing Art.12 `export_audit_log` surface.
+  - **Fail loud, never silent.** `RetentionProfile::assert_backend_can_retain`
+    returns the new typed
+    [`ComplianceError::RetentionFloorUnsupported { backend, floor_days }`](crates/mnemo-compliance/src/error.rs)
+    (naming the backend) when the active backend cannot guarantee an append-only
+    log — the same posture as `mnemo_core::error::Error::EmbedderNotConfigured`
+    (v0.5.13). Backed by a new default `StorageBackend::events_are_append_only()`
+    capability (`true` for DuckDB — no `DELETE`/`UPDATE` on `agent_events` — and
+    PostgreSQL — plus a `prevent_event_modification` trigger).
+  - **The enumeration is real.** Every mnemo-core path that could plausibly drop
+    an event — `forget` (SoftDelete/HardDelete/Redact/Archive incl. cold-tier),
+    `run_ttl_sweep`, `run_decay_pass`, `run_consolidation` — edits *memory content*
+    and **appends** an audit event; none removes one. The `agent_events` log is
+    append-only by construction; this is the DPDP *personal data* (erasable) vs
+    *traffic data and logs* (retained) split.
+  - **CLI.** `mnemo compliance retention --profile <dpdp|eu-ai-act-art19|hipaa>
+    [--floor-days N]` prints the profile and gates it against the active backend's
+    append-only guarantee (fails loud on a backend that cannot honour the floor).
+  - **Bench.** New `publish = false`
+    [`bench/retention_conformance`](bench/retention_conformance) drives every
+    deletion path end-to-end and emits a byte-stable machine-readable artifact
+    (profile, floor, one row per path, pass/fail) —
+    [`results/retention_conformance.md`](bench/retention_conformance/results/retention_conformance.md)
+    (+ `.json`). Sibling of `bench/audit_conformance` (tamper-evidence). Contract
+    pinned by `bench/retention_conformance/tests/conformance.rs`.
+  - **Docs.** README gains a **Compliance profiles** table (profile → obligation →
+    floor → commencement → primary-source URL), using conformance-check language
+    only — no certification or compliance claim. DPDP commencement is **2027-05-13**
+    (Gazette G.S.R. 846(E), 2025-11-13; 18-month transition); EU AI Act high-risk
+    dates are **2027-12-02** (stand-alone Annex III) / **2028-08-02** (Annex I
+    embedded) per the Digital Omnibus (Council final green light 2026-06-29).
+
 ### Fixed (2026-07-18) — v0.5.13, semantic recall fails loud instead of silent-empty
 
 Workspace `0.5.12 → 0.5.13` (patch bump — a **correctness/safety** fix to the
@@ -441,12 +488,16 @@ crate** change above — landing via branch
 `feat/audit-log-tamper-evidence-bench` (push-to-`main`, **no version bump**); the
 new `mnemo-db` pointer crate is published at the current `0.5.12` via
 `release-crate.yml`'s idempotent loop (the four compliance-line crates 404-gate
-as already-present). Finally it carries the **2026-07-18 semantic-recall
+as already-present). It also carries the **2026-07-18 semantic-recall
 fail-loud correctness fix** above — landing via branch
 `fix/semantic-recall-hard-error` (push-to-`main`, workspace bump
-`0.5.12 → 0.5.13`); this is an engine (`mnemo-core`) change, so a future `v0.5.13`
-tag would republish the compliance line via `release-crate.yml`. Earlier cuts
-`v0.5.4` (`04a1145`) through `v0.5.10` remain documented in the sections below.
+`0.5.12 → 0.5.13`); this is an engine (`mnemo-core`) change, so a `v0.5.13` tag
+republishes the compliance line via `release-crate.yml`. Finally it carries the
+**2026-07-19 DPDP retention-conformance profile** above — landing via branch
+`feat/dpdp-retention-conformance` (push-to-`main`, workspace bump
+`0.5.13 → 0.5.14`); a `v0.5.14` tag republishes the compliance line
+(`mnemo-core` + `mnemo-compliance` changed). Earlier cuts `v0.5.4` (`04a1145`)
+through `v0.5.10` remain documented in the sections below.
 
 ## [0.5.4] — 2026-06-29
 

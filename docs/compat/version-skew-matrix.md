@@ -1,5 +1,12 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-19 for the **v0.5.14** cut — a **feature** change: a
+> processing-log **retention-conformance profile** in `mnemo-compliance`
+> (`RetentionProfile` — DPDP Rules 2025 / EU AI Act Art.19 / HIPAA §164.312(b)),
+> a `StorageBackend::events_are_append_only()` capability, a `mnemo compliance
+> retention` CLI command, and a `bench/retention_conformance` harness. **No
+> dependency change from v0.5.13**; version pins move 0.5.13 → 0.5.14 in lockstep.
+>
 > Updated 2026-07-18 for the **v0.5.13** cut — a **correctness/safety** change:
 > semantic / hybrid / `auto` / graph / domain-scoped recall now **fail loud**
 > with `Error::EmbedderNotConfigured` when no real embedder is configured (the

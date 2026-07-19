@@ -152,4 +152,16 @@ pub trait StorageBackend: Send + Sync {
     fn backend_name(&self) -> &'static str {
         "unknown"
     }
+
+    /// Whether this backend guarantees the `agent_events` log is **append-only**
+    /// — no code path (and, where enforceable, no schema path) can delete or
+    /// rewrite an event row. Both shipped backends guarantee this: DuckDB has no
+    /// `DELETE`/`UPDATE` on `agent_events`, and PostgreSQL additionally enforces
+    /// it with a `prevent_event_modification` trigger. A retention-conformance
+    /// profile relies on this to promise a retention floor; a backend that
+    /// cannot honour it should override this to `false` so the profile fails
+    /// loud (see `mnemo-compliance`'s `RetentionProfile`). Defaults to `true`.
+    fn events_are_append_only(&self) -> bool {
+        true
+    }
 }

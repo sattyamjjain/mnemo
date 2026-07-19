@@ -1,0 +1,89 @@
+{
+  "date": "2026-07-19",
+  "report": {
+    "backend": "duckdb",
+    "commencement": "2027-05-13",
+    "conformant": true,
+    "findings": [
+      {
+        "detail": "backend 'duckdb' events_are_append_only=true; floor=365 days",
+        "pass": true,
+        "path": "backend_append_only_gate"
+      },
+      {
+        "detail": "28 events before, 29 after (Δ+1); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "forget_soft_delete"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "forget_soft_delete::traffic_metadata"
+      },
+      {
+        "detail": "28 events before, 29 after (Δ+1); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "forget_hard_delete"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "forget_hard_delete::traffic_metadata"
+      },
+      {
+        "detail": "28 events before, 29 after (Δ+1); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "forget_redact"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "forget_redact::traffic_metadata"
+      },
+      {
+        "detail": "28 events before, 29 after (Δ+1); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "forget_archive_cold_tier"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "forget_archive_cold_tier::traffic_metadata"
+      },
+      {
+        "detail": "28 events before, 29 after (Δ+1); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "ttl_sweep_hard_expiry"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "ttl_sweep_hard_expiry::traffic_metadata"
+      },
+      {
+        "detail": "28 events before, 28 after (Δ+0); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "decay_pass"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "decay_pass::traffic_metadata"
+      },
+      {
+        "detail": "28 events before, 28 after (Δ+0); 0 dropped (0 within 365-day floor), 0 rewritten",
+        "pass": true,
+        "path": "consolidation"
+      },
+      {
+        "detail": "4/4 traffic-metadata events retained with fields intact",
+        "pass": true,
+        "path": "consolidation::traffic_metadata"
+      }
+    ],
+    "floor_days": 365,
+    "obligation": "India DPDP Rules 2025 — retain personal data, traffic data and processing logs (Seventh Schedule)",
+    "profile": "dpdp-rules",
+    "source_url": "https://www.meity.gov.in/documents/act-and-policies/digital-personal-data-protection-rules-2025-gDOxUjMtQWa"
+  }
+}

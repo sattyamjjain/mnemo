@@ -29,6 +29,13 @@ cargo add mnemo-core mnemo-compliance
 - **`verify_ndjson_signed`** — verify a signed export offline, without the store.
 - **`HttpConsentManager` / `ConsentState` / `ConsentScope`** — DPDPA-style
   consent records (the *substrate*; notice/grievance live at the app layer).
+- **`RetentionProfile` / `RetentionReport`** — processing-log retention-conformance
+  profiles (DPDP Rules 2025 → 365 days; EU AI Act Art.19/26(6) → 180 days; HIPAA
+  §164.312(b) → six years). Verifies, over before/after event snapshots, that no
+  deletion / compaction / cold-tier path dropped or rewrote a log row inside the
+  floor — and **fails loud** (`ComplianceError::RetentionFloorUnsupported`, naming
+  the backend) when a backend cannot guarantee an append-only log. A **conformance
+  check for** the named obligation — not a certification.
 
 The tamper-evidence these build on is proven — deterministically, offline — by
 the [`audit-conformance`](https://github.com/sattyamjjain/mnemo/tree/main/bench/audit_conformance)

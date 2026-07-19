@@ -31,6 +31,27 @@ pub enum ComplianceError {
     /// Audit-log chain verification detected a tampered row.
     #[error("audit chain broken at record {index}: {reason}")]
     ChainBroken { index: usize, reason: String },
+
+    /// A retention-conformance profile requires an append-only `agent_events`
+    /// log to honour its retention floor, but the active storage backend does
+    /// not guarantee that. Returned — never a silent pass — so a caller sees
+    /// that the floor cannot be met on this backend. Mirrors
+    /// `mnemo_core::error::Error::EmbedderNotConfigured { requested, backend }`.
+    #[error(
+        "retention floor of {floor_days} days cannot be honoured by backend '{backend}': \
+         the backend does not guarantee an append-only agent_events log \
+         (StorageBackend::events_are_append_only() == false)"
+    )]
+    RetentionFloorUnsupported { backend: String, floor_days: u32 },
+
+    /// An event timestamp could not be parsed as RFC3339, so its age relative
+    /// to the retention floor cannot be evaluated.
+    #[error("unparseable event timestamp '{timestamp}' for event {event_id}: {reason}")]
+    UnparseableTimestamp {
+        event_id: String,
+        timestamp: String,
+        reason: String,
+    },
 }
 
 impl From<serde_json::Error> for ComplianceError {
