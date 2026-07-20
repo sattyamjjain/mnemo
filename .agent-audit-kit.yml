@@ -1,0 +1,44 @@
+# AgentAuditKit — static MCP / agent-config security scan for the mnemo repo.
+# Runs in CI via .github/workflows/security.yml (job: agent-audit-kit) and,
+# optionally, locally via pre-commit (.pre-commit-config.yaml).
+# Tool (deterministic, offline, 262 rules): https://github.com/sattyamjjain/agent-audit-kit
+
+# Surface everything low+ in the SARIF report (visible in the Security tab).
+severity: low
+
+# CI gate: block only on `critical` for now (observe-first). Highs/mediums are
+# reported but non-blocking. Tighten to `high` once the Security tab is triaged.
+fail-on: critical
+
+# Rule suppressions — each with a rationale (baseline established by running the
+# scanner against this repo on 2026-07-20, v0.3.52).
+exclude-rules:
+  - AAK-AGENT-001 # "Agent instruction file contains shell command directives".
+    #                Fires 60x on CLAUDE.md, which is this repo's *developer*
+    #                guide and legitimately documents build/test commands
+    #                (`cargo build`, `git add -A`, `docker compose ...`). It is
+    #                not an untrusted/injected agent-instruction file, so this is
+    #                a false positive for mnemo. Real criticals (hardcoded
+    #                secrets, live injection) still gate. Revisit if CLAUDE.md
+    #                ever ingests untrusted content.
+# Not excluded (kept visible in the Security tab for human triage, non-blocking):
+#   - AAK-GHA-IMMUTABLE-001 — legit hardening suggestion (pin Actions to SHAs).
+#   - AAK-SECRET-004 — high-entropy strings that are mnemo's crypto/hash test
+#     vectors, not live secrets; dismiss in the Security tab after review.
+#   - AAK-HEALTHCARE-AI-00x — clinical example strings in the audit-bench sample
+#     data ("patient", "dosage"); mnemo is a memory DB, not a crisis agent.
+
+# Paths to skip.
+ignore-paths:
+  - target/                 # Rust build artifacts (gitignored; belt-and-suspenders)
+  - node_modules/           # JS deps (TypeScript SDK / vscode)
+  - python/tests/fixtures/  # test fixtures, not runtime code
+  # Intentionally-adversarial scanner INPUT, not real vulnerabilities: the
+  # poisoning + tamper benches ship MINJA / AgentPoison / tamper attack strings
+  # on purpose (they are what those benches measure). Exclude so they do not
+  # drown out real findings.
+  - bench/poisoning/
+  - bench/audit_tamper/
+
+# Do not reach into ~/.claude/ etc. on contributor machines.
+include-user-config: false

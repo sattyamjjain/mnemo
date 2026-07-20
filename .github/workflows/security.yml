@@ -47,3 +47,36 @@ jobs:
         # (tracked as a follow-up, not this PR). `--hide-inclusion-graph`
         # keeps the CI log readable on a clean pass.
         run: cargo deny --workspace check advisories --hide-inclusion-graph
+
+  agent-audit-kit:
+    # Static MCP / agent-config security scan (secrets, tool-poisoning, auth
+    # bypass, path-traversal/SSRF, supply-chain CVEs) over mnemo's MCP-server
+    # surface, agent configs, and supply-chain manifests. Complements the two
+    # jobs above — cargo-audit / cargo-deny cover Rust *crate* advisories; this
+    # covers the *MCP / agent / config* attack surface that `mnemo-mcp` exposes.
+    # Deterministic, offline scanner (262 rules): https://github.com/sattyamjjain/agent-audit-kit
+    #
+    # Observe-first rollout: gates only on `critical` (config: .agent-audit-kit.yml),
+    # but uploads SARIF for every severity so highs/mediums are visible in the
+    # Security tab. Tighten `fail-on` to `high` after the first triage.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to GitHub Code Scanning
+      pull-requests: write # sticky PR comment summarising findings
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: AgentAuditKit MCP security scan
+        # Pinned to the latest released tag (0.3.53 is unreleased on the tool's
+        # main). Bump deliberately after reviewing the tool's CHANGELOG.
+        uses: sattyamjjain/agent-audit-kit@v0.3.52
+        with:
+          path: .
+          config: .agent-audit-kit.yml
+          severity: low
+          fail-on: critical
+          format: sarif
+          upload-sarif: true
+          comment-on-pr: true

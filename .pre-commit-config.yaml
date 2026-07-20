@@ -1,0 +1,10 @@
+# Optional local security scan — mirrors the CI `agent-audit-kit` job.
+# Opt-in for contributors: `pip install pre-commit && pre-commit install`.
+# The hook scopes itself to MCP / agent config + manifest files and runs the
+# deterministic, offline AgentAuditKit scanner.
+# Tool: https://github.com/sattyamjjain/agent-audit-kit
+repos:
+  - repo: https://github.com/sattyamjjain/agent-audit-kit
+    rev: v0.3.52 # pin to the latest released tag; bump deliberately
+    hooks:
+      - id: agent-audit-kit

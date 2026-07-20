@@ -4,6 +4,31 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Security (2026-07-20) — AgentAuditKit MCP static scan in CI + pre-commit (no version bump)
+
+CI / dev-tooling only; **no version bump** (no engine/protocol/crate change).
+
+- **chore(security): dogfood [AgentAuditKit](https://github.com/sattyamjjain/agent-audit-kit)
+  (deterministic, offline MCP/agent-config scanner, 262 rules) on the mnemo repo.**
+  New `agent-audit-kit` job in [`.github/workflows/security.yml`](.github/workflows/security.yml)
+  (pinned `@v0.3.52`) scans mnemo's MCP-server surface, agent configs, and
+  supply-chain manifests for secrets / tool-poisoning / auth-bypass /
+  path-traversal / supply-chain CVEs — complementing `cargo-audit` + `cargo-deny`
+  (Rust crate advisories) on the *MCP / agent* attack surface `mnemo-mcp`
+  exposes. Uploads SARIF to the Security tab + posts a PR comment; also wired as
+  an opt-in [`.pre-commit-config.yaml`](.pre-commit-config.yaml) hook.
+  - **Observe-first gate:** `fail-on: critical` via
+    [`.agent-audit-kit.yml`](.agent-audit-kit.yml); highs/mediums are reported
+    but non-blocking, to be triaged in the Security tab before tightening to
+    `high`.
+  - **Baseline established by running it first (v0.3.52):** the one noisy rule
+    `AAK-AGENT-001` (60 false-positive criticals on `CLAUDE.md`, which legitimately
+    documents build/test commands) is excluded with a written rationale; the
+    remaining 51 findings (9 high / 41 medium / 1 low) stay visible — including
+    the legit `AAK-GHA-IMMUTABLE-001` (pin Actions to SHAs). The two products
+    stay **separate repos**: mnemo (runtime tamper-evident audit) + AgentAuditKit
+    (static pre-deploy scan) are complementary, not merged.
+
 ### Added (2026-07-20) — STATE-Bench entry harness (number pending model access; no version bump)
 
 Bench harness + docs only; **no version bump** (no engine/protocol/crate change,
