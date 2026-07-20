@@ -4,6 +4,38 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-20) — STATE-Bench entry harness (number pending model access; no version bump)
+
+Bench harness + docs only; **no version bump** (no engine/protocol/crate change,
+no benchmark number yet). This lands the *integration*, not a result.
+
+- **bench(state-bench): mnemo's entry on Microsoft STATE-Bench (Agent Learning
+  Track).** New [`bench/state_bench/`](bench/state_bench/) — a **Python-native
+  driver** (not a Rust crate: STATE-Bench is Python/`uv` + a `StateBenchAgent`
+  subclass, so a Rust crate would reimplement the whole harness). mnemo plugs into
+  the read-only `retrieve_learnings(query, top_k) -> list[str]` hook via the
+  **public Python SDK** (`MnemoClient.recall`), backed by an embedded DuckDB store
+  built from the train trajectories (`build_learnings`). **No `mnemo-core` change.**
+  - **Resolved, pinned, cited:** [`microsoft/STATE-Bench`](https://github.com/microsoft/STATE-Bench)
+    @ `4efcbf2d4fe60df04878859b692d9391f3d5b33a` (v0.8.1, MIT); baseline
+    GPT-5.1-no-memory ~50–60% pass@1 ([leaderboard](https://microsoft.github.io/STATE-Bench/leaderboard/)).
+  - **Number is PENDING hosted-model access, not faked.** STATE-Bench is an
+    *agentic* enterprise-task benchmark (task completion, not retrieval): it
+    hard-locks its user simulator + judge to **GPT-5.4** and needs an agent model
+    (gpt-5.1-class). Those are unreachable from the build environment
+    (no OpenAI/Azure keys; only a local embedder). Per the honest-benchmark rule we
+    publish **no partial or fabricated number** — the harness is built and the
+    mnemo half smoke-tested offline; a real run is turnkey via
+    [`run_state_bench.sh`](bench/state_bench/run_state_bench.sh) once models exist.
+  - **Honest framing:** the score is dominated by the agent model; mnemo is one
+    read-only memory hook. So it is an *agent+memory-hook delta* on an agentic
+    benchmark — the **on-prem / embedded / auditable** entry nobody has posted, and
+    evidence *for* the regulated-AI wedge (the same store carries the hash-chained
+    audit log), **not** a retrieval score and **not** a "state of the art" claim.
+    README benchmark section gains the entry; the regression gate
+    (`check_bench_regression.py`, dataset-scoped `recall@10` for locomo/longmemeval)
+    is out of scope by construction and unchanged.
+
 ### Added (2026-07-19) — v0.5.14, DPDP Rules processing-log retention-conformance profile
 
 Workspace `0.5.13 → 0.5.14` (patch bump — an additive `mnemo-compliance` surface
@@ -496,8 +528,12 @@ republishes the compliance line via `release-crate.yml`. Finally it carries the
 **2026-07-19 DPDP retention-conformance profile** above — landing via branch
 `feat/dpdp-retention-conformance` (push-to-`main`, workspace bump
 `0.5.13 → 0.5.14`); a `v0.5.14` tag republishes the compliance line
-(`mnemo-core` + `mnemo-compliance` changed). Earlier cuts `v0.5.4` (`04a1145`)
-through `v0.5.10` remain documented in the sections below.
+(`mnemo-core` + `mnemo-compliance` changed). Finally it carries the
+**2026-07-20 STATE-Bench entry harness** above — landing via branch
+`bench/state-bench` (push-to-`main`, **no version bump**, no crate change; a
+Python-native bench driver whose *number* is pending hosted-model access). Earlier
+cuts `v0.5.4` (`04a1145`) through `v0.5.10` remain documented in the sections
+below.
 
 ## [0.5.4] — 2026-06-29
 

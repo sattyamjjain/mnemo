@@ -850,6 +850,29 @@ run here). Full tables + JSON: [`bench/RESULTS.md`](bench/RESULTS.md) and the
 dated [`bench/locomo/results/`](bench/locomo/results/) report. Reproduce:
 `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.
 
+### STATE-Bench — agentic enterprise-task memory (entry in progress)
+
+[Microsoft **STATE-Bench**](https://github.com/microsoft/STATE-Bench) (MIT, pinned
+at [`4efcbf2d`](https://github.com/microsoft/STATE-Bench/commit/4efcbf2d4fe60df04878859b692d9391f3d5b33a),
+v0.8.1) measures whether an *agent* completes multi-step **enterprise workflows**
+(travel / customer-support / shopping) better **with** memory — a *different axis*
+from the retrieval numbers above (task completion, not gold recall). mnemo is the
+**on-prem / embedded / auditable** entry: it plugs into the Agent Learning Track's
+read-only `retrieve_learnings` hook through the public Python SDK, using the *same*
+embedded DuckDB store that carries the hash-chained, tamper-evident audit log — so
+this is evidence **for** the regulated-AI wedge, not a repositioning.
+
+The harness is built and the mnemo half is smoke-tested offline
+([`bench/state_bench/`](bench/state_bench/)). A **score is pending hosted-model
+access**: STATE-Bench hard-locks its user simulator + judge to **GPT-5.4** and needs
+an agent model (published baseline: GPT-5.1-no-memory, ~50–60% pass@1 —
+[leaderboard](https://microsoft.github.io/STATE-Bench/leaderboard/)). We do **not**
+publish a partial or faked number; when models are available,
+[`bench/state_bench/run_state_bench.sh`](bench/state_bench/run_state_bench.sh) is
+turnkey and fills
+[`bench/state_bench/results/state_bench.md`](bench/state_bench/results/state_bench.md).
+Not a "state of the art" claim.
+
 ### Where mnemo sits vs. the published systems (two different axes)
 
 These are **not directly comparable** — they measure different things on different
