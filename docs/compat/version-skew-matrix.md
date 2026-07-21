@@ -1,5 +1,11 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-21 for the **v0.5.15** cut — a **benchmark/docs** change: the
+> first **real-embedder** LoCoMo retrieval bench (`locomo_v1_bench`, default local
+> ONNX embedder + a hard anti-no-op guard) plus the `ort` 2.0.0-rc.11 migration of
+> the ONNX embedder. **No public API, protocol, or storage change; no dependency
+> change** to the published crates — version pins move 0.5.14 → 0.5.15 in lockstep.
+>
 > Updated 2026-07-19 for the **v0.5.14** cut — a **feature** change: a
 > processing-log **retention-conformance profile** in `mnemo-compliance`
 > (`RetentionProfile` — DPDP Rules 2025 / EU AI Act Art.19 / HIPAA §164.312(b)),

@@ -1,0 +1,85 @@
+{
+  "bench": "locomo_v1",
+  "corpus": {
+    "dataset": "crates/mnemo-core/benches/data/longmemeval_m.jsonl",
+    "note": "bundled LongMemEval_M slice (the repo's LoCoMo-style stand-in); gated full LoCoMo/LongMemEval are out of scope (#44)",
+    "records": 45,
+    "sha256": "9ed6e435558d25cad1ead016cdf9ed87dbeda80edd18ae6fd5a9aed7cd5314ed"
+  },
+  "embedder": {
+    "backend": "onnx",
+    "dim": 384,
+    "model": "all-MiniLM-L6-v2"
+  },
+  "hardware": "aarch64/macos",
+  "limit": 10,
+  "metric": "gold-document recall@k (each query's source record is its gold doc, matched by lme_id)",
+  "n": 45,
+  "preliminary": true,
+  "repeats": 3,
+  "strategies": {
+    "auto": {
+      "index_build_ms": 899.988,
+      "mrr": 0.716,
+      "p50_ms": 21.592,
+      "p95_ms": 23.742,
+      "recall@1": 0.615,
+      "recall@10": 0.889,
+      "recall@10_ci95": [
+        0.765,
+        0.952
+      ],
+      "recall@1_ci95": [
+        0.476,
+        0.749
+      ],
+      "recall@5": 0.844,
+      "recall@5_ci95": [
+        0.712,
+        0.923
+      ]
+    },
+    "lexical": {
+      "index_build_ms": 562.6,
+      "mrr": 0.501,
+      "p50_ms": 7.511,
+      "p95_ms": 9.926,
+      "recall@1": 0.422,
+      "recall@10": 0.689,
+      "recall@10_ci95": [
+        0.543,
+        0.805
+      ],
+      "recall@1_ci95": [
+        0.29,
+        0.567
+      ],
+      "recall@5": 0.689,
+      "recall@5_ci95": [
+        0.543,
+        0.805
+      ]
+    },
+    "semantic": {
+      "index_build_ms": 972.101,
+      "mrr": 0.77,
+      "p50_ms": 13.625,
+      "p95_ms": 15.482,
+      "recall@1": 0.689,
+      "recall@10": 0.911,
+      "recall@10_ci95": [
+        0.793,
+        0.965
+      ],
+      "recall@1_ci95": [
+        0.543,
+        0.805
+      ],
+      "recall@5": 0.889,
+      "recall@5_ci95": [
+        0.765,
+        0.952
+      ]
+    }
+  }
+}

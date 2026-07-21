@@ -35,6 +35,17 @@ fixed seed + a Wilson-95 you can re-run offline (`cargo run --release -p
 mnemo-locomo-bench --bin reproduction_bench`), tabled against vendors' cited,
 not-re-run claims — see
 [`bench/locomo/results/reproduction_2026-07-06.md`](bench/locomo/results/reproduction_2026-07-06.md).
+
+**Real-embedder retrieval quality (measured, not asserted):** the byte-reproducible
+number above runs under a *deterministic hash-bag* embedder — a lexical **floor**. With a
+**real local semantic embedder** (ONNX `all-MiniLM-L6-v2`, 384-dim, no API key) on the
+same 45-record slice, mnemo's vector lane recalls the gold document at **recall@1 0.689
+[Wilson 95% 0.543, 0.805]** and **recall@10 0.911** (MRR 0.770); default `auto`/RRF is
+0.615 / 0.889 and BM25-only 0.422 / 0.689 (mean of 3 seeds). Reproduce with **no
+credentials** — `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features onnx -p
+mnemo-locomo-bench --bin locomo_v1_bench` — and the runner **refuses to emit a score under
+a no-op embedder**. Setup, wide-CI/`preliminary` caveats (n=45; the Postgres semantic path
+is not exercised), and raw JSON: [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md).
 And the **memory-poisoning defense delta** is measured, not asserted: ASR with
 the poisoning-quarantine defense OFF vs ON (`cargo run --release -p
 mnemo-poisoning-bench`) — MINJA 100%→0% (+100 pts), AgentPoison 100%→3.5%

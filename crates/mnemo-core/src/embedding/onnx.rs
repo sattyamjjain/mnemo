@@ -48,9 +48,10 @@ use crate::error::{Error, Result};
 mod inner {
     use super::*;
     use ndarray::Array2;
-    use ort::Session;
+    use ort::session::Session;
+    use ort::value::Tensor;
     use std::path::Path;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use tokenizers::Tokenizer;
 
     /// ONNX-based local embedding provider.
@@ -60,13 +61,15 @@ mod inner {
     pub struct OnnxEmbedding {
         dimensions: usize,
         model_path: String,
-        session: Arc<Session>,
+        // ort 2.0.0-rc.11's `Session::run` takes `&mut self`, so the session is
+        // behind a `Mutex` (interior mutability) rather than a bare `Arc` — the
+        // `Arc<Mutex<_>>` still moves cheaply into `spawn_blocking`.
+        session: Arc<Mutex<Session>>,
         tokenizer: Arc<Tokenizer>,
     }
 
-    // `ort::Session` is Send + Sync in ort v2.
-    // `tokenizers::Tokenizer` is Send + Sync.
-    // The Arc wrappers enable cheap cloning for spawn_blocking moves.
+    // `ort::Session` is Send in ort v2; `Mutex<Session>` gives the `&mut` the
+    // run API needs. `tokenizers::Tokenizer` is Send + Sync.
 
     // Manual Debug because Session/Tokenizer do not implement Debug.
     impl std::fmt::Debug for OnnxEmbedding {
@@ -129,7 +132,7 @@ mod inner {
             Ok(Self {
                 dimensions,
                 model_path: model_path.to_string(),
-                session: Arc::new(session),
+                session: Arc::new(Mutex::new(session)),
                 tokenizer: Arc::new(tokenizer),
             })
         }
@@ -238,7 +241,7 @@ mod inner {
             let dims = self.dimensions;
             let owned_texts: Vec<String> = texts.iter().map(|t| (*t).to_string()).collect();
 
-            let result = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>> {
+            tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>> {
                 let text_refs: Vec<&str> = owned_texts.iter().map(String::as_str).collect();
                 let (input_ids, attention_mask, token_type_ids) =
                     Self::tokenize_batch(&tokenizer, &text_refs)?;
@@ -246,25 +249,57 @@ mod inner {
                 let batch_size = input_ids.nrows();
                 let seq_len = input_ids.ncols();
 
-                let outputs = session
+                // `attention_mask` is consumed by the input tensor below but is
+                // still needed for mean-pooling, so keep an owned copy.
+                let mask_for_pool = attention_mask.clone();
+
+                // ort 2.0.0-rc.11: inputs are `Value`s built via
+                // `Tensor::from_array` (an owned ndarray impls
+                // `OwnedTensorArrayData`); the `inputs!` macro returns a `Vec`
+                // (not a `Result`), and `run` takes `&mut self`.
+                let ids_t = Tensor::from_array(input_ids)
+                    .map_err(|e| Error::Embedding(format!("input_ids tensor: {e}")))?;
+                let mask_t = Tensor::from_array(attention_mask)
+                    .map_err(|e| Error::Embedding(format!("attention_mask tensor: {e}")))?;
+                let tt_t = Tensor::from_array(token_type_ids)
+                    .map_err(|e| Error::Embedding(format!("token_type_ids tensor: {e}")))?;
+
+                let mut sess = session
+                    .lock()
+                    .map_err(|e| Error::Embedding(format!("onnx session lock poisoned: {e}")))?;
+                let outputs = sess
                     .run(ort::inputs![
-                        "input_ids" => input_ids.view(),
-                        "attention_mask" => attention_mask.view(),
-                        "token_type_ids" => token_type_ids.view(),
-                    ].map_err(|e| Error::Embedding(format!("failed to create inputs: {e}")))?)
+                        "input_ids" => ids_t,
+                        "attention_mask" => mask_t,
+                        "token_type_ids" => tt_t,
+                    ])
                     .map_err(|e| Error::Embedding(format!("ONNX inference failed: {e}")))?;
 
                 // Sentence-transformer models typically output
                 // "last_hidden_state" at index 0 with shape
-                // [batch, seq_len, hidden_dim].
-                let output_tensor = outputs
-                    .get("last_hidden_state")
-                    .or_else(|| outputs.iter().next().map(|(_, v)| v))
-                    .ok_or_else(|| Error::Embedding("no output tensor from ONNX model".to_string()))?;
-
-                let output_array = output_tensor
-                    .try_extract_tensor::<f32>()
-                    .map_err(|e| Error::Embedding(format!("failed to extract output tensor: {e}")))?;
+                // [batch, seq_len, hidden_dim]. rc.11: `try_extract_array`
+                // returns an `ndarray::ArrayViewD` (the old `try_extract_tensor`
+                // now returns a `(&Shape, &[T])` tuple). `.get()` yields a
+                // `ValueRef` and the iterator yields `&Value`, so each arm
+                // extracts and copies to an owned array to unify the type and
+                // release the borrow on `outputs`.
+                let extract_owned = |e: ort::Error| {
+                    Error::Embedding(format!("failed to extract output tensor: {e}"))
+                };
+                let output_array: ndarray::ArrayD<f32> = match outputs.get("last_hidden_state")
+                {
+                    Some(v) => v.try_extract_array::<f32>().map_err(extract_owned)?.to_owned(),
+                    None => outputs
+                        .iter()
+                        .next()
+                        .ok_or_else(|| {
+                            Error::Embedding("no output tensor from ONNX model".to_string())
+                        })?
+                        .1
+                        .try_extract_array::<f32>()
+                        .map_err(extract_owned)?
+                        .to_owned(),
+                };
 
                 let shape = output_array.shape();
 
@@ -287,7 +322,7 @@ mod inner {
                     let flat_owned: Array2<f32> = flat.to_owned();
                     Ok(Self::mean_pool_and_normalize(
                         &flat_owned,
-                        &attention_mask,
+                        &mask_for_pool,
                         batch_size,
                         seq_len,
                         hidden_dim,
@@ -324,9 +359,7 @@ mod inner {
                 }
             })
             .await
-            .map_err(|e| Error::Embedding(format!("inference task panicked: {e}")))?;
-
-            result
+            .map_err(|e| Error::Embedding(format!("inference task panicked: {e}")))?
         }
     }
 

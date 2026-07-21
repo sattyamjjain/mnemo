@@ -26,6 +26,7 @@
 pub mod dataset;
 pub mod judge;
 pub mod phase_cost;
+pub mod real_embedder;
 pub mod runner;
 pub mod scoring;
 pub mod stats;

@@ -54,6 +54,15 @@ path = "src/bin/beam_bench.rs"
 name = "reproduction_bench"
 path = "src/bin/reproduction_bench.rs"
 
+[[bin]]
+name = "locomo_v1_bench"
+path = "src/bin/locomo_v1_bench.rs"
+
+[features]
+# Forward the ONNX local-embedder feature to mnemo-core so `locomo_v1_bench`
+# can run its DEFAULT (reproducible, no-API-key) embedder path.
+onnx = ["mnemo-core/onnx"]
+
 [dependencies]
 mnemo-core = { workspace = true }
 serde = { workspace = true }

@@ -4,6 +4,42 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-21) — first real-embedder LoCoMo retrieval benchmark (v0.5.14 → v0.5.15)
+
+**`bench(locomo)`: mnemo's first retrieval numbers produced by a real semantic
+embedder, with a 95% confidence interval and a hard anti-no-op guard.**
+
+- **New bench binary [`locomo_v1_bench`](bench/locomo/src/bin/locomo_v1_bench.rs).**
+  Runs the bundled 45-record LongMemEval_M slice through the real recall path
+  (in-memory DuckDB + USearch HNSW + Tantivy BM25, RRF fusion) under a **real
+  semantic embedder** and reports gold-document **recall@{1,5,10}** with a **Wilson
+  95%** interval, **MRR**, **p50/p95** query latency, and **index build time**, per
+  strategy (`lexical` / `semantic` / `auto`), averaged over 3 seeds.
+  - **Default embedder is local ONNX** (`all-MiniLM-L6-v2`, 384-dim) — reproducible
+    by anyone with **no API key**; `--embedder openai` (`OPENAI_API_KEY`) and
+    `--embedder ollama` are also wired. The bench is **never** gated behind a paid
+    embedder.
+  - **Hard guard** [`guard_real_embedder`](bench/locomo/src/real_embedder.rs): the
+    runner **refuses to emit any score** if the resolved embedder is not
+    semantic-capable (i.e. the zero-vector no-op), naming the embedder it found. A
+    silently-noop benchmark is worse than no benchmark. Unit test `refuses_noop_embedder`
+    pins it.
+- **Headline (ONNX `all-MiniLM-L6-v2`, n=45, mean of 3 seeds — _preliminary_):**
+  `semantic` **recall@1 0.689 [0.543, 0.805]**, recall@10 0.911, MRR 0.770; `auto`
+  0.615 / 0.889; `lexical` 0.422 / 0.689. Raw deterministic JSON (sorted keys, no
+  wall-clock stamp) at [`bench/results/locomo_v1.json`](bench/results/locomo_v1.json);
+  full writeup + limitations at [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md).
+- **`crates/mnemo-core/src/embedding/onnx.rs`:** migrated the ONNX embedder to
+  `ort` 2.0.0-rc.11 (session behind `Arc<Mutex<_>>` for `&mut run`, `Tensor::from_array`
+  inputs, `try_extract_array`) so the `--features onnx` default path builds and
+  produces verified-sane (L2-normed, semantically separated) embeddings.
+- **Honest scope:** retrieval quality only (not LLM-judged QA); **no** head-to-head
+  vs Mem0/Letta/Zep (not run here); **DuckDB backend only** (Postgres/pgvector
+  semantic path not exercised); n=45 → wide, overlapping CIs, labelled `preliminary`.
+- **README:** the intro's LoCoMo claim now carries the real-embedder number + a link,
+  distinguishing it from the byte-reproducible hash-embedder floor.
+- Version bump **0.5.14 → 0.5.15**.
+
 ### Security (2026-07-20) — AgentAuditKit MCP static scan in CI + pre-commit (no version bump)
 
 CI / dev-tooling only; **no version bump** (no engine/protocol/crate change).
