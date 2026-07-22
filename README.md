@@ -46,10 +46,18 @@ credentials** — `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features onnx
 mnemo-locomo-bench --bin locomo_v1_bench` — and the runner **refuses to emit a score under
 a no-op embedder**. Setup, wide-CI/`preliminary` caveats (n=45; the Postgres semantic path
 is not exercised), and raw JSON: [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md).
-And the **memory-poisoning defense delta** is measured, not asserted: ASR with
-the poisoning-quarantine defense OFF vs ON (`cargo run --release -p
-mnemo-poisoning-bench`) — MINJA 100%→0% (+100 pts), AgentPoison 100%→3.5%
-(+96.5 pts), 0/200 benign false-quarantine; see
+And the **memory-poisoning defense is measured on a real embedder, not asserted.**
+Through a real ONNX MiniLM embedder (not a hash stand-in), mnemo's always-on
+lexical / self-referential lane drops canonical **MINJA** ASR **100% → 0%** at
+**0/300 benign false-quarantine**. Honestly, the opt-in *embedding z-score* lane
+does **not** generalise to a dense embedder: on MiniLM, poison lands ~1.5σ from
+the benign mean (below the 3σ gate), so marker-stripped and consolidation-style
+redirects survive (ASR 100%) — a limitation we **publish rather than hide**,
+correcting the hash-embedder bench's rosier z-score reading. ASR + Wilson-95 +
+benign-FPR per attack, refuse-to-score-on-noop:
+[`docs/BENCH_POISONING.md`](docs/BENCH_POISONING.md)
+(`cargo run --release --features onnx -p mnemo-poisoning-bench --bin poisoning_real_bench`).
+The byte-stable hash-embedder defense-*delta* companion is at
 [`bench/poisoning/`](bench/poisoning/).
 
 Regulatory mappings (honest, hedged, *not legal advice*):

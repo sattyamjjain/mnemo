@@ -10,12 +10,21 @@ description = "Reproducible memory-poisoning DEFENSE-DELTA benchmark: ASR with m
 name = "poisoning_bench"
 path = "src/main.rs"
 
+[[bin]]
+name = "poisoning_real_bench"
+path = "src/bin/poisoning_real_bench.rs"
+
+[features]
+# Forward the ONNX local-embedder feature to mnemo-core so `poisoning_real_bench`
+# can run its DEFAULT (reproducible, no-API-key) embedder path.
+onnx = ["mnemo-core/onnx"]
+
 [dependencies]
 # Toggles the REAL, shipped defense: check_for_anomaly -> quarantine_memory on
 # the remember() write path + recall's quarantined-skip, plus the opt-in
 # PoisoningPolicy z-score gate. See src/lib.rs for the verified API.
 mnemo-core = { workspace = true }
-# Reuse the shared Wilson-95 helper instead of re-deriving it.
+# Reuse the shared Wilson-95 helper + the refuse-to-score-on-noop guard.
 mnemo-locomo-bench = { path = "../locomo" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,6 +33,8 @@ clap = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+# Local Ollama HTTP embedder path for `poisoning_real_bench`.
+reqwest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

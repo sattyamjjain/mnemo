@@ -4,6 +4,36 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-22) — memory-poisoning defense benchmark on a real embedder (v0.5.15)
+
+**`bench(security)`: memory-poisoning (MINJA/consolidation) defense benchmark on
+a real embedder — ASR + 95% CI + benign-FPR; refuse-to-score-on-noop.**
+
+- **New bin [`poisoning_real_bench`](bench/poisoning/src/bin/poisoning_real_bench.rs)**
+  + harness [`real_embedder_bench`](bench/poisoning/src/real_embedder_bench.rs) in
+  the existing `mnemo-poisoning-bench` crate. Exercises the **shipped** detector
+  (`check_for_anomaly` → `quarantine_memory` on the `remember` write path +
+  `recall`'s quarantined-skip, incl. the `PoisoningPolicy` embedding z-score lane)
+  through a **real semantic embedder** (default local ONNX MiniLM, no API key;
+  `--embedder openai|ollama` also wired). Per attack: detector **ASR** (poison
+  survives to recall) + **Wilson 95%**, plus the **benign false-positive rate**,
+  over 3 seeds. **Refuses to score under a no-op embedder** (`run_real_bench`
+  guards; unit test `refuses_noop_embedder`; CI covers the harness on the offline
+  `DeterministicEmbedding`).
+- **Attack patterns** (roadmap #37): MINJA canonical + evasive, and
+  consolidation redirects (off-distribution-trigger + in-distribution).
+- **Honest headline (ONNX `all-MiniLM-L6-v2`, n=90/attack):** the lexical /
+  self-referential lane drops **canonical MINJA 100% → 0%** at **0/300 benign
+  false-quarantine**; the embedding **z-score lane does not generalise to a dense
+  embedder** — poison sits ~1.5σ from benign (below the 3σ gate, 0% flagged), so
+  marker-stripped + consolidation redirects survive (ASR 100%). A z-score
+  diagnostic (poison vs benign z, gate `baseline_n`) proves the gate is engaged.
+  This **corrects** the hash-embedder sibling bench's rosier z-score reading.
+- Raw JSON (sorted keys, no wall-clock): [`bench/results/poisoning_real.json`](bench/results/poisoning_real.json);
+  methodology + honest limitations: [`docs/BENCH_POISONING.md`](docs/BENCH_POISONING.md).
+- **README** security/integrity wedge now points at the real-embedder measurement.
+- No version change — rides the same **unreleased 0.5.15** (not yet on crates.io).
+
 ### Added (2026-07-21) — first real-embedder LoCoMo retrieval benchmark (v0.5.14 → v0.5.15)
 
 **`bench(locomo)`: mnemo's first retrieval numbers produced by a real semantic

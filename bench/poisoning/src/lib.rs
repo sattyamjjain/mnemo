@@ -44,6 +44,11 @@
 //! recency signal). Every reported number is byte-stable; ASR carries a Wilson
 //! 95% interval. Only observed numbers — never a claimed one.
 
+/// Real-embedder poisoning-defense benchmark (ASR + Wilson-95 + benign-FPR on a
+/// real semantic embedder; refuse-to-score-on-noop). Complements this crate's
+/// byte-stable hash-embedder defense-delta bench.
+pub mod real_embedder_bench;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
