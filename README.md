@@ -60,6 +60,20 @@ benign-FPR per attack, refuse-to-score-on-noop:
 The byte-stable hash-embedder defense-*delta* companion is at
 [`bench/poisoning/`](bench/poisoning/).
 
+Quarantine is only half the story — the other half is the **auditable layer**,
+mnemo's real wedge for [OWASP **ASI06 — Memory & Context Poisoning**](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/)
+(whose recommended control is *provenance on every write + evaluation against
+ground truth*). Against three ASI06 attack families — contradictory-fact
+overwrite, authority-spoofed origin + provenance forgery, belief-drift
+splice/back-date — the SHA-256 hash-chain + read-provenance HMAC layer **rejects
+100% of poisoning cover-up/forgery attempts (1500/1500, Wilson 95% [99.7%,
+100.0%])** at **0% benign false-positive** (0/300, [0.0%, 1.3%]); a naive store
+with no crypto layer catches **0%**. Read honestly: this is **tamper-evidence +
+attribution — poisoning cannot be *hidden*** — not write-time prevention. Method,
+numbers, and the LoCoMo ground-truth-quality caveat:
+[`docs/benchmarks/asi06-poisoning.md`](docs/benchmarks/asi06-poisoning.md)
+(`cargo run --release -p mnemo-asi06-poisoning-bench --bin asi06_poisoning`).
+
 Regulatory mappings (honest, hedged, *not legal advice*):
 [EU AI Act Art.12](docs/compliance/eu-ai-act-art12.md) ·
 [India DPDP (Rules 2025)](docs/compliance/dpdp-2027.md) ·

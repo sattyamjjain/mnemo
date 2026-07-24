@@ -1,5 +1,12 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-24 for the **v0.5.16** cut — a **benchmark/docs** change: the
+> ASI06 auditable memory-poisoning **resistance** benchmark
+> (`mnemo-asi06-poisoning-bench`) over the shipped `hash::verify_chain` +
+> `provenance::verify_read_provenance` primitives. **No public API, protocol, or
+> storage change; no dependency change** to the published crates — version pins
+> move 0.5.15 → 0.5.16 in lockstep.
+>
 > Updated 2026-07-21 for the **v0.5.15** cut — a **benchmark/docs** change: the
 > first **real-embedder** LoCoMo retrieval bench (`locomo_v1_bench`, default local
 > ONNX embedder + a hard anti-no-op guard) plus the `ort` 2.0.0-rc.11 migration of

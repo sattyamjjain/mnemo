@@ -4,6 +4,35 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-24) — ASI06 auditable memory-poisoning-resistance benchmark (v0.5.15 → v0.5.16)
+
+**`bench(security)`: prove the auditable/provenance thesis with a number — the
+share of poisoning cover-up/forgery attempts mnemo's cryptographic audit layer
+rejects, with a 95% CI and a benign false-positive control.**
+
+- **New crate [`bench/asi06_poisoning`](bench/asi06_poisoning)** (bin
+  `asi06_poisoning`). Drives the shipped auditable primitives
+  `hash::verify_chain` + `provenance::verify_read_provenance` (never
+  re-implements crypto) against three OWASP **ASI06** attack families —
+  contradictory-fact silent overwrite, authority-spoofed origin + provenance
+  forgery, and belief-drift trail splice/back-date — each with the adversary's
+  **cover-up** step.
+- **Metric:** auditable **resistance rate** = share of cover-ups the verifier
+  **rejects**, per family, with a **Wilson 95%** interval, plus a **benign
+  false-positive control** (honest supersession / key rotation / consolidation)
+  and a **naive-baseline** contrast (0% — no primitive can detect a cover-up).
+- **Result (deterministic, offline; 500 attempts/family, 300 benign):**
+  **overall resistance 100% (1500/1500), Wilson 95% [99.7%, 100.0%]**, at
+  **0% benign false-positive** (0/300, [0.0%, 1.3%]); naive baseline 0%.
+- **Honesty:** this is **tamper-evidence + attribution** (poisoning cannot be
+  hidden), **not** write-time prevention — that is the separate quarantine layer
+  ([`docs/BENCH_POISONING.md`](docs/BENCH_POISONING.md)). Documented prominently.
+- Raw JSON (sorted keys, no wall-clock): [`bench/results/asi06_poisoning.json`](bench/results/asi06_poisoning.json);
+  method + attack families + positioning + LoCoMo ground-truth caveat:
+  [`docs/benchmarks/asi06-poisoning.md`](docs/benchmarks/asi06-poisoning.md).
+  Anchors: OWASP ASI06, arXiv:2606.24322 / 2606.30566, Mem0 93.4% LongMemEval.
+- **README** security wedge links the benchmark. Version bump **0.5.15 → 0.5.16**.
+
 ### Added (2026-07-22) — memory-poisoning defense benchmark on a real embedder (v0.5.15)
 
 **`bench(security)`: memory-poisoning (MINJA/consolidation) defense benchmark on

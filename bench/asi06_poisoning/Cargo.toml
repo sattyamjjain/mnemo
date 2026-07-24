@@ -1,0 +1,25 @@
+[package]
+name = "mnemo-asi06-poisoning-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "ASI06 memory-poisoning RESISTANCE benchmark for mnemo's auditable layer: share of poisoning cover-up/forgery attempts the SHA-256 hash-chain + read-provenance HMAC layer rejects, with a Wilson 95% CI and a benign false-positive control."
+
+[[bin]]
+name = "asi06_poisoning"
+path = "src/main.rs"
+
+[dependencies]
+# Builds ENTIRELY on mnemo-core's shipped auditable primitives — it never
+# re-implements hashing or verification:
+#   hash::verify_chain            (per-record content_hash + prev_hash chain)
+#   provenance::verify_read_provenance (read-receipt HMAC + cited-record binding)
+mnemo-core = { workspace = true }
+# Reuse the shared Wilson 95% helper the other benches use.
+mnemo-locomo-bench = { path = "../locomo" }
+serde_json = { workspace = true }
+clap = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]

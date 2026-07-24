@@ -1,0 +1,74 @@
+{
+  "baseline_naive_store": {
+    "attempts": 1500,
+    "note": "no content_hash chain and no signed receipt exist, so no primitive can detect any cover-up",
+    "rejected": 0,
+    "resistance": 0.0
+  },
+  "bench": "asi06_poisoning",
+  "benign_control": {
+    "false_reject": 0,
+    "fpr": 0.0,
+    "fpr_ci95": [
+      0.0,
+      0.0126
+    ],
+    "total": 300
+  },
+  "families": [
+    {
+      "attack": "Contradictory-fact silent overwrite",
+      "attempts": 500,
+      "description": "append a contradicting poison, then rewrite the gold record in place to erase the true fact",
+      "key": "contradictory_fact_overwrite",
+      "primitive": "hash::verify_chain (content_hash)",
+      "rejected": 500,
+      "resistance": 1.0,
+      "resistance_ci95": [
+        0.9924,
+        1.0
+      ]
+    },
+    {
+      "attack": "Authority-spoofed origin + provenance forgery",
+      "attempts": 500,
+      "description": "forge a read-receipt onto trusted records (wrong key), or swap a cited record after signing",
+      "key": "authority_spoof_provenance_forgery",
+      "primitive": "provenance::verify_read_provenance (HMAC + record binding)",
+      "rejected": 500,
+      "resistance": 1.0,
+      "resistance_ci95": [
+        0.9924,
+        1.0
+      ]
+    },
+    {
+      "attack": "Belief-drift trail splice / back-date",
+      "attempts": 500,
+      "description": "inject a gradual drift sequence, then splice out an intermediate record or back-date the poison",
+      "key": "belief_drift_splice_backdate",
+      "primitive": "hash::verify_chain (prev_hash + content_hash)",
+      "rejected": 500,
+      "resistance": 1.0,
+      "resistance_ci95": [
+        0.9924,
+        1.0
+      ]
+    }
+  ],
+  "honesty": "resistance = share of poisoning COVER-UP/forgery attempts the auditable layer REJECTS (tamper-evidence + attribution). It does NOT block the initial poisoned write — that is the separate write-time quarantine layer (bench/poisoning). Deterministic, offline; every rate carries a Wilson 95% interval.",
+  "metric": "auditable resistance rate = rejected / attempts, per ASI06 attack family, over deterministic trials; plus benign false-positive (wrongly-rejected legitimate op) rate",
+  "overall": {
+    "attempts": 1500,
+    "rejected": 1500,
+    "resistance": 1.0,
+    "resistance_ci95": [
+      0.9974,
+      1.0
+    ]
+  },
+  "primitives": [
+    "mnemo_core::hash::verify_chain",
+    "mnemo_core::provenance::verify_read_provenance"
+  ]
+}
