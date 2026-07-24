@@ -26,7 +26,8 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tantivy = { workspace = true }
-aes-gcm = "0.10"
+aes-gcm = "0.11"
+getrandom = "0.2"
 rand = "0.10"
 base64 = "0.22"
 subtle = "2.5"

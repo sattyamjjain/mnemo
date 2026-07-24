@@ -21,8 +21,8 @@ tracing = { workspace = true }
 # the wasmtime API (the Linker/Store/bindgen wiring is deferred — see the
 # lib.rs module doc), so the version is a forward-looking pin; bumps are
 # resolve/compile-only until the loader integration lands.
-wasmtime = { version = "45.0", features = ["component-model"] }
-wasmtime-wasi = "45.0"
+wasmtime = { version = "46.0", features = ["component-model"] }
+wasmtime-wasi = "46.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

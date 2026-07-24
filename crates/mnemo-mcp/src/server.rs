@@ -7,6 +7,10 @@ use rmcp::{
     model::*,
     tool, tool_handler, tool_router,
 };
+// rmcp 2.x renamed the tool-result content type `Content` -> `ContentBlock`
+// (same `::text()` / `::image()` / `::json()` constructors). Alias keeps the
+// existing call sites unchanged.
+use rmcp::model::ContentBlock as Content;
 
 use mnemo_attention_state::AttentionStateStore;
 use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
@@ -1352,14 +1356,16 @@ impl ServerHandler for MnemoServer {
         let resources = records
             .into_iter()
             .map(|r| {
-                let mut raw = rmcp::model::RawResource::new(
+                // rmcp 2.x flattened `RawResource` + `Annotated` into a single
+                // `Resource` (no `.no_annotation()`; `size` is now `u64`).
+                let mut res = rmcp::model::Resource::new(
                     format!("{MEMORY_RESOURCE_SCHEME}{}", r.id),
                     summarize(&r.content),
                 );
-                raw.description = Some(format!("agent={} type={}", r.agent_id, r.memory_type));
-                raw.mime_type = Some("text/markdown".into());
-                raw.size = Some(r.content.len() as u32);
-                raw.no_annotation()
+                res.description = Some(format!("agent={} type={}", r.agent_id, r.memory_type));
+                res.mime_type = Some("text/markdown".into());
+                res.size = Some(r.content.len() as u64);
+                res
             })
             .collect();
         Ok(rmcp::model::ListResourcesResult {

@@ -5,10 +5,9 @@
 
 use crate::error::{Error, Result};
 
-use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::{
-    Aes256Gcm, Key, Nonce,
-    aead::{Aead, KeyInit, OsRng},
+    Aes256Gcm,
+    aead::{Aead, KeyInit, Nonce},
 };
 
 /// AES-256-GCM encryption provider for at-rest memory content.
@@ -48,15 +47,19 @@ impl ContentEncryption {
     ///
     /// Uses AES-256-GCM with a random 12-byte nonce.
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        let key = Key::<Aes256Gcm>::from_slice(&self.key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| Error::Internal(format!("invalid AES-256 key: {e}")))?;
 
+        // Random 96-bit nonce straight from the OS CSPRNG. Using `getrandom`
+        // directly (rather than aes-gcm's re-exported RNG) keeps this stable
+        // across the aead/rand_core version churn that the 0.11 bump introduced.
         let mut nonce_bytes = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        getrandom::getrandom(&mut nonce_bytes)
+            .map_err(|e| Error::Internal(format!("nonce RNG failed: {e}")))?;
+        let nonce: Nonce<Aes256Gcm> = nonce_bytes.into();
 
         let ciphertext = cipher
-            .encrypt(nonce, plaintext)
+            .encrypt(&nonce, plaintext)
             .map_err(|e| Error::Internal(format!("encryption failed: {e}")))?;
 
         let mut output = Vec::with_capacity(12 + ciphertext.len());
@@ -72,14 +75,15 @@ impl ContentEncryption {
             return Err(Error::Validation("encrypted data too short".to_string()));
         }
 
-        let key = Key::<Aes256Gcm>::from_slice(&self.key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = Aes256Gcm::new_from_slice(&self.key)
+            .map_err(|e| Error::Internal(format!("invalid AES-256 key: {e}")))?;
 
-        let nonce = Nonce::from_slice(&data[..12]);
+        let nonce = <Nonce<Aes256Gcm>>::try_from(&data[..12])
+            .map_err(|_| Error::Validation("invalid nonce".to_string()))?;
         let ciphertext = &data[12..];
 
         cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|_| Error::Validation("decryption tag mismatch".to_string()))
     }
 }
