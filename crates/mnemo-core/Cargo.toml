@@ -29,7 +29,7 @@ tantivy = { workspace = true }
 aes-gcm = "0.11"
 getrandom = "0.2"
 rand = "0.10"
-base64 = "0.22"
+base64 = "0.23"
 subtle = "2.5"
 regex = "1.11"
 
