@@ -71,7 +71,7 @@ jobs:
       - name: AgentAuditKit MCP security scan
         # Pinned to the latest released tag (0.3.53 is unreleased on the tool's
         # main). Bump deliberately after reviewing the tool's CHANGELOG.
-        uses: sattyamjjain/agent-audit-kit@v0.3.52
+        uses: sattyamjjain/agent-audit-kit@v0.3.58
         with:
           path: .
           config: .agent-audit-kit.yml
