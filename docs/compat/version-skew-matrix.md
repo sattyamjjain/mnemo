@@ -1,5 +1,14 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-25 for the **v0.5.17** cut — a **feature + benchmark** change:
+> a forged-reasoning defense — `retrieval::ReasoningTrustPolicy` on the new
+> additive, opt-in `RecallRequest.reasoning_trust` field, enforced in recall's
+> `passes_filters` — plus a real-embedder resistance bench
+> (`mnemo-forged-reasoning-bench`). **Additive, wire-compatible** (the new
+> `RecallRequest` field is `#[serde(default, skip_serializing_if)]`; inbound JSON
+> that omits it is unchanged); no storage or protocol schema change. Version pins
+> move 0.5.16 → 0.5.17 in lockstep.
+>
 > Updated 2026-07-24 for the **v0.5.16** cut — a **benchmark/docs** change: the
 > ASI06 auditable memory-poisoning **resistance** benchmark
 > (`mnemo-asi06-poisoning-bench`) over the shipped `hash::verify_chain` +

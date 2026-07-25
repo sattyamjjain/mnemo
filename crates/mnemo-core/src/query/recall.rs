@@ -109,6 +109,14 @@ pub struct RecallRequest {
     /// dilution at scale. Default `None` keeps the read path unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain_scope: Option<crate::retrieval::DomainScope>,
+    /// v0.5.17 — opt-in **forged-reasoning defense**. When set, the shared
+    /// recall post-filter excludes entries whose stored reasoning provenance
+    /// fails the trust check (an attacker planted a fabricated chain-of-thought
+    /// so retrieval would treat a lie as "already-reasoned truth"). See
+    /// [`ReasoningTrustPolicy`][crate::retrieval::ReasoningTrustPolicy]. Default
+    /// `None` keeps the read path unchanged; composes with any strategy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_trust: Option<crate::retrieval::ReasoningTrustPolicy>,
 }
 
 impl RecallRequest {
@@ -137,6 +145,7 @@ impl RecallRequest {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         }
     }
 }
@@ -1154,6 +1163,16 @@ async fn passes_filters(
 
     // Skip quarantined
     if record.quarantined {
+        return false;
+    }
+
+    // Forged-reasoning defense (v0.5.17) — opt-in reasoning-provenance trust
+    // filter. Excludes entries whose stored reasoning trace fails the check
+    // (injected / unverified authorship) when the caller set a Quarantine
+    // policy. Default read path (no policy) is unchanged.
+    if let Some(ref policy) = request.reasoning_trust
+        && policy.excludes_record(record)
+    {
         return false;
     }
 

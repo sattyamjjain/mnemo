@@ -1,0 +1,32 @@
+[package]
+name = "mnemo-forged-reasoning-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Forged-reasoning memory-injection RESISTANCE benchmark on a real embedder: attack-success-rate of planted fabricated-chain-of-thought entries with mnemo's reasoning-provenance trust filter OFF vs ON, plus a benign false-quarantine control, each with a Wilson 95% CI."
+
+[[bin]]
+name = "forged_reasoning"
+path = "src/main.rs"
+
+[features]
+# Forward the ONNX local-embedder feature to mnemo-core so the DEFAULT
+# (reproducible, no-API-key) embedder path is available.
+onnx = ["mnemo-core/onnx"]
+
+[dependencies]
+# Exercises the SHIPPED reasoning-trust defense end-to-end through the real
+# recall path: retrieval::ReasoningTrustPolicy enforced in recall's
+# passes_filters (RecallRequest.reasoning_trust).
+mnemo-core = { workspace = true }
+# Reuse the shared Wilson-95 helper + the refuse-to-score-on-noop guard.
+mnemo-locomo-bench = { path = "../locomo" }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+clap = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]

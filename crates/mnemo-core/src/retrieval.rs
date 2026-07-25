@@ -213,6 +213,226 @@ impl DomainScope {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Forged-reasoning defense (v0.5.17) — reasoning-provenance trust filter.
+//
+// Threat: an attacker plants a fabricated chain-of-thought / justification into
+// a memory entry so later retrieval treats a lie as "already-reasoned truth".
+// This is distinct from content poisoning — the *content* may look plausible;
+// what is forged is the entry's *reasoning provenance*. Defense: record whether
+// the stored reasoning was model-authored (trusted) vs injected/unverified, and
+// let recall exclude (or down-weight) entries whose reasoning trace fails the
+// check. Reuses `MemoryRecord.metadata` (as `DomainScope` reuses
+// `metadata["doc_class"]`) — no schema migration — and composes with any
+// retrieval strategy via the shared recall post-filter.
+// ---------------------------------------------------------------------------
+
+/// Who actually produced a memory entry's stored *reasoning* / justification —
+/// the signal a forged-reasoning attack spoofs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningAuthorship {
+    /// Produced by the agent's own model at write time.
+    ModelAuthored,
+    /// Supplied directly by a human user.
+    UserProvided,
+    /// Produced by a verified/trusted tool.
+    ToolVerified,
+    /// Arrived via an indirect-ingest / untrusted path yet presented as if
+    /// already reasoned — the forged-reasoning threat.
+    Injected,
+    /// No authorship signal present or unparseable — the **fail-closed**
+    /// default (a memory that never declared how its reasoning was produced
+    /// cannot be trusted as "already reasoned").
+    Unverified,
+}
+
+impl ReasoningAuthorship {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ModelAuthored => "model_authored",
+            Self::UserProvided => "user_provided",
+            Self::ToolVerified => "tool_verified",
+            Self::Injected => "injected",
+            Self::Unverified => "unverified",
+        }
+    }
+}
+
+/// Per-entry reasoning provenance, carried in
+/// `MemoryRecord.metadata["reasoning_provenance"]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReasoningProvenance {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written_at: Option<String>,
+    pub authorship: ReasoningAuthorship,
+}
+
+impl ReasoningProvenance {
+    /// Metadata key under which the provenance rides.
+    pub const METADATA_KEY: &'static str = "reasoning_provenance";
+
+    /// Convenience constructor for a model-authored (trusted) reasoning trace.
+    pub fn model_authored(source: impl Into<String>) -> Self {
+        Self {
+            source: Some(source.into()),
+            written_at: None,
+            authorship: ReasoningAuthorship::ModelAuthored,
+        }
+    }
+
+    /// Convenience constructor for an injected (forged) reasoning trace.
+    pub fn injected(source: impl Into<String>) -> Self {
+        Self {
+            source: Some(source.into()),
+            written_at: None,
+            authorship: ReasoningAuthorship::Injected,
+        }
+    }
+
+    /// Parse provenance from a record's `metadata`. **Fail-closed:** absent or
+    /// unparseable → [`ReasoningAuthorship::Unverified`].
+    pub fn from_metadata(metadata: &serde_json::Value) -> Self {
+        metadata
+            .get(Self::METADATA_KEY)
+            .and_then(|v| serde_json::from_value::<ReasoningProvenance>(v.clone()).ok())
+            .unwrap_or(Self {
+                source: None,
+                written_at: None,
+                authorship: ReasoningAuthorship::Unverified,
+            })
+    }
+
+    /// Parse provenance from a [`MemoryRecord`].
+    pub fn from_record(record: &crate::model::memory::MemoryRecord) -> Self {
+        Self::from_metadata(&record.metadata)
+    }
+
+    /// Write this provenance into a metadata object (for writers / benches).
+    pub fn attach(&self, metadata: &mut serde_json::Value) {
+        if !metadata.is_object() {
+            *metadata = serde_json::json!({});
+        }
+        if let Ok(v) = serde_json::to_value(self) {
+            metadata[Self::METADATA_KEY] = v;
+        }
+    }
+}
+
+/// What to do with an entry whose reasoning provenance fails the trust check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningTrustAction {
+    /// Exclude the entry from recall results entirely (read-time quarantine).
+    /// This is the action the engine read path enforces in `passes_filters`.
+    Quarantine,
+    /// Keep the entry but multiply its score by `down_weight_factor`, applied
+    /// by callers via [`ReasoningTrustPolicy::rerank`] on the result set.
+    DownWeight,
+}
+
+fn default_down_weight() -> f32 {
+    0.1
+}
+
+/// Opt-in read-side defense against forged-reasoning memory injection. An entry
+/// is **admitted** iff its [`ReasoningProvenance::authorship`] is in `trusted`;
+/// otherwise [`action`](Self::action) applies. Carried on
+/// [`RecallRequest.reasoning_trust`][crate::query::recall::RecallRequest::reasoning_trust];
+/// default `None` keeps the read path unchanged. Orthogonal to retrieval
+/// strategy — composes with vector / hybrid / graph alike.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReasoningTrustPolicy {
+    /// Authorship values considered trustworthy.
+    pub trusted: Vec<ReasoningAuthorship>,
+    /// What to do with a non-trusted entry.
+    pub action: ReasoningTrustAction,
+    /// Score multiplier for [`ReasoningTrustAction::DownWeight`] (ignored for
+    /// `Quarantine`).
+    #[serde(default = "default_down_weight")]
+    pub down_weight_factor: f32,
+}
+
+impl Default for ReasoningTrustPolicy {
+    /// Quarantine anything not model-authored, user-provided, or tool-verified.
+    fn default() -> Self {
+        Self {
+            trusted: vec![
+                ReasoningAuthorship::ModelAuthored,
+                ReasoningAuthorship::UserProvided,
+                ReasoningAuthorship::ToolVerified,
+            ],
+            action: ReasoningTrustAction::Quarantine,
+            down_weight_factor: default_down_weight(),
+        }
+    }
+}
+
+impl ReasoningTrustPolicy {
+    /// The strict default: quarantine every entry whose reasoning is not from a
+    /// trusted author (injected / unverified).
+    pub fn quarantine_untrusted() -> Self {
+        Self::default()
+    }
+
+    /// Soft variant: down-weight (rather than drop) untrusted entries.
+    pub fn down_weight_untrusted(factor: f32) -> Self {
+        Self {
+            action: ReasoningTrustAction::DownWeight,
+            down_weight_factor: factor,
+            ..Self::default()
+        }
+    }
+
+    fn admits_metadata(&self, metadata: &serde_json::Value) -> bool {
+        self.trusted
+            .contains(&ReasoningProvenance::from_metadata(metadata).authorship)
+    }
+
+    /// Whether `record`'s reasoning provenance is trusted under this policy.
+    pub fn admits_record(&self, record: &crate::model::memory::MemoryRecord) -> bool {
+        self.admits_metadata(&record.metadata)
+    }
+
+    /// Whether the engine read path should **exclude** `record` (i.e. the
+    /// `Quarantine` action fired). `DownWeight` never excludes here — it is
+    /// applied to results via [`Self::rerank`].
+    pub fn excludes_record(&self, record: &crate::model::memory::MemoryRecord) -> bool {
+        matches!(self.action, ReasoningTrustAction::Quarantine) && !self.admits_record(record)
+    }
+
+    /// Apply the policy to a scored result set in place. `Quarantine` drops
+    /// untrusted hits; `DownWeight` multiplies their score by
+    /// `down_weight_factor` and re-sorts. Returns the number of entries
+    /// dropped or down-weighted.
+    pub fn rerank(&self, hits: &mut Vec<ScoredMemory>) -> usize {
+        match self.action {
+            ReasoningTrustAction::Quarantine => {
+                let before = hits.len();
+                hits.retain(|h| self.admits_metadata(&h.metadata));
+                before - hits.len()
+            }
+            ReasoningTrustAction::DownWeight => {
+                let mut affected = 0;
+                for h in hits.iter_mut() {
+                    if !self.admits_metadata(&h.metadata) {
+                        h.score *= self.down_weight_factor;
+                        affected += 1;
+                    }
+                }
+                hits.sort_by(|a, b| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                affected
+            }
+        }
+    }
+}
+
 /// Which agent harness the response envelope should be shaped for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -411,6 +631,87 @@ mod tests {
             updated_at: "2026-05-17T00:00:00Z".to_string(),
             score_breakdown: None,
         }
+    }
+
+    fn hit_with(content: &str, score: f32, auth: ReasoningAuthorship) -> ScoredMemory {
+        let mut h = make_hit(content, score);
+        ReasoningProvenance {
+            source: Some("t".into()),
+            written_at: None,
+            authorship: auth,
+        }
+        .attach(&mut h.metadata);
+        h
+    }
+
+    fn rec_with(auth: ReasoningAuthorship) -> crate::model::memory::MemoryRecord {
+        let mut r = crate::model::memory::MemoryRecord::new("a".into(), "c".into());
+        ReasoningProvenance {
+            source: None,
+            written_at: None,
+            authorship: auth,
+        }
+        .attach(&mut r.metadata);
+        r
+    }
+
+    #[test]
+    fn reasoning_provenance_fails_closed_to_unverified() {
+        let r = crate::model::memory::MemoryRecord::new("a".into(), "c".into());
+        // No `reasoning_provenance` in metadata → Unverified (never trusted).
+        assert_eq!(
+            ReasoningProvenance::from_record(&r).authorship,
+            ReasoningAuthorship::Unverified
+        );
+        assert!(!ReasoningTrustPolicy::default().admits_record(&r));
+    }
+
+    #[test]
+    fn injected_reasoning_is_excluded_but_model_authored_is_admitted() {
+        let policy = ReasoningTrustPolicy::quarantine_untrusted();
+        let injected = rec_with(ReasoningAuthorship::Injected);
+        let authored = rec_with(ReasoningAuthorship::ModelAuthored);
+        assert!(policy.excludes_record(&injected));
+        assert!(!policy.admits_record(&injected));
+        assert!(!policy.excludes_record(&authored));
+        assert!(policy.admits_record(&authored));
+        // Round-trips through metadata JSON.
+        assert_eq!(
+            ReasoningProvenance::from_record(&injected).authorship,
+            ReasoningAuthorship::Injected
+        );
+    }
+
+    #[test]
+    fn rerank_quarantine_drops_only_untrusted() {
+        let policy = ReasoningTrustPolicy::quarantine_untrusted();
+        let mut hits = vec![
+            hit_with("clean", 0.9, ReasoningAuthorship::ModelAuthored),
+            hit_with("forged", 0.8, ReasoningAuthorship::Injected),
+            hit_with("user", 0.7, ReasoningAuthorship::UserProvided),
+            hit_with("unknown", 0.6, ReasoningAuthorship::Unverified),
+        ];
+        let dropped = policy.rerank(&mut hits);
+        assert_eq!(dropped, 2); // injected + unverified
+        assert_eq!(hits.len(), 2);
+        assert!(
+            hits.iter()
+                .all(|h| h.content == "clean" || h.content == "user")
+        );
+    }
+
+    #[test]
+    fn rerank_downweight_demotes_forged_below_clean() {
+        let policy = ReasoningTrustPolicy::down_weight_untrusted(0.1);
+        let mut hits = vec![
+            hit_with("forged", 0.9, ReasoningAuthorship::Injected),
+            hit_with("clean", 0.5, ReasoningAuthorship::ModelAuthored),
+        ];
+        let affected = policy.rerank(&mut hits);
+        assert_eq!(affected, 1);
+        // The forged hit started higher (0.9) but is demoted to 0.09 < 0.5.
+        assert_eq!(hits[0].content, "clean");
+        assert_eq!(hits.len(), 2); // down-weight keeps, does not drop
     }
 
     #[test]

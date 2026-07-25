@@ -104,6 +104,7 @@ fn recall_latency(c: &mut Criterion) {
                     evidence_budget: None,
                     retained_token_budget: None,
                     domain_scope: None,
+                    reasoning_trust: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -213,6 +214,7 @@ fn hybrid_recall_latency(c: &mut Criterion) {
                     evidence_budget: None,
                     retained_token_budget: None,
                     domain_scope: None,
+                    reasoning_trust: None,
                 };
                 engine.recall(request).await.unwrap();
             });
@@ -281,6 +283,7 @@ fn graph_traversal_latency(c: &mut Criterion) {
                     evidence_budget: None,
                     retained_token_budget: None,
                     domain_scope: None,
+                    reasoning_trust: None,
                 };
                 engine.recall(request).await.unwrap();
             });

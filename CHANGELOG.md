@@ -4,6 +4,37 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-07-25) — forged-reasoning defense + real-embedder resistance bench (v0.5.16 → v0.5.17)
+
+**`feat`: defend against forged-reasoning memory injection — an attacker plants a
+fabricated chain-of-thought so retrieval treats a lie as "already-reasoned
+truth" — and prove it with a real-embedder benchmark (ASR OFF/ON + Wilson-95 +
+benign false-quarantine).**
+
+- **Defense (shipped, wired):** `retrieval::ReasoningAuthorship` /
+  `ReasoningProvenance` (carried in `MemoryRecord.metadata["reasoning_provenance"]`,
+  **fail-closed** to `unverified`) + `ReasoningTrustPolicy`, enforced via a new
+  **opt-in** `RecallRequest.reasoning_trust` field in recall's shared
+  `passes_filters`. Untrusted (injected/unverified) reasoning authorship is
+  excluded (`Quarantine`) or demoted (`DownWeight` via `rerank`). Extends the
+  existing `RecallRequest`/`retrieval` surface (same pattern as `DomainScope`);
+  default `None` keeps the read path unchanged; composes with any strategy.
+- **Benchmark [`bench/forged_reasoning`](bench/forged_reasoning)** (bin
+  `forged_reasoning`, mirrors the 07-22 real-embedder pattern: ONNX default +
+  refuse-to-score-on-noop). Seeds clean model-authored + forged injected-reasoning
+  entries into a real engine and measures attack-success-rate with the trust
+  filter **OFF vs ON**, plus a benign false-quarantine control.
+- **Result (Ollama `nomic-embed-text`, 768-dim, 3 seeds):** forged-reasoning ASR
+  **100.0% [95% 96.9, 100.0] → 0.0% [95% 0.0, 3.1]** (n=120, −100.0 pts) at
+  **0/180 = 0.0%** benign false-quarantine [95% 0.0, 2.1]. Never a bare ASR —
+  Wilson-95 + FPR always shown. Raw JSON (sorted keys, no wall-clock):
+  [`bench/results/forged_reasoning.json`](bench/results/forged_reasoning.json);
+  threat model + method: [`bench/forged_reasoning/README.md`](bench/forged_reasoning/README.md).
+- **Distinct** from the 07-24 ASI06 content-poisoning bench: this targets forged
+  *reasoning provenance*, not poisoned *content* retrieval.
+- **README** security table gains a "Forged-reasoning defense" row. Version bump
+  **0.5.16 → 0.5.17**.
+
 ### Added (2026-07-24) — ASI06 auditable memory-poisoning-resistance benchmark (v0.5.15 → v0.5.16)
 
 **`bench(security)`: prove the auditable/provenance thesis with a number — the

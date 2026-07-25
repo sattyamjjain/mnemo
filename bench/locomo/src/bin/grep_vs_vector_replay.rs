@@ -276,6 +276,7 @@ fn build_recall(query: &str, strategy: &str, limit: usize) -> RecallRequest {
         evidence_budget: None,
         retained_token_budget: None,
         domain_scope: None,
+        reasoning_trust: None,
     }
 }
 

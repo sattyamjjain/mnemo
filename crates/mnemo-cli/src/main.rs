@@ -941,6 +941,7 @@ async fn run_eval(cli: &Cli, args: &EvalArgs) -> Result<(), Box<dyn std::error::
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         };
         let t0 = Instant::now();
         let resp = engine.recall(recall).await?;

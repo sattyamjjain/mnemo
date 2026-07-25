@@ -114,6 +114,7 @@ async fn test_full_lifecycle() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .expect("recall should succeed");
@@ -182,6 +183,7 @@ async fn test_full_lifecycle() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .expect("recall should succeed");
@@ -287,6 +289,7 @@ async fn test_multiple_memories_with_filtering() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -318,6 +321,7 @@ async fn test_multiple_memories_with_filtering() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -349,6 +353,7 @@ async fn test_multiple_memories_with_filtering() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -381,6 +386,7 @@ async fn test_multiple_memories_with_filtering() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -481,6 +487,7 @@ async fn test_access_count_increments() {
                 evidence_budget: None,
                 retained_token_budget: None,
                 domain_scope: None,
+                reasoning_trust: None,
             })
             .await
             .unwrap();
@@ -932,6 +939,7 @@ async fn test_exact_recall_strategy() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -1175,6 +1183,7 @@ async fn test_quarantined_excluded_from_recall() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -1297,6 +1306,7 @@ async fn test_recall_scope_filter() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -1330,6 +1340,7 @@ async fn test_recall_scope_filter() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -1396,6 +1407,7 @@ async fn test_recall_multi_type_filter() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -1904,6 +1916,7 @@ async fn test_hybrid_with_graph_signal() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -1998,6 +2011,7 @@ async fn test_sync_push_pull() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -2209,6 +2223,7 @@ async fn test_permission_safe_ann() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -2325,6 +2340,7 @@ async fn test_as_of_point_in_time() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -2358,6 +2374,7 @@ async fn test_as_of_point_in_time() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -2393,6 +2410,7 @@ async fn test_as_of_point_in_time() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
@@ -2452,6 +2470,7 @@ async fn test_event_integrity_verification() {
             evidence_budget: None,
             retained_token_budget: None,
             domain_scope: None,
+            reasoning_trust: None,
         })
         .await
         .unwrap();
