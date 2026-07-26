@@ -18,8 +18,14 @@
 //!   cargo test -p mnemo-postgres --test pgvector_ann -- --nocapture
 //! ```
 //!
-//! The ANN bridge (`block_in_place` + `Handle::block_on`) requires a
-//! multi-threaded runtime, hence `#[tokio::test(flavor = "multi_thread")]`.
+//! As of v0.5.18 `VectorIndex::search` / `filtered_search` are **async**, so the
+//! pgvector query is awaited directly on the ambient runtime — no `block_on`
+//! bridge. `semantic_recall_on_current_thread_runtime` below is the regression
+//! guard: it runs the exact recall path on a **single-threaded**
+//! (`current_thread`) runtime, which the old `block_in_place` bridge would have
+//! *panicked* on ("can call blocking only when running on the multi-threaded
+//! runtime"). The main test uses `multi_thread` to exercise the worker-handoff
+//! path too.
 
 use std::sync::Arc;
 
@@ -34,6 +40,22 @@ use mnemo_postgres::{PgStorage, PgVectorIndex};
 const DIM: usize = 4;
 const AGENT_A: &str = "pgann-A";
 const AGENT_B: &str = "pgann-B";
+
+/// The tests in this binary share one database and each runs the schema
+/// migrations on `PgStorage::connect`. `CREATE EXTENSION IF NOT EXISTS vector`
+/// is not atomic against a concurrent creation (both connections see "not
+/// exists", both try to create → duplicate `pg_type` key), so serialize the
+/// connect step. Distinct agent ids keep the row fixtures independent.
+static PG_CONNECT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn connect_storage(url: &str) -> std::sync::Arc<PgStorage> {
+    let _guard = PG_CONNECT_LOCK.lock().await;
+    std::sync::Arc::new(
+        PgStorage::connect(url, DIM)
+            .await
+            .expect("connect + run migrations"),
+    )
+}
 
 /// Deterministic `content -> vector` map, so the memories carry *known*
 /// embeddings written through the real `remember` path and the query vector is
@@ -76,11 +98,7 @@ async fn pgvector_ann_semantic_auto_and_permission_filter() {
         return;
     };
 
-    let storage = Arc::new(
-        PgStorage::connect(&url, DIM)
-            .await
-            .expect("connect + run migrations"),
-    );
+    let storage = connect_storage(&url).await;
 
     // Best-effort clean of any prior run's rows so the fixture is deterministic.
     let _ = sqlx::query("DELETE FROM memories WHERE agent_id = ANY($1)")
@@ -150,5 +168,62 @@ async fn pgvector_ann_semantic_auto_and_permission_filter() {
     assert!(
         bresp.memories.iter().any(|m| m.id == secret_id),
         "AGENT_B must see its own private record"
+    );
+}
+
+/// Regression guard for the async-`VectorIndex` fix (#99): semantic pgvector
+/// recall must work from a **single-threaded** Tokio runtime. Under the old
+/// synchronous bridge (`block_in_place` + `Handle::block_on`), this call panicked
+/// — `block_in_place` is only valid on the multi-threaded runtime. Now that
+/// `search`/`filtered_search` are async and awaited directly, it must return real
+/// hits (not empty, not a panic).
+#[tokio::test(flavor = "current_thread")]
+async fn semantic_recall_on_current_thread_runtime() {
+    let Ok(url) = std::env::var("MNEMO_TEST_POSTGRES_URL") else {
+        eprintln!(
+            "skipping current-thread pgvector recall test: set MNEMO_TEST_POSTGRES_URL=postgres://..."
+        );
+        return;
+    };
+    const AGENT_C: &str = "pgann-C-ct";
+
+    let storage = connect_storage(&url).await;
+    let _ = sqlx::query("DELETE FROM memories WHERE agent_id = $1")
+        .bind(AGENT_C.to_string())
+        .execute(&storage.pool())
+        .await;
+
+    let index = Arc::new(PgVectorIndex::with_pool(storage.pool(), DIM));
+    let engine = Arc::new(MnemoEngine::new(
+        storage,
+        index,
+        Arc::new(MapEmbedding),
+        AGENT_C.to_string(),
+        None,
+    ));
+    for word in ["alpha", "beta", "gamma"] {
+        engine
+            .remember(RememberRequest::new(word.to_string()))
+            .await
+            .expect("remember");
+    }
+
+    let mut req = RecallRequest::new("query".to_string());
+    req.strategy = Some("semantic".to_string());
+    req.limit = Some(3);
+    // The assertion that matters: this does not panic on a current_thread
+    // runtime and returns real, non-empty semantic hits.
+    let resp = engine
+        .recall(req)
+        .await
+        .expect("semantic recall must not panic");
+    assert!(
+        !resp.memories.is_empty(),
+        "semantic recall on a current_thread runtime returned no hits"
+    );
+    assert_eq!(
+        resp.memories.first().map(|m| m.content.as_str()),
+        Some("alpha"),
+        "nearest record must rank first"
     );
 }

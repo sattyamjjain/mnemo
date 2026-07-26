@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -25,15 +24,16 @@ use uuid::Uuid;
 /// `domain_scoped` recall look like it legitimately "found nothing", the most
 /// dangerous failure mode for a memory database.
 ///
-/// ## Runtime requirement
+/// ## Runtime (v0.5.18)
 ///
-/// The [`VectorIndex`] trait is **synchronous** but pgvector queries are async
-/// `sqlx`. `search` is invoked from inside async `recall` on a Tokio worker
-/// thread, so the bridge is `block_in_place` + `Handle::block_on`, which
-/// requires the **multi-threaded** Tokio runtime. The CLI/server entrypoint is
-/// `#[tokio::main]` (multi-thread by default); integration tests must use
-/// `#[tokio::test(flavor = "multi_thread")]`. Tracking the long-term
-/// async-`VectorIndex` refactor: <https://github.com/sattyamjjain/mnemo/issues/99>.
+/// [`VectorIndex::search`] / [`filtered_search`](VectorIndex::filtered_search)
+/// are **async**, so this backend `.await`s its `sqlx` query directly on the
+/// caller's ambient Tokio runtime. There is **no `block_on` bridge** — semantic
+/// recall works from inside the server/CLI `#[tokio::main]` runtime (any flavor,
+/// single- or multi-threaded) without the "Cannot start a runtime from within a
+/// runtime" panic or deadlock the old synchronous bridge risked. Integration
+/// tests run under `#[tokio::test]` / `#[tokio::test(flavor = "multi_thread")]`
+/// alike.
 ///
 /// `add` / `remove` are intentional no-ops: the embedding is maintained by
 /// PostgreSQL on the `vector` column (via `PgStorage::insert_memory`), not by
@@ -163,26 +163,7 @@ fn map_ann_error(e: sqlx::Error) -> Error {
     }
 }
 
-/// Bridge the synchronous [`VectorIndex`] method into async `sqlx`.
-///
-/// `recall` calls `search` from within an async task on a Tokio worker thread,
-/// so `block_in_place` hands that worker's other tasks off before blocking —
-/// this requires the multi-threaded runtime (see the type-level doc). If there
-/// is no ambient runtime, fail loud rather than panic.
-fn block_on_query<F, T>(fut: F) -> Result<T>
-where
-    F: Future<Output = Result<T>>,
-{
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => tokio::task::block_in_place(move || handle.block_on(fut)),
-        Err(_) => Err(Error::Index(
-            "pgvector ANN search must run inside a multi-threaded Tokio runtime \
-             (the CLI/server uses #[tokio::main]); no runtime found"
-                .to_string(),
-        )),
-    }
-}
-
+#[async_trait::async_trait]
 impl VectorIndex for PgVectorIndex {
     fn add(&self, _id: Uuid, _vector: &[f32]) -> Result<()> {
         // No-op: PostgreSQL maintains the embedding on the `vector` column.
@@ -199,17 +180,19 @@ impl VectorIndex for PgVectorIndex {
         Ok(())
     }
 
-    fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(Uuid, f32)>> {
+    // Truly async: awaits the pgvector `sqlx` query on the ambient runtime, so
+    // it can never re-enter or deadlock the caller's `#[tokio::main]` runtime.
+    async fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(Uuid, f32)>> {
         let pool = self.pool_for(query)?;
         let vec = Vector::from(query.to_vec());
-        block_on_query(Self::ann_query(pool, &vec, limit))
+        Self::ann_query(pool, &vec, limit).await
     }
 
-    fn filtered_search(
+    async fn filtered_search(
         &self,
         query: &[f32],
         limit: usize,
-        filter: &dyn Fn(Uuid) -> bool,
+        filter: &(dyn Fn(Uuid) -> bool + Send + Sync),
     ) -> Result<Vec<(Uuid, f32)>> {
         let pool = self.pool_for(query)?;
         let vec = Vector::from(query.to_vec());
@@ -221,22 +204,20 @@ impl VectorIndex for PgVectorIndex {
         // have `limit` accessible hits or the underlying table is exhausted
         // (the ANN query returned fewer rows than we asked for). Mirrors the
         // USearch backend so filtered recall never under-returns.
-        block_on_query(async move {
-            let mut oversample = limit.saturating_mul(3).max(1);
-            loop {
-                let candidates = Self::ann_query(pool, &vec, oversample).await?;
-                let exhausted = candidates.len() < oversample;
-                let filtered: Vec<(Uuid, f32)> = candidates
-                    .into_iter()
-                    .filter(|(id, _)| filter(*id))
-                    .take(limit)
-                    .collect();
-                if filtered.len() >= limit || exhausted {
-                    return Ok(filtered);
-                }
-                oversample = oversample.saturating_mul(2);
+        let mut oversample = limit.saturating_mul(3).max(1);
+        loop {
+            let candidates = Self::ann_query(pool, &vec, oversample).await?;
+            let exhausted = candidates.len() < oversample;
+            let filtered: Vec<(Uuid, f32)> = candidates
+                .into_iter()
+                .filter(|(id, _)| filter(*id))
+                .take(limit)
+                .collect();
+            if filtered.len() >= limit || exhausted {
+                return Ok(filtered);
             }
-        })
+            oversample = oversample.saturating_mul(2);
+        }
     }
 
     fn save(&self, _path: &Path) -> Result<()> {
@@ -258,8 +239,8 @@ impl VectorIndex for PgVectorIndex {
 mod tests {
     use super::*;
 
-    #[test]
-    fn ann_search_fails_loud_not_silent_empty() {
+    #[tokio::test]
+    async fn ann_search_fails_loud_not_silent_empty() {
         // Constructed without a pool: ANN is genuinely unavailable and MUST
         // fail loud with the typed variant, never Ok(empty).
         let idx = PgVectorIndex::new();
@@ -271,17 +252,19 @@ mod tests {
         assert_eq!(idx.len(), 0);
 
         assert!(
-            idx.search(&[0.1, 0.2, 0.3], 5).is_err(),
+            idx.search(&[0.1, 0.2, 0.3], 5).await.is_err(),
             "search must fail loud, not return Ok(empty)"
         );
         assert!(
-            idx.filtered_search(&[0.1, 0.2, 0.3], 5, &|_| true).is_err(),
+            idx.filtered_search(&[0.1, 0.2, 0.3], 5, &|_| true)
+                .await
+                .is_err(),
             "filtered_search must fail loud, not return Ok(empty)"
         );
 
         // It must be the structured, typed variant — callers match on
         // backend/capability, not the message string.
-        match idx.search(&[0.0], 1).unwrap_err() {
+        match idx.search(&[0.0], 1).await.unwrap_err() {
             Error::BackendUnsupported {
                 backend,
                 capability,
@@ -298,14 +281,14 @@ mod tests {
         }
     }
 
-    #[test]
-    fn dimension_mismatch_is_loud() {
+    #[tokio::test]
+    async fn dimension_mismatch_is_loud() {
         // A pool-less index can't reach the dim check, but we can assert the
         // helper's contract via a constructed-with-dims instance is not
         // reachable without a live pool; the no-pool path already errors.
         // (Live-pool dimension + ANN behaviour is covered by the
         // MNEMO_TEST_POSTGRES_URL integration test.)
         let idx = PgVectorIndex::new();
-        assert!(idx.search(&[0.1; 4], 3).is_err());
+        assert!(idx.search(&[0.1; 4], 3).await.is_err());
     }
 }

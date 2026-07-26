@@ -106,7 +106,7 @@ pub async fn detect_conflicts(
         };
 
         // Search for similar memories using the vector index
-        let results = engine.index.search(embedding, 20)?;
+        let results = engine.index.search(embedding, 20).await?;
 
         for (candidate_id, distance) in results {
             if candidate_id == record.id {

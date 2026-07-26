@@ -1,5 +1,16 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-26 for the **v0.5.18** cut — a **bugfix + internal-API** change:
+> `mnemo_core::index::VectorIndex::search` / `filtered_search` are now **async**
+> (`#[async_trait]`), and the `filtered_search` filter is now
+> `&(dyn Fn(Uuid) -> bool + Send + Sync)`. This fixes Postgres pgvector semantic
+> recall, which previously bridged async `sqlx` through `block_in_place` and could
+> **panic/deadlock** inside the server/CLI runtime; it now `.await`s directly and
+> works on any runtime flavor. **Breaking only for external `VectorIndex`
+> implementors** (none published; the in-tree USearch/pgvector/bench impls are
+> updated). No wire/storage/protocol change; the MCP/REST/gRPC/pgwire recall
+> surfaces are unchanged. Version pins move 0.5.17 → 0.5.18 in lockstep.
+>
 > Updated 2026-07-25 for the **v0.5.17** cut — a **feature + benchmark** change:
 > a forged-reasoning defense — `retrieval::ReasoningTrustPolicy` on the new
 > additive, opt-in `RecallRequest.reasoning_trust` field, enforced in recall's

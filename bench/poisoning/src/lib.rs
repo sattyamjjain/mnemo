@@ -170,6 +170,7 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
     1.0 - dot / denom
 }
 
+#[async_trait::async_trait]
 impl VectorIndex for BruteForceIndex {
     fn add(&self, id: uuid::Uuid, vector: &[f32]) -> MnResult<()> {
         self.rows.write().unwrap().push((id, vector.to_vec()));
@@ -179,14 +180,14 @@ impl VectorIndex for BruteForceIndex {
         self.rows.write().unwrap().retain(|(x, _)| *x != id);
         Ok(())
     }
-    fn search(&self, query: &[f32], limit: usize) -> MnResult<Vec<(uuid::Uuid, f32)>> {
-        self.filtered_search(query, limit, &|_| true)
+    async fn search(&self, query: &[f32], limit: usize) -> MnResult<Vec<(uuid::Uuid, f32)>> {
+        self.filtered_search(query, limit, &|_| true).await
     }
-    fn filtered_search(
+    async fn filtered_search(
         &self,
         query: &[f32],
         limit: usize,
-        filter: &dyn Fn(uuid::Uuid) -> bool,
+        filter: &(dyn Fn(uuid::Uuid) -> bool + Send + Sync),
     ) -> MnResult<Vec<(uuid::Uuid, f32)>> {
         let rows = self.rows.read().unwrap();
         let mut scored: Vec<(usize, uuid::Uuid, f32)> = rows

@@ -445,17 +445,21 @@ The matrix below is explicit about what each backend does.
 ¹ **Postgres vector recall runs a real pgvector ANN query** against the
 `idx_memories_embedding_hnsw` HNSW index (cosine `<=>`, `ORDER BY … LIMIT k`),
 with the same permission-safe oversample-then-filter the USearch backend uses,
-so filtered/scoped recall never under-returns. Because the `VectorIndex` trait
-is synchronous, the async `sqlx` query is bridged with `block_in_place` +
-`Handle::block_on`, which **requires the multi-threaded Tokio runtime** (the
-CLI/server entrypoint is `#[tokio::main]`, which is multi-thread). If the
+so filtered/scoped recall never under-returns. As of **v0.5.18** the
+`VectorIndex::search` / `filtered_search` methods are **async** (#99 resolved):
+the `sqlx` query is `.await`ed directly on the caller's ambient Tokio runtime, so
+Postgres semantic recall works from inside the server/CLI `#[tokio::main]`
+runtime on **any flavor** — single- or multi-threaded — with **no `block_on`
+bridge** and therefore no "runtime within a runtime" panic or deadlock. If the
 pgvector extension / `<=>` operator is genuinely absent at runtime, the vector
 lane still **fails loud** with a typed
 [`Error::BackendUnsupported`](crates/mnemo-core/src/error.rs) — never a silent
-empty result. Verified by the `MNEMO_TEST_POSTGRES_URL`-gated integration test
-[`crates/mnemo-postgres/tests/pgvector_ann.rs`](crates/mnemo-postgres/tests/pgvector_ann.rs)
-(nearest-in-rank-order + permission filter). The long-term async-`VectorIndex`
-refactor is still tracked in [#99](https://github.com/sattyamjjain/mnemo/issues/99).
+empty result. Verified end-to-end against a live pgvector Postgres by the
+`MNEMO_TEST_POSTGRES_URL`-gated integration test
+[`crates/mnemo-postgres/tests/pgvector_ann.rs`](crates/mnemo-postgres/tests/pgvector_ann.rs):
+nearest-in-rank-order + permission filter under a multi-threaded runtime, **and**
+a `current_thread`-runtime regression test that the old bridge would have
+panicked on.
 
 ### Embedder support matrix — which embedders actually produce semantic results
 

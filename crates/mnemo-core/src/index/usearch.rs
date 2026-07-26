@@ -63,6 +63,7 @@ impl UsearchIndex {
     }
 }
 
+#[async_trait::async_trait]
 impl VectorIndex for UsearchIndex {
     fn add(&self, id: Uuid, vector: &[f32]) -> Result<()> {
         if vector.len() != self.dimensions {
@@ -125,7 +126,9 @@ impl VectorIndex for UsearchIndex {
         Ok(())
     }
 
-    fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(Uuid, f32)>> {
+    // In-memory USearch search is synchronous CPU work; the RwLock guard never
+    // crosses an `.await` (there is none), so the future stays `Send`.
+    async fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(Uuid, f32)>> {
         let index = self.index.read().unwrap_or_else(|e| e.into_inner());
         let results = index
             .search(query, limit)
@@ -141,11 +144,11 @@ impl VectorIndex for UsearchIndex {
         Ok(output)
     }
 
-    fn filtered_search(
+    async fn filtered_search(
         &self,
         query: &[f32],
         limit: usize,
-        filter: &dyn Fn(Uuid) -> bool,
+        filter: &(dyn Fn(Uuid) -> bool + Send + Sync),
     ) -> Result<Vec<(Uuid, f32)>> {
         let index_size = self.len();
         if index_size == 0 {
@@ -154,7 +157,7 @@ impl VectorIndex for UsearchIndex {
         // Iterative oversample: start at 3x, double until we have enough or hit index size
         let mut oversample = (limit * 3).max(1);
         loop {
-            let results = self.search(query, oversample.min(index_size))?;
+            let results = self.search(query, oversample.min(index_size)).await?;
             let filtered: Vec<(Uuid, f32)> = results
                 .into_iter()
                 .filter(|(uuid, _)| filter(*uuid))
@@ -260,8 +263,8 @@ mod tests {
         v
     }
 
-    #[test]
-    fn test_add_and_search() {
+    #[tokio::test]
+    async fn test_add_and_search() {
         let index = UsearchIndex::new(128).unwrap();
 
         let mut ids = Vec::new();
@@ -277,7 +280,7 @@ mod tests {
         assert_eq!(index.len(), 100);
 
         // Search with the first vector should return itself as nearest
-        let results = index.search(&vectors[0], 5).unwrap();
+        let results = index.search(&vectors[0], 5).await.unwrap();
         assert!(!results.is_empty());
         assert_eq!(results[0].0, ids[0]);
     }
@@ -295,8 +298,8 @@ mod tests {
         assert_eq!(index.len(), 0);
     }
 
-    #[test]
-    fn test_filtered_search() {
+    #[tokio::test]
+    async fn test_filtered_search() {
         let index = UsearchIndex::new(128).unwrap();
 
         let mut ids = Vec::new();
@@ -312,6 +315,7 @@ mod tests {
         let query = random_vector(128, 0);
         let results = index
             .filtered_search(&query, 10, &|id| !excluded.contains(&id))
+            .await
             .unwrap();
 
         // All results should be odd-indexed
@@ -320,8 +324,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_save_and_load() {
+    #[tokio::test]
+    async fn test_save_and_load() {
         let dir = std::env::temp_dir().join(format!("usearch_test_{}", Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
         let index_path = dir.join("test.usearch");
@@ -340,7 +344,7 @@ mod tests {
         assert_eq!(index2.len(), 2);
 
         // Search should still work
-        let results = index2.search(&random_vector(128, 1), 1).unwrap();
+        let results = index2.search(&random_vector(128, 1), 1).await.unwrap();
         assert_eq!(results[0].0, id1);
 
         // Cleanup

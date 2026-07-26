@@ -4,6 +4,40 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-07-26) — Postgres pgvector semantic recall works from the async runtime (v0.5.17 → v0.5.18, #99)
+
+**`fix`: make the `VectorIndex` ANN path truly async so Postgres semantic recall
+can no longer panic or deadlock inside the server/CLI `#[tokio::main]` runtime.**
+
+- **Root cause:** `PgVectorIndex::search` / `filtered_search` bridged the async
+  `sqlx` pgvector query through `block_in_place` + `Handle::block_on`. That
+  requires the multi-threaded runtime and re-enters the current one — on a
+  `current_thread` runtime it **panics** ("can call blocking only when running on
+  the multi-threaded runtime"), and it risks deadlock. So Postgres semantic /
+  hybrid / graph / domain-scoped recall, while no longer silent-empty, could
+  **panic at runtime**.
+- **Fix (option a — the real one):** `mnemo_core::index::VectorIndex::search` and
+  `filtered_search` are now **async** (`#[async_trait]`); the pgvector backend
+  `.await`s its query directly on the ambient runtime — no `block_on` bridge, no
+  runtime re-entry, works on **any** runtime flavor. The USearch backend does its
+  synchronous CPU work inside the async method (no runtime assumed). `recall`
+  (`crates/mnemo-core/src/query/recall.rs`) and `conflict` now `.await` the index;
+  the `filtered_search` filter is `&(dyn Fn(Uuid) -> bool + Send + Sync)` so the
+  future stays `Send`. **Breaking only for external `VectorIndex` implementors**
+  (none published).
+- **Fail-loud preserved:** a pool-less index / genuinely-absent pgvector extension
+  still returns the typed `Error::BackendUnsupported` — never a silent success
+  (unit tests retained).
+- **Proof:** the `MNEMO_TEST_POSTGRES_URL`-gated integration test
+  [`crates/mnemo-postgres/tests/pgvector_ann.rs`](crates/mnemo-postgres/tests/pgvector_ann.rs)
+  runs `remember()` + semantic/auto `recall()` against a **live pgvector Postgres**
+  and asserts real, non-empty, rank-ordered hits with the permission filter
+  respected — under a **multi-threaded** runtime **and** a new
+  **`current_thread`** regression test that the old bridge would have panicked on.
+  Both pass end-to-end (verified locally against PostgreSQL 17 + pgvector 0.8.5).
+- README storage-backend footnote updated: Postgres vector recall now works from
+  any Tokio runtime flavor with no `block_on` bridge; #99 resolved.
+
 ### Added (2026-07-25) — forged-reasoning defense + real-embedder resistance bench (v0.5.16 → v0.5.17)
 
 **`feat`: defend against forged-reasoning memory injection — an attacker plants a

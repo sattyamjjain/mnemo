@@ -406,10 +406,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
         "semantic" => {
             // Vector-only path with permission pre-filtering
-            let search_results =
-                engine
-                    .index
-                    .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            let search_results = engine
+                .index
+                .filtered_search(&query_embedding, limit * 3, &perm_filter)
+                .await?;
             for (id, distance) in search_results {
                 if let Some(record) = get_memory_cached(engine, id).await?
                     && passes_filters(&record, &request, &agent_id, engine).await
@@ -463,10 +463,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
             let domain_filter = |id: Uuid| {
                 perm_filter(id) && domain_ids.as_ref().map(|d| d.contains(&id)).unwrap_or(true)
             };
-            let search_results =
-                engine
-                    .index
-                    .filtered_search(&query_embedding, limit * 3, &domain_filter)?;
+            let search_results = engine
+                .index
+                .filtered_search(&query_embedding, limit * 3, &domain_filter)
+                .await?;
             for (id, distance) in search_results {
                 if let Some(record) = get_memory_cached(engine, id).await?
                     && passes_filters(&record, &request, &agent_id, engine).await
@@ -478,10 +478,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
         "graph" => {
             // Seed from vector results with permission pre-filtering, then expand via graph relations
-            let search_results =
-                engine
-                    .index
-                    .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            let search_results = engine
+                .index
+                .filtered_search(&query_embedding, limit * 3, &perm_filter)
+                .await?;
             let mut seeds: Vec<(Uuid, f32)> = Vec::new();
             for (id, distance) in &search_results {
                 if let Some(record) = get_memory_cached(engine, *id).await?
@@ -575,10 +575,10 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         }
         _ => {
             // "auto" or "hybrid" — use hybrid if full_text available, else semantic
-            let vector_results =
-                engine
-                    .index
-                    .filtered_search(&query_embedding, limit * 3, &perm_filter)?;
+            let vector_results = engine
+                .index
+                .filtered_search(&query_embedding, limit * 3, &perm_filter)
+                .await?;
             let mut vector_ranked: Vec<(Uuid, f32)> = Vec::new();
             for (id, distance) in vector_results {
                 vector_ranked.push((id, 1.0 - distance));
