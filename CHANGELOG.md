@@ -4,6 +4,55 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Security (2026-07-27) — role-aware MCP tool filter is now wired end-to-end
+
+**`feat`: the `RoleFilter` in `crates/mnemo-mcp/src/role_filter.rs` is no longer
+dead code — it is dispatched by the server.**
+
+- New builder `MnemoServer::with_role_filter(Arc<dyn RoleFilter>)` stores an
+  optional filter. When set, the server overrides `ServerHandler::list_tools` so
+  a caller only sees the tools its role is allowed to call, **and** checks the
+  filter at the top of `call_tool` so a denied tool cannot be invoked by name —
+  a denied call returns a structured `-32601` (method-not-found) MCP error with
+  the deny reason, never a silent empty result. Without a filter, every tool is
+  visible and callable (unchanged behavior).
+- **Caller identity:** stdio transport carries no per-call caller identity (the
+  binary's operator *is* the caller), so the dispatch builds a `CallerContext`
+  from the engine's default agent id with no roles. Per-request identity
+  plumbing (HTTP/authenticated transports) is a documented follow-up — the
+  wiring, filter, and tests are all in place for it.
+- **Tests:** `role_filter_hides_and_blocks_denied_tools` asserts a denied tool is
+  both hidden from `tools/list` **and** rejected by `tools/call` (the assertion
+  that matters), plus the no-filter baseline.
+
+### Docs (2026-07-27) — all 21 registered MCP tools are documented + drift-tested
+
+- `docs/src/tools/README.md` rewritten from "10 tools" to the full **21**
+  registered tools, grouped (core memory ops; checkpoint/branch/merge/replay;
+  delegation & verification; attention state; agent-controlled `mem_*`; plan
+  memory) with each tool's purpose, arguments, and return shape taken from the
+  actual tool definitions in `server.rs`.
+- New test `docs_document_exactly_the_registered_tools` regenerates the tool set
+  from the live `tool_router` and asserts the docs document **exactly** that set
+  (no undocumented tool, no phantom tool) — this is what caught the drift.
+- Clarified that `mnemo.export_audit_log` is **not** a registered MCP tool: the
+  capability exists today as the library API `mnemo_compliance::export_audit_log`
+  and is a *planned* lease-gated tool. Fixed stale "10/15 MCP tools" counts in
+  `README.md`, `docs/src/introduction.md`, and `docs/src/compliance/README.md`
+  (the root README tool table gained the 6 missing rows: `forget_subject`,
+  `trajectory_audit`, and the four `mem_*`).
+
+### Build (2026-07-27) — crates.io version-drift guard + SDK version-policy notes
+
+- New CI job **version-drift** (`scripts/check_version_drift.sh`) fails when the
+  workspace version is more than one patch ahead of the newest `mnemo-core`
+  release on crates.io — the forcing function against tagged-but-unpublished
+  releases. **Expected red until 0.5.17 / 0.5.18 are published** (crates.io is at
+  0.5.16; publishing is gated on the maintainer's registry token).
+- `python/pyproject.toml` gained a comment documenting that the PyPI `mnemo-db`
+  package versions **independently** of the Rust workspace (tracks PyPI 0.5.12,
+  not workspace 0.5.18).
+
 ### Fixed (2026-07-26) — Postgres pgvector semantic recall works from the async runtime (v0.5.17 → v0.5.18, #99)
 
 **`fix`: make the `VectorIndex` ANN path truly async so Postgres semantic recall

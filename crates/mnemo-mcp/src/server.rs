@@ -26,6 +26,7 @@ use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
 
+use crate::role_filter::{AllowDecision, CallerContext, RoleFilter};
 use crate::tools::agent_managed::{
     AGENT_MANAGED_TAG, MemForgetInput, MemReadInput, MemReviseInput, MemWriteInput,
 };
@@ -60,6 +61,13 @@ pub struct MnemoServer {
     /// spec-shaped error result ("attention_state store not
     /// attached").
     attention_state: Option<Arc<dyn AttentionStateStore>>,
+    /// v0.5.19 — optional role-aware tool filter. When set, `list_tools`
+    /// hides tools the caller's roles don't permit AND `call_tool` rejects a
+    /// denied tool by name with a spec-compliant `-32601` error (so a caller
+    /// cannot invoke a tool it was never shown). When unset, all tools are
+    /// exposed and every call passes (byte-for-byte pre-v0.5.19 behaviour).
+    /// See [`crate::role_filter`].
+    role_filter: Option<Arc<dyn RoleFilter>>,
 }
 
 impl MnemoServer {
@@ -72,6 +80,52 @@ impl MnemoServer {
             t.store(now, Ordering::Relaxed);
         }
     }
+
+    /// Caller context used for role-filter checks. In the stdio transport the
+    /// MCP protocol carries **no per-call caller identity** — the binary's
+    /// operator is the caller, and the caller's roles are declared in the
+    /// manifest and held inside the [`RoleFilter`] itself (see
+    /// [`crate::role_filter::ManifestRoleFilter`]). We therefore pass the
+    /// server's default agent id as the opaque caller id (for audit) and an
+    /// empty role vec; the filter combines it with its manifest roles. When an
+    /// HTTP/SSE transport that authenticates the caller lands, build this from
+    /// the authenticated subject instead — that identity plumbing is the
+    /// follow-up (tracked with the attestation wiring in `mnemo-cli::attest`).
+    fn caller_context(&self) -> CallerContext {
+        CallerContext::new(self.engine.default_agent_id.clone(), Vec::new())
+    }
+
+    /// The tool names visible to the current caller under the attached
+    /// [`RoleFilter`] — exactly the set `tools/list` returns. All registered
+    /// tools when no filter is attached. Exposed so the filtering decision is
+    /// unit-testable without a live MCP service harness (which the
+    /// `RequestContext` that `list_tools`/`call_tool` take requires).
+    pub fn visible_tool_names(&self) -> Vec<String> {
+        let all: Vec<String> = self
+            .tool_router
+            .list_all()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        match &self.role_filter {
+            Some(filter) => filter.filter_tools(&self.caller_context(), &all),
+            None => all,
+        }
+    }
+
+    /// `Some(reason)` when the attached [`RoleFilter`] denies calling
+    /// `tool_name` for the current caller — the exact gate `tools/call` applies
+    /// before dispatch. `None` (allowed) when no filter is attached or the
+    /// filter permits the call.
+    pub fn tool_call_denial(&self, tool_name: &str) -> Option<String> {
+        match &self.role_filter {
+            Some(filter) => match filter.allows(&self.caller_context(), tool_name) {
+                AllowDecision::Deny { reason } => Some(reason),
+                AllowDecision::Allow => None,
+            },
+            None => None,
+        }
+    }
 }
 
 #[tool_router]
@@ -82,11 +136,25 @@ impl MnemoServer {
             tool_router: Self::tool_router(),
             activity_tracker: None,
             attention_state: None,
+            role_filter: None,
         }
     }
 
     pub fn with_activity_tracker(mut self, tracker: Arc<AtomicU64>) -> Self {
         self.activity_tracker = Some(tracker);
+        self
+    }
+
+    /// v0.5.19 — attach a role-aware tool filter ([`RoleFilter`]). When set,
+    /// `tools/list` hides tools the caller's roles don't permit and `tools/call`
+    /// rejects a denied tool by name with a spec-compliant `-32601` error — so a
+    /// caller can neither see nor invoke a tool it isn't allowed. A denied call
+    /// returns a structured MCP error, never a silent empty result. Unset keeps
+    /// the pre-v0.5.19 behaviour (all tools exposed). Typically built from the
+    /// manifest `[role_filter]` block via
+    /// [`ManifestRoleFilter`](crate::role_filter::ManifestRoleFilter).
+    pub fn with_role_filter(mut self, filter: Arc<dyn RoleFilter>) -> Self {
+        self.role_filter = Some(filter);
         self
     }
 
@@ -1335,6 +1403,56 @@ fn summarize(content: &str) -> String {
 
 #[tool_handler]
 impl ServerHandler for MnemoServer {
+    /// v0.5.19 — role-filtered `tools/list`. Because we define `list_tools`
+    /// here, the `#[tool_handler]` macro skips generating its own (it only
+    /// generates methods absent from this impl). When a [`RoleFilter`] is
+    /// attached, a caller sees only the tools its roles permit; otherwise this
+    /// is identical to the macro's default (`tool_router.list_all()`).
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, McpError> {
+        let visible: std::collections::HashSet<String> =
+            self.visible_tool_names().into_iter().collect();
+        let tools = self
+            .tool_router
+            .list_all()
+            .into_iter()
+            .filter(|t| visible.contains(t.name.as_ref()))
+            .collect();
+        Ok(rmcp::model::ListToolsResult {
+            tools,
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    /// v0.5.19 — role-filtered `tools/call`. A caller cannot invoke by name a
+    /// tool it was not shown: a denied tool returns a spec-compliant `-32601`
+    /// (method not found) with the deny reason echoed in `data` — never a silent
+    /// empty result. Non-denied calls delegate to the same `tool_router.call`
+    /// the macro-generated dispatch uses.
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, McpError> {
+        let name = request.name.to_string();
+        if let Some(reason) = self.tool_call_denial(&name) {
+            return Err(McpError::new(
+                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                format!("tool '{name}' not found"),
+                Some(serde_json::json!({
+                    "tool": name,
+                    "role_filter_reason": reason,
+                })),
+            ));
+        }
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
     async fn list_resources(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,

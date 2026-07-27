@@ -62,8 +62,8 @@ Throughout the compliance documents, the following status labels are used:
 
 ## Versioning
 
-This compliance documentation reflects the state of Mnemo as of Sprint 3
-completion (67 tests passing, 10 MCP tools, 26-method StorageBackend trait).
+This compliance documentation reflects the current compliance posture of Mnemo
+(21 registered MCP tools; see the [tools reference](../tools/README.md)).
 It should be updated whenever security-relevant features are added or modified.
 
 | Version | Date | Changes |

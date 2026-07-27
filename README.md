@@ -143,13 +143,14 @@ Add to your MCP client configuration (e.g. Claude Desktop, Cursor, etc.):
 
 ### 3. Use it
 
-Your AI agent now has persistent memory with 15 MCP tools:
+Your AI agent now has persistent memory with 21 MCP tools:
 
 | Tool | Description |
 |------|-------------|
 | `mnemo.remember` | Store a new memory with semantic embeddings |
 | `mnemo.recall` | Search memories by semantic similarity, keywords, or hybrid |
 | `mnemo.forget` | Delete memories (soft delete, hard delete, decay, consolidate, archive) |
+| `mnemo.forget_subject` | GDPR / DPDPA subject erasure: redact (default, preserves the hash chain) or hard-delete every memory tagged `subject:<id>` |
 | `mnemo.share` | Share a memory with another agent |
 | `mnemo.checkpoint` | Snapshot the current agent memory state |
 | `mnemo.branch` | Create a branch from a checkpoint for experimentation |
@@ -157,11 +158,16 @@ Your AI agent now has persistent memory with 15 MCP tools:
 | `mnemo.replay` | Replay events from a checkpoint |
 | `mnemo.delegate` | Delegate scoped, time-bounded permissions to another agent |
 | `mnemo.verify` | Verify SHA-256 hash chain integrity |
+| `mnemo.trajectory_audit` | GEM-aligned trajectory-correctness audit ([arXiv:2605.26252](https://arxiv.org/abs/2605.26252)): unregulated growth, missing semantic revision, capacity-driven forgetting, read-only retrieval |
 | `mnemo.consolidate` | v0.5.0 — Group related memories into one revisable **topic document** (Infini-Memory): collects members as evidence, preserves provenance, records a hash-chained audit event; pass `supersede` to revise a fact while keeping the old version in history |
 | `mnemo.remember_plan` | v0.4.14 — Cache a *successful* retrieval/reasoning plan (query signature + steps + chunk ids + outcome score) into the experience-memory tier (DocTrace; only when the mode is enabled) |
 | `mnemo.recall_plan` | v0.4.14 — Replay the best cached plan for a structurally-similar query instead of re-running full retrieval; RBAC-gated, returns a miss when nothing matches |
 | `mnemo.attention_state.put` | v0.4.5 — Store an opaque attention-state blob keyed by `(agent_id, prefix_hash)` (anchored on [arXiv:2605.18226](https://arxiv.org/abs/2605.18226); only registered when the server is built with `MnemoServer::with_attention_state(...)`) |
 | `mnemo.attention_state.get` | v0.4.5 — Look up an attention-state blob by `(agent_id, prefix_hash)`; returns `null` on miss |
+| `mnemo.mem_write` | Agent-controlled memory (AutoMEM): persist an entry you explicitly decided to keep into your flat, agent-managed store |
+| `mnemo.mem_read` | Agent-controlled memory (AutoMEM): read back only your own `agent-managed` entries |
+| `mnemo.mem_revise` | Agent-controlled memory (AutoMEM): supersede a stale agent-managed entry with a corrected one (newest wins) |
+| `mnemo.mem_forget` | Agent-controlled memory (AutoMEM): drop an agent-managed entry (soft by default; `hard=true` for permanent) |
 
 ## Access Protocols
 

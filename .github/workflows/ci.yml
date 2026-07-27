@@ -106,3 +106,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p mnemo-postgres --test pgvector_ann -- --nocapture
+
+  # Fails when the workspace version drifts MORE THAN ONE PATCH ahead of the
+  # newest mnemo-core release on crates.io — the forcing function that stops
+  # tagged-but-unpublished releases from piling up (see scripts/check_version_drift.sh).
+  version-drift:
+    name: Version drift (crates.io)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/check_version_drift.sh

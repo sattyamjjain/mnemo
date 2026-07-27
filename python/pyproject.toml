@@ -9,6 +9,10 @@ build-backend = "maturin"
 # the PyPI distribution name moves. Users do `pip install mnemo-db`
 # then `from mnemo import MnemoClient`.
 name = "mnemo-db"
+# Versioned INDEPENDENTLY of the Rust workspace (currently 0.5.18): this is a
+# separate PyPI artifact with its own release cadence. This value tracks the
+# newest release on PyPI (mnemo-db 0.5.12), not the workspace version. Bump it
+# only when cutting a new PyPI release via maturin.
 version = "0.5.12"
 description = "MCP-native memory database for AI agents"
 readme = "README.md"

@@ -312,3 +312,128 @@ async fn test_engine_verify_via_server_engine() {
     assert_eq!(result.total_records, 3);
     assert_eq!(result.verified_records, 3);
 }
+
+/// Item 1 (1d) — the role filter, once attached, both HIDES a denied tool from
+/// `tools/list` and BLOCKS it from `tools/call`. `list_tools` / `call_tool` take
+/// an rmcp `RequestContext` that requires a live service peer (not constructible
+/// in a unit test), so we assert on `visible_tool_names()` and
+/// `tool_call_denial()` — the exact functions those two handlers delegate to
+/// (see `server.rs`). The second assertion (cannot invoke by name) is the one
+/// that matters: a hidden-but-callable tool would still be exploitable.
+#[tokio::test]
+async fn role_filter_hides_and_blocks_denied_tools() {
+    use mnemo_mcp::role_filter::{DefaultPolicy, ManifestRoleFilter, RoleFilterConfig};
+    use std::collections::BTreeMap;
+
+    // Baseline: with NO filter attached, every tool is visible and callable.
+    let (unfiltered, engine) = create_server();
+    assert!(
+        unfiltered
+            .visible_tool_names()
+            .iter()
+            .any(|n| n == "mnemo.forget"),
+        "without a filter, mnemo.forget must be visible"
+    );
+    assert!(
+        unfiltered.tool_call_denial("mnemo.forget").is_none(),
+        "without a filter, no tool is denied"
+    );
+
+    // A manifest filter: the caller carries role `agent`; only `mnemo.recall` is
+    // allowed for `agent`, everything else falls through to default DenyAll.
+    let mut allow = BTreeMap::new();
+    allow.insert("mnemo.recall".to_string(), vec!["agent".to_string()]);
+    let config = RoleFilterConfig {
+        caller_roles: vec!["agent".to_string()],
+        default: DefaultPolicy::DenyAll,
+        allow,
+        deny: BTreeMap::new(),
+    };
+    let filter = std::sync::Arc::new(ManifestRoleFilter::new(config));
+    let server = MnemoServer::new(engine).with_role_filter(filter);
+
+    let visible = server.visible_tool_names();
+
+    // (1) A denied tool is NOT shown in tools/list.
+    assert!(
+        !visible.iter().any(|n| n == "mnemo.forget"),
+        "denied tool mnemo.forget must be hidden from tools/list, got {visible:?}"
+    );
+    // The allowed tool IS shown.
+    assert!(
+        visible.iter().any(|n| n == "mnemo.recall"),
+        "allowed tool mnemo.recall must remain visible, got {visible:?}"
+    );
+
+    // (2) THE ONE THAT MATTERS: a denied tool cannot be invoked by name —
+    // call_tool would return the structured -32601 built from this reason.
+    let denial = server.tool_call_denial("mnemo.forget");
+    assert!(
+        denial.as_ref().is_some_and(|r| !r.is_empty()),
+        "call_tool must reject mnemo.forget with a non-empty deny reason, got {denial:?}"
+    );
+    // An allowed tool is not denied.
+    assert!(
+        server.tool_call_denial("mnemo.recall").is_none(),
+        "mnemo.recall must remain callable"
+    );
+}
+
+/// Item 2 (2e) — the docs cannot silently drift from the registered tool set.
+/// Regenerate the list of tool names the server actually registers (from the
+/// live `tool_router`, no filter) and assert `docs/src/tools/README.md`
+/// documents EXACTLY that set — no undocumented tool, no phantom tool. This is
+/// what caught the old "10 tools" / phantom `mnemo.export_audit_log` drift.
+#[tokio::test]
+async fn docs_document_exactly_the_registered_tools() {
+    use std::collections::BTreeSet;
+
+    // Registered set: every tool the router exposes when no role filter is set.
+    let (server, _engine) = create_server();
+    let registered: BTreeSet<String> = server.visible_tool_names().into_iter().collect();
+    assert_eq!(registered.len(), 21, "expected 21 registered tools");
+
+    // Documented set: the first cell of every markdown table row that names a
+    // tool. Prose mentions (e.g. the `mnemo.export_audit_log` note, which is a
+    // planned/library capability, not a registered tool) live in paragraphs,
+    // not `|`-delimited rows, so they are intentionally excluded.
+    let readme_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/tools/README.md"
+    );
+    let readme = std::fs::read_to_string(readme_path)
+        .unwrap_or_else(|e| panic!("cannot read {readme_path}: {e}"));
+
+    let documented: BTreeSet<String> = readme
+        .lines()
+        .filter(|l| l.trim_start().starts_with('|'))
+        .filter_map(|l| l.split('|').nth(1)) // first cell after leading '|'
+        .filter_map(|cell| {
+            // Extract a `mnemo.<name>` token (name may contain '_' and '.').
+            let start = cell.find("mnemo.")?;
+            let rest = &cell[start..];
+            let end = rest
+                .char_indices()
+                .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '.'))
+                .map(|(i, _)| i)
+                .unwrap_or(rest.len());
+            Some(rest[..end].trim_end_matches('.').to_string())
+        })
+        .collect();
+
+    let missing_from_docs: Vec<_> = registered.difference(&documented).collect();
+    let phantom_in_docs: Vec<_> = documented.difference(&registered).collect();
+
+    assert!(
+        missing_from_docs.is_empty(),
+        "registered tools NOT documented in docs/src/tools/README.md: {missing_from_docs:?}"
+    );
+    assert!(
+        phantom_in_docs.is_empty(),
+        "docs/src/tools/README.md documents tools that are NOT registered: {phantom_in_docs:?}"
+    );
+    assert_eq!(
+        registered, documented,
+        "documented tool set must exactly equal the registered set"
+    );
+}
