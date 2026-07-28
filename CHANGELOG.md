@@ -32,6 +32,26 @@ hardened CLI path — so `mnemo mcp-server --manifest` enforced nothing.**
   the library-level `role_filter_*.rs` tests did not catch this because the library was
   never broken — only the CLI dropped the filter.
 
+### Docs (2026-07-28) — rmcp version claim fenced; README enforcement table corrected
+
+- **README security-enforcement table:** the **MCP role-filter** row moved from
+  ❌ "parsed + validated only" to a conditional ✅ that names both the condition and the
+  transport limitation — enforced when a `[role_filter]` block is present and not a
+  no-op (a denied tool is hidden from `tools/list` and rejected by `tools/call` with
+  `-32601`); on stdio it is a server-wide tool denylist, not per-caller RBAC; with no
+  block, every advertised tool stays reachable (unchanged). The matching feature bullet
+  was retitled from "parsed + validated; not yet dispatched" to "enforced when
+  configured". The tool-catalog attestation, consent-token, and lease rows stay ❌ —
+  those are still library-only and untouched.
+- **rmcp version fence:** the MCP runtime version was claimed three different wrong ways
+  ("rmcp 1.3", `rmcp = "1.3"`, "rmcp 0.14") while the root `Cargo.toml` pins
+  `rmcp = "2.2"`. New test `crates/mnemo-cli/tests/docs_rmcp_version_matches_workspace.rs`
+  parses the real version from `[workspace.dependencies]` and fails on any `rmcp <ver>`
+  claim in `README.md` / `docs/src/**` whose `major.minor` disagrees, reporting each by
+  file and line. Fixed the **5 live surfaces** it flagged (README ×2, `architecture.md`,
+  `introduction.md`, `integrations/mcp-server.md`) to 2.2 — keeping the "SEPs land in
+  `rmcp` first; mnemo upgrades when stable" spec-follower argument intact.
+
 ### Security (2026-07-27) — role-aware MCP tool filter is now wired end-to-end
 
 **`feat`: the `RoleFilter` in `crates/mnemo-mcp/src/role_filter.rs` is no longer
