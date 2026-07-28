@@ -4,6 +4,34 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Security (2026-07-28) — manifest [role_filter] is now attached in hardened mode
+
+**`fix`: the manifest `[role_filter]` was built but never passed to the server on the
+hardened CLI path — so `mnemo mcp-server --manifest` enforced nothing.**
+
+- The filter was constructed from the `[role_filter]` block in
+  `crates/mnemo-cli/src/main.rs` (L696), but the hardened server was built as a bare
+  `MnemoServer::new(engine)` (L802) with no `.with_role_filter(...)` — so the binding
+  was read once for a logging branch and then discarded. The library dispatch
+  (`list_tools` filtering + `call_tool` `-32601`) landed in the previous commit and was
+  correct and tested; only the binary dropped the filter, so a manifest `deny` list was
+  parsed, logged, and thrown away. Now attached: `server.with_role_filter(filter)`.
+- The startup log was a security-posture misreport ("per-tool dispatch enforcement is
+  NOT active … tool calls are NOT filtered by role yet") — the kind of line an operator
+  reacts to by adding a redundant control or disabling the filter. Replaced with an
+  `info!` that reports the enforcing configuration (`default_policy`, `caller_role_count`,
+  `allow_entries`, `deny_entries`, `is_noop`), plus a genuine `warn!` for the real
+  footgun: a `[role_filter]` block that is a no-op (present but denies nothing).
+- **Caller identity (unchanged limitation, stated honestly):** the stdio transport
+  carries no per-call caller identity, so dispatch builds a `CallerContext` from the
+  engine's default agent id with no roles. A `deny` list therefore acts as a
+  **server-wide tool denylist on stdio, not per-caller RBAC**.
+- **Test:** new `crates/mnemo-cli/tests/hardened_mode_attaches_role_filter.rs` drives the
+  real `mnemo` binary over stdio and asserts a `deny`d tool is absent from `tools/list`
+  and rejected by `tools/call` with `-32601`. It **fails against the pre-fix binary**;
+  the library-level `role_filter_*.rs` tests did not catch this because the library was
+  never broken — only the CLI dropped the filter.
+
 ### Security (2026-07-27) — role-aware MCP tool filter is now wired end-to-end
 
 **`feat`: the `RoleFilter` in `crates/mnemo-mcp/src/role_filter.rs` is no longer
