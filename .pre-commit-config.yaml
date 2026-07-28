@@ -5,6 +5,6 @@
 # Tool: https://github.com/sattyamjjain/agent-audit-kit
 repos:
   - repo: https://github.com/sattyamjjain/agent-audit-kit
-    rev: v0.3.52 # pin to the latest released tag; bump deliberately
+    rev: v0.3.60 # pin to the latest released tag; bump deliberately
     hooks:
       - id: agent-audit-kit

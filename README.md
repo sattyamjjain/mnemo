@@ -818,7 +818,7 @@ What stays Rust-native vs. crosses the JS boundary, the file-format compatibilit
 ## Development
 
 ```bash
-# Run all tests (376 tests at v0.4.5: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
+# Run all tests (unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
 cargo test --all
 
 # Run tests for a specific crate

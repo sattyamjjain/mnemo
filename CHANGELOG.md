@@ -52,6 +52,31 @@ hardened CLI path — so `mnemo mcp-server --manifest` enforced nothing.**
   `introduction.md`, `integrations/mcp-server.md`) to 2.2 — keeping the "SEPs land in
   `rmcp` first; mnemo upgrades when stable" spec-follower argument intact.
 
+### Build (2026-07-28) — exactly-one-[Unreleased] guard; agent-audit-kit pin 0.3.52 → 0.3.60
+
+- **CHANGELOG hygiene:** the file had **two** `## [Unreleased]` headings — the live one
+  and a stale duplicate wedged between `[0.4.0-rc3]` and `[0.4.0-rc1]`. Both the existing
+  `changelog_has_unreleased_section` and the ordering guard use `find`/`contains`, which
+  only inspect the first heading, so the duplicate silently made the ordering guard
+  vacuous. Retitled the stale one to the release its content belongs to
+  (`[0.4.0-rc2] - 2026-04-25`, the publication-name-change notes) rather than deleting it,
+  and added `changelog_has_exactly_one_unreleased_section` asserting exactly one heading.
+- **agent-audit-kit pin 0.3.52 → 0.3.60** (271 rules, latest 2026-07-27) across
+  `.github/workflows/security.yml`, `.pre-commit-config.yaml`, and the `.agent-audit-kit.yml`
+  header. The suppression baseline was **re-derived** against the new rule set, not copied
+  forward: running v0.3.60 on the repo yields 0 critical / 4 high / 31 medium / 1 low, so
+  `fail-on: critical` still passes with a single exclusion. Notably `AAK-AGENT-001`
+  (critical) now fires **0×** — the rule was tightened upstream and no longer flags
+  CLAUDE.md's documented build commands (it fired 60× at v0.3.52); kept as a defensive
+  exclude with a corrected rationale. The 9 new rules (e.g. `AAK-AGENT-005` hidden-content
+  14× on CLAUDE.md, `AAK-SUPPLY-005`, `AAK-LANGGRAPH-TOOLNODE-LIST-REGRESSION-001`) surface
+  only medium/high/low findings and are documented as visible-but-non-blocking; the new
+  high `AAK-TRUST-004/006` fire only on the gitignored local `.claude/settings.local.json`,
+  which is absent on a clean CI checkout. Supersedes Dependabot PR #118 (which bumps only
+  to 0.3.58).
+- **README:** dropped the drift-prone "376 tests at v0.4.5" count from the Development
+  section (a 0.4.5-stamped number in a 0.5.x repo), keeping the test-surface list.
+
 ### Security (2026-07-27) — role-aware MCP tool filter is now wired end-to-end
 
 **`feat`: the `RoleFilter` in `crates/mnemo-mcp/src/role_filter.rs` is no longer
@@ -2788,7 +2813,7 @@ parity surfaces (DPDPA, Letta-protocol).
   startup path is unchanged for backward compatibility; new
   deployments should prefer `mnemo mcp-server --manifest <path>`.
 
-## [Unreleased]
+## [0.4.0-rc2] - 2026-04-25
 
 ### Changed (publication names — no code or behaviour change)
 

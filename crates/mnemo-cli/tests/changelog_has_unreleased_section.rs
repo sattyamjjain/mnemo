@@ -45,3 +45,29 @@ fn changelog_unreleased_appears_above_latest_release_heading() {
          CHANGELOG.md ordering is reversed."
     );
 }
+
+#[test]
+fn changelog_has_exactly_one_unreleased_section() {
+    // A SECOND `## [Unreleased]` silently disables the ordering guard above: both it
+    // and `changelog_has_unreleased_section` use `find`/`contains`, which only ever
+    // inspect the FIRST heading, so a stale duplicate lower in the file passes
+    // unnoticed (this repo had one wedged between `[0.4.0-rc3]` and `[0.4.0-rc1]`).
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("CHANGELOG.md");
+    let body = std::fs::read_to_string(&path).expect("CHANGELOG.md readable");
+    // Count HEADING lines, not raw substrings: changelog entries legitimately mention
+    // `## [Unreleased]` in backticked prose (documenting these very guards), so a naive
+    // `matches("## [Unreleased]")` over-counts. A heading line is exactly the token.
+    let count = body
+        .lines()
+        .filter(|line| line.trim_end() == "## [Unreleased]")
+        .count();
+    assert_eq!(
+        count, 1,
+        "CHANGELOG.md must have exactly one `## [Unreleased]` heading, found {count}. \
+         Retitle any stale duplicate to the release it actually belongs to — a second \
+         `## [Unreleased]` makes the ordering guard vacuous."
+    );
+}

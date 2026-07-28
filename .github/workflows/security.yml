@@ -54,7 +54,7 @@ jobs:
     # surface, agent configs, and supply-chain manifests. Complements the two
     # jobs above — cargo-audit / cargo-deny cover Rust *crate* advisories; this
     # covers the *MCP / agent / config* attack surface that `mnemo-mcp` exposes.
-    # Deterministic, offline scanner (262 rules): https://github.com/sattyamjjain/agent-audit-kit
+    # Deterministic, offline scanner (271 rules): https://github.com/sattyamjjain/agent-audit-kit
     #
     # Observe-first rollout: gates only on `critical` (config: .agent-audit-kit.yml),
     # but uploads SARIF for every severity so highs/mediums are visible in the
@@ -69,9 +69,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: AgentAuditKit MCP security scan
-        # Pinned to the latest released tag (0.3.53 is unreleased on the tool's
-        # main). Bump deliberately after reviewing the tool's CHANGELOG.
-        uses: sattyamjjain/agent-audit-kit@v0.3.52
+        # Pinned to v0.3.60 (latest released tag, 2026-07-27; 271 rules). Bumped
+        # from v0.3.52 after re-deriving the .agent-audit-kit.yml suppression
+        # baseline against the new rule set — the 9 added rules surface only
+        # new medium/high/low findings, no new critical, so the `fail-on: critical`
+        # gate still passes. Bump deliberately after reviewing the tool's CHANGELOG.
+        uses: sattyamjjain/agent-audit-kit@v0.3.60
         with:
           path: .
           config: .agent-audit-kit.yml

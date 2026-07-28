@@ -1,7 +1,7 @@
 # AgentAuditKit — static MCP / agent-config security scan for the mnemo repo.
 # Runs in CI via .github/workflows/security.yml (job: agent-audit-kit) and,
 # optionally, locally via pre-commit (.pre-commit-config.yaml).
-# Tool (deterministic, offline, 262 rules): https://github.com/sattyamjjain/agent-audit-kit
+# Tool (deterministic, offline, 271 rules): https://github.com/sattyamjjain/agent-audit-kit
 
 # Surface everything low+ in the SARIF report (visible in the Security tab).
 severity: low
@@ -10,23 +10,42 @@ severity: low
 # reported but non-blocking. Tighten to `high` once the Security tab is triaged.
 fail-on: critical
 
-# Rule suppressions — each with a rationale (baseline established by running the
-# scanner against this repo on 2026-07-20, v0.3.52).
+# Rule suppressions — each with a rationale. Baseline RE-DERIVED by running the
+# v0.3.60 scanner (271 rules) against this repo on 2026-07-28. Gate result:
+# 0 critical, 4 high, 31 medium, 1 low → `fail-on: critical` passes clean with
+# the single exclusion below. The 9 rules added since v0.3.52 surface new
+# medium/high/low findings (noted below) but no new critical, so no new
+# hard-exclude is needed to keep CI green.
 exclude-rules:
-  - AAK-AGENT-001 # "Agent instruction file contains shell command directives".
-    #                Fires 60x on CLAUDE.md, which is this repo's *developer*
-    #                guide and legitimately documents build/test commands
-    #                (`cargo build`, `git add -A`, `docker compose ...`). It is
-    #                not an untrusted/injected agent-instruction file, so this is
-    #                a false positive for mnemo. Real criticals (hardcoded
-    #                secrets, live injection) still gate. Revisit if CLAUDE.md
-    #                ever ingests untrusted content.
-# Not excluded (kept visible in the Security tab for human triage, non-blocking):
-#   - AAK-GHA-IMMUTABLE-001 — legit hardening suggestion (pin Actions to SHAs).
-#   - AAK-SECRET-004 — high-entropy strings that are mnemo's crypto/hash test
-#     vectors, not live secrets; dismiss in the Security tab after review.
-#   - AAK-HEALTHCARE-AI-00x — clinical example strings in the audit-bench sample
-#     data ("patient", "dosage"); mnemo is a memory DB, not a crisis agent.
+  - AAK-AGENT-001 # "Agent instruction file contains shell command directives"
+    #                (critical). At v0.3.52 this fired 60x on CLAUDE.md; in
+    #                v0.3.60 the rule was tightened upstream and now fires 0x on
+    #                this repo. Kept as a DEFENSIVE exclude anyway: it is a
+    #                critical-gating rule, and CLAUDE.md is this repo's own
+    #                *developer* guide that legitimately documents build/test
+    #                commands (`cargo build`, `git add -A`, `docker compose ...`).
+    #                If the rule ever re-fires on CLAUDE.md it would be a false
+    #                positive that breaks CI. Real criticals (hardcoded secrets,
+    #                live injection) still gate. Drop this once confident the
+    #                upstream tightening is permanent.
+# Not excluded (kept visible in the Security tab for human triage, non-blocking —
+# the gate is critical-only and none of these are critical):
+#   - AAK-AGENT-005 (medium, NEW in the v0.3.60 rule set) — "hidden content" in an
+#     agent instruction file; 14x on CLAUDE.md (the embedded OpenPaw/PAW-mode
+#     sections). CLAUDE.md is this repo's developer guide, not an injected config.
+#   - AAK-GHA-IMMUTABLE-001 (medium) — legit hardening suggestion (pin Actions to SHAs).
+#   - AAK-SECRET-004 (high) — high-entropy strings that are mnemo's crypto/hash test
+#     vectors (openai.rs, main.rs, openai_sandbox/manifest.py), not live secrets;
+#     dismiss in the Security tab after review.
+#   - AAK-HEALTHCARE-AI-00x (medium) — clinical example strings in the audit-bench
+#     sample data ("patient", "dosage"); mnemo is a memory DB, not a crisis agent.
+#   - AAK-SUPPLY-005 (low, NEW) — dependency count exceeds the tool's threshold;
+#     informational for a multi-crate workspace.
+#   - AAK-LANGGRAPH-TOOLNODE-LIST-REGRESSION-001 (medium, NEW) — LangGraph ToolNode
+#     positional-list heuristic; review on triage.
+#   - AAK-TRUST-004 (high, NEW) / AAK-TRUST-006 (medium, NEW) fire only on the
+#     *gitignored* local `.claude/settings.local.json`, which does NOT exist on a
+#     clean CI checkout — so they never appear in the CI scan and are not a repo finding.
 
 # Paths to skip.
 ignore-paths:
