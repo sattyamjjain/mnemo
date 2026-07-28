@@ -173,7 +173,7 @@ Your AI agent now has persistent memory with 21 MCP tools:
 
 | Protocol | Crate | Use Case |
 |----------|-------|----------|
-| **MCP** (stdio) | `mnemo-mcp` | AI agent integration via rmcp 1.3 |
+| **MCP** (stdio) | `mnemo-mcp` | AI agent integration via rmcp 2.2 |
 | **REST** (HTTP) | `mnemo-rest` | Web clients, dashboards, OTLP ingest |
 | **gRPC** | `mnemo-grpc` | High-performance service-to-service (12 RPCs) |
 | **pgwire** | `mnemo-pgwire` | Connect with any PostgreSQL client (`psql`) |
@@ -326,7 +326,7 @@ mnemo v0.4.6 ships a vertical-slice WASM-component implementation of the [`golem
 
 The [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/) (published 2026-03-09 by lead maintainer David Soria Parra) reorganises the protocol's direction around four priority areas: **Transport Evolution and Scalability**, **Agent Communication**, **Governance Maturation**, and **Enterprise Readiness**. mnemo's existing surfaces — operator-held HMAC keystore, AES-256-GCM at-rest content encryption, dual DuckDB / PostgreSQL backends, and the `mnemo-compliance` crate — sit under the **Enterprise Readiness** priority area as an *attestable memory* layer regulated-workflow buyers can defend today.
 
-This is a spec-context anchor, not a compliance claim. The roadmap's Transport Evolution work (stateless Streamable HTTP + `.well-known` server discovery) is upstream of mnemo and tracked via the `rmcp = "1.3"` workspace dep — mnemo follows `rmcp`'s SEP implementation as it lands rather than racing the spec. See [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md) §"MCP 2026 Roadmap alignment" for the four-priority-area mapping table.
+This is a spec-context anchor, not a compliance claim. The roadmap's Transport Evolution work (stateless Streamable HTTP + `.well-known` server discovery) is upstream of mnemo and tracked via the `rmcp = "2.2"` workspace dep — mnemo follows `rmcp`'s SEP implementation as it lands rather than racing the spec. See [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md) §"MCP 2026 Roadmap alignment" for the four-priority-area mapping table.
 
 ## SDKs
 
@@ -558,7 +558,7 @@ mnemo compares on the compliance-audit axis: **[docs/POSITIONING.md](docs/POSITI
 - **Agent behavioural-baseline exporter** — `mnemo-baseline` crate emits per-agent profiles in OpenTelemetry semconv 1.31 + OCSF 1.4 Application-Activity formats with z-score+EWMA drift detection; anti-leak regex test ensures payloads never carry memory contents. Plugs into the RSAC 2026 SOC telemetry gap. New in v0.4.1.
 - **1M-context recall budget planner** — `mnemo-core::budget` adds `ContextBudget::for_model` + `plan_recall` covering `deepseek-v4-1m`, `claude-3.7-sonnet-1m`, `gpt-5.1-400k`, `gemini-2.5-pro-2m`; typed `FallbackStrategy`; property test asserts no model overflows. New in v0.4.1.
 - **mnemo doctor + Grafana dashboard** — typed `DoctorReport` + `DoctorFix` recommendations and a committed `dashboards/mnemo-grafana.json` (schemaVersion 39) covering recall p50/p99, tool-catalog drift, HMAC continuity, code-mode token reduction. New in v0.4.1.
-- **MCP role-aware tool filter (parsed + validated; not yet dispatched)** — the manifest `[role_filter]` block (`caller_roles`, `default = "allow_all" | "deny_all"`, per-tool `allow` / `deny`, deny-wins) is parsed and validated at startup, and the filter logic + `McpRoleDenied` decision is implemented and unit-tested. **It is not yet invoked at tool-dispatch time** — tool calls are not filtered by role (the server logs a warning saying so at startup). Aligned with the [2025-11-25 MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). New in v0.4.2. _(See the enforcement table below.)_
+- **MCP role-aware tool filter (enforced when configured)** — the manifest `[role_filter]` block (`caller_roles`, `default = "allow_all" | "deny_all"`, per-tool `allow` / `deny`, deny-wins) is parsed and validated at startup **and attached to the hardened MCP server**: a denied tool is hidden from `tools/list` and rejected by `tools/call` with `-32601`. On stdio there is no per-call caller identity, so it acts as a server-wide tool denylist rather than per-caller RBAC; with no `[role_filter]` block present, every advertised tool stays reachable (unchanged). Aligned with the [2025-11-25 MCP authorization spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). New in v0.4.2. _(See the enforcement table below.)_
 
 ### Security: what is and isn't enforced today
 
@@ -580,7 +580,7 @@ path calls it.
 | Memory-poisoning anomaly + quarantine | ✅ — provenance-aware recall + a published **ASI06 resistance micro-bench** (100.0% vs canonical query-only MINJA, Wilson 95% [98.1%, 100.0%], n=200; 0% vs marker-free paraphrase — honest limitation) | `remember` + `recall` quarantine filter; [`docs/security/ASI06.md`](docs/security/ASI06.md) |
 | **Forged-reasoning defense** (reasoning-provenance trust filter) | ✅ opt-in — a real-embedder bench drives planted fabricated-chain-of-thought ASR **100% → 0%** (`nomic-embed-text`, Wilson 95% ASR_on [0.0%, 3.1%], n=120) at **0/180 = 0%** benign false-quarantine [0.0%, 2.1%] | `RecallRequest.reasoning_trust` (`retrieval::ReasoningTrustPolicy`) enforced in `recall`'s `passes_filters`; [`bench/forged_reasoning/`](bench/forged_reasoning/) |
 | Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |
-| **MCP role-filter** (manifest `[role_filter]`) | ❌ **parsed + validated only** — not invoked at tool dispatch | `mnemo-mcp::role_filter` (library + tests); startup logs a warning |
+| **MCP role-filter** (manifest `[role_filter]`) | ✅ when a `[role_filter]` block is present and not a no-op — a denied tool is hidden from `tools/list` and rejected by `tools/call` with `-32601`; on stdio there is no per-call caller identity, so this is a **server-wide tool denylist, not per-caller RBAC**. No block → every advertised tool reachable (unchanged) | `mnemo-mcp::role_filter` dispatch, attached by the `mnemo-cli` hardened server; `hardened_mode_attaches_role_filter` (CLI) + `role_filter_*` (library) tests |
 | **MCP tool-catalog attestation** | ❌ **pin parsed + validated only** — no serve-time check | `mnemo-cli::attest` (library + tests); startup logs a warning |
 | **Consent-token-per-write** | ❌ **library only** — core engine never calls it | `mnemo-compliance::ConsentTokenGuard` |
 | Lease tokens | ❌ store runs, but no operation is gated on a lease | `mnemo-cli::lease` (`#![allow(dead_code)]`) |
@@ -818,7 +818,7 @@ What stays Rust-native vs. crosses the JS boundary, the file-format compatibilit
 ## Development
 
 ```bash
-# Run all tests (376 tests at v0.4.5: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
+# Run all tests (unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
 cargo test --all
 
 # Run tests for a specific crate

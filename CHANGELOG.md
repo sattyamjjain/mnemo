@@ -4,6 +4,79 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Security (2026-07-28) — manifest [role_filter] is now attached in hardened mode
+
+**`fix`: the manifest `[role_filter]` was built but never passed to the server on the
+hardened CLI path — so `mnemo mcp-server --manifest` enforced nothing.**
+
+- The filter was constructed from the `[role_filter]` block in
+  `crates/mnemo-cli/src/main.rs` (L696), but the hardened server was built as a bare
+  `MnemoServer::new(engine)` (L802) with no `.with_role_filter(...)` — so the binding
+  was read once for a logging branch and then discarded. The library dispatch
+  (`list_tools` filtering + `call_tool` `-32601`) landed in the previous commit and was
+  correct and tested; only the binary dropped the filter, so a manifest `deny` list was
+  parsed, logged, and thrown away. Now attached: `server.with_role_filter(filter)`.
+- The startup log was a security-posture misreport ("per-tool dispatch enforcement is
+  NOT active … tool calls are NOT filtered by role yet") — the kind of line an operator
+  reacts to by adding a redundant control or disabling the filter. Replaced with an
+  `info!` that reports the enforcing configuration (`default_policy`, `caller_role_count`,
+  `allow_entries`, `deny_entries`, `is_noop`), plus a genuine `warn!` for the real
+  footgun: a `[role_filter]` block that is a no-op (present but denies nothing).
+- **Caller identity (unchanged limitation, stated honestly):** the stdio transport
+  carries no per-call caller identity, so dispatch builds a `CallerContext` from the
+  engine's default agent id with no roles. A `deny` list therefore acts as a
+  **server-wide tool denylist on stdio, not per-caller RBAC**.
+- **Test:** new `crates/mnemo-cli/tests/hardened_mode_attaches_role_filter.rs` drives the
+  real `mnemo` binary over stdio and asserts a `deny`d tool is absent from `tools/list`
+  and rejected by `tools/call` with `-32601`. It **fails against the pre-fix binary**;
+  the library-level `role_filter_*.rs` tests did not catch this because the library was
+  never broken — only the CLI dropped the filter.
+
+### Docs (2026-07-28) — rmcp version claim fenced; README enforcement table corrected
+
+- **README security-enforcement table:** the **MCP role-filter** row moved from
+  ❌ "parsed + validated only" to a conditional ✅ that names both the condition and the
+  transport limitation — enforced when a `[role_filter]` block is present and not a
+  no-op (a denied tool is hidden from `tools/list` and rejected by `tools/call` with
+  `-32601`); on stdio it is a server-wide tool denylist, not per-caller RBAC; with no
+  block, every advertised tool stays reachable (unchanged). The matching feature bullet
+  was retitled from "parsed + validated; not yet dispatched" to "enforced when
+  configured". The tool-catalog attestation, consent-token, and lease rows stay ❌ —
+  those are still library-only and untouched.
+- **rmcp version fence:** the MCP runtime version was claimed three different wrong ways
+  ("rmcp 1.3", `rmcp = "1.3"`, "rmcp 0.14") while the root `Cargo.toml` pins
+  `rmcp = "2.2"`. New test `crates/mnemo-cli/tests/docs_rmcp_version_matches_workspace.rs`
+  parses the real version from `[workspace.dependencies]` and fails on any `rmcp <ver>`
+  claim in `README.md` / `docs/src/**` whose `major.minor` disagrees, reporting each by
+  file and line. Fixed the **5 live surfaces** it flagged (README ×2, `architecture.md`,
+  `introduction.md`, `integrations/mcp-server.md`) to 2.2 — keeping the "SEPs land in
+  `rmcp` first; mnemo upgrades when stable" spec-follower argument intact.
+
+### Build (2026-07-28) — exactly-one-[Unreleased] guard; agent-audit-kit pin 0.3.52 → 0.3.60
+
+- **CHANGELOG hygiene:** the file had **two** `## [Unreleased]` headings — the live one
+  and a stale duplicate wedged between `[0.4.0-rc3]` and `[0.4.0-rc1]`. Both the existing
+  `changelog_has_unreleased_section` and the ordering guard use `find`/`contains`, which
+  only inspect the first heading, so the duplicate silently made the ordering guard
+  vacuous. Retitled the stale one to the release its content belongs to
+  (`[0.4.0-rc2] - 2026-04-25`, the publication-name-change notes) rather than deleting it,
+  and added `changelog_has_exactly_one_unreleased_section` asserting exactly one heading.
+- **agent-audit-kit pin 0.3.52 → 0.3.60** (271 rules, latest 2026-07-27) across
+  `.github/workflows/security.yml`, `.pre-commit-config.yaml`, and the `.agent-audit-kit.yml`
+  header. The suppression baseline was **re-derived** against the new rule set, not copied
+  forward: running v0.3.60 on the repo yields 0 critical / 4 high / 31 medium / 1 low, so
+  `fail-on: critical` still passes with a single exclusion. Notably `AAK-AGENT-001`
+  (critical) now fires **0×** — the rule was tightened upstream and no longer flags
+  CLAUDE.md's documented build commands (it fired 60× at v0.3.52); kept as a defensive
+  exclude with a corrected rationale. The 9 new rules (e.g. `AAK-AGENT-005` hidden-content
+  14× on CLAUDE.md, `AAK-SUPPLY-005`, `AAK-LANGGRAPH-TOOLNODE-LIST-REGRESSION-001`) surface
+  only medium/high/low findings and are documented as visible-but-non-blocking; the new
+  high `AAK-TRUST-004/006` fire only on the gitignored local `.claude/settings.local.json`,
+  which is absent on a clean CI checkout. Supersedes Dependabot PR #118 (which bumps only
+  to 0.3.58).
+- **README:** dropped the drift-prone "376 tests at v0.4.5" count from the Development
+  section (a 0.4.5-stamped number in a 0.5.x repo), keeping the test-surface list.
+
 ### Security (2026-07-27) — role-aware MCP tool filter is now wired end-to-end
 
 **`feat`: the `RoleFilter` in `crates/mnemo-mcp/src/role_filter.rs` is no longer
@@ -2740,7 +2813,7 @@ parity surfaces (DPDPA, Letta-protocol).
   startup path is unchanged for backward compatibility; new
   deployments should prefer `mnemo mcp-server --manifest <path>`.
 
-## [Unreleased]
+## [0.4.0-rc2] - 2026-04-25
 
 ### Changed (publication names — no code or behaviour change)
 

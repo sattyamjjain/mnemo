@@ -688,22 +688,43 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         );
     }
 
-    // v0.4.2 (A1) — load the optional `[role_filter]` block. Same
-    // park-and-log pattern as the catalog pin: validating + building
-    // the `ManifestRoleFilter` here means a malformed manifest refuses
-    // startup rather than silently accepting an unenforceable filter,
-    // even before per-tool dispatch wiring lands.
+    // v0.4.2 (A1) — load the optional `[role_filter]` block. Building the
+    // `ManifestRoleFilter` here means a malformed manifest refuses startup rather
+    // than silently accepting an unenforceable filter, and the filter is attached to
+    // the server below, so a denied tool is hidden from `tools/list` and rejected by
+    // `tools/call` with `-32601`.
+    //
+    // Transport limitation (the thing an auditor asks about): the stdio transport
+    // carries no per-call caller identity, so dispatch builds a `CallerContext` from
+    // the engine's default agent id with no roles. A `deny` list therefore acts as a
+    // server-wide tool denylist on the stdio transport, not as per-caller RBAC.
     let role_filter = manifest.role_filter.as_ref().map(|cfg| {
         let filter = mnemo_mcp::role_filter::ManifestRoleFilter::new(cfg.clone());
-        tracing::warn!(
-            default_policy = ?cfg.default,
-            caller_role_count = cfg.caller_roles.len(),
-            allow_entries = cfg.allow.len(),
-            deny_entries = cfg.deny.len(),
-            is_noop = filter.is_noop(),
-            "MCP [role_filter] manifest block parsed and validated, but per-tool dispatch \
-             enforcement is NOT active in this build — tool calls are NOT filtered by role yet"
-        );
+        if filter.is_noop() {
+            // A `[role_filter]` block that denies nothing is a real footgun: the
+            // operator likely intended a restriction that is not expressed here.
+            tracing::warn!(
+                default_policy = ?cfg.default,
+                caller_role_count = cfg.caller_roles.len(),
+                allow_entries = cfg.allow.len(),
+                deny_entries = cfg.deny.len(),
+                is_noop = true,
+                "MCP [role_filter] block present but is a no-op (no roles, no allow, no \
+                 deny, default allow_all) — every tool stays reachable; it enforces nothing"
+            );
+        } else {
+            tracing::info!(
+                default_policy = ?cfg.default,
+                caller_role_count = cfg.caller_roles.len(),
+                allow_entries = cfg.allow.len(),
+                deny_entries = cfg.deny.len(),
+                is_noop = false,
+                "MCP [role_filter] enforcement active — a denied tool is hidden from \
+                 tools/list and rejected by tools/call with -32601. Note: on stdio there \
+                 is no per-call caller identity, so this is a server-wide tool denylist, \
+                 not per-caller RBAC"
+            );
+        }
         Arc::new(filter)
     });
     if role_filter.is_none() {
@@ -799,7 +820,10 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         signal_shutdown.notify_one();
     });
 
-    let server = MnemoServer::new(engine);
+    let mut server = MnemoServer::new(engine);
+    if let Some(filter) = role_filter.clone() {
+        server = server.with_role_filter(filter);
+    }
     tracing::info!("Starting Mnemo MCP server on stdio (hardened mode)");
     let service = server.serve(stdio()).await?;
     tokio::select! {

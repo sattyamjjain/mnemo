@@ -29,7 +29,7 @@ Mnemo is built in Rust for performance and safety. The workspace contains:
 | Crate | Purpose |
 |-------|---------|
 | `mnemo-core` | Storage, indexing, query engine, models |
-| `mnemo-mcp` | MCP server (rmcp 0.14) |
+| `mnemo-mcp` | MCP server (rmcp 2.2) |
 | `mnemo-cli` | Binary with CLI args |
 | `mnemo-postgres` | PostgreSQL storage backend |
 | `mnemo-rest` | Axum REST API |

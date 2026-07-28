@@ -44,7 +44,7 @@
 | Crate | Purpose |
 |-------|---------|
 | `mnemo-core` | Storage, data model, query engine, indexing, encryption |
-| `mnemo-mcp` | MCP server via rmcp 0.14 (STDIO transport) |
+| `mnemo-mcp` | MCP server via rmcp 2.2 (STDIO transport) |
 | `mnemo-cli` | CLI binary with clap argument parsing |
 | `mnemo-postgres` | PostgreSQL storage backend via sqlx + pgvector |
 | `mnemo-rest` | REST API via Axum 0.8 |
