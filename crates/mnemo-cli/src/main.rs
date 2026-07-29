@@ -9,7 +9,6 @@ use tokio::sync::Notify;
 
 mod attest;
 mod commands;
-mod lease;
 mod manifest;
 mod safe_spawn;
 
@@ -579,16 +578,13 @@ async fn run_baseline(cli: &Cli, args: &BaselineArgs) -> Result<(), Box<dyn std:
 ///
 /// Runs the safe-spawn gauntlet against the OX-MCP threat model
 /// (2026-04-24) BEFORE constructing any engine state, then starts the
-/// existing MCP STDIO server. The lease store is allocated here so a
-/// future change to the MCP tools layer can require lease tokens for
-/// privileged operations without re-plumbing the binary.
+/// existing MCP STDIO server.
 async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn std::error::Error>> {
     let manifest = manifest::Manifest::load(&args.manifest)?;
     tracing::info!(
         manifest = ?args.manifest,
         allowed_tools = ?manifest.allowed_tools,
         allowed_parents = ?manifest.allowed_parents,
-        lease_ttl_seconds = manifest.lease_ttl_seconds,
         "manifest loaded"
     );
 
@@ -734,25 +730,6 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
              https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization"
         );
     }
-
-    // Allocate the lease store. The MCP tools layer does not consume it
-    // yet — wiring `forget_subject` / `export_audit_log` to require a
-    // lease scope is tracked separately. The store is exercised by the
-    // unit tests in `lease.rs` and held here so the privileged path is
-    // ready for that follow-up without another binary change.
-    let lease_store = Arc::new(lease::LeaseStore::new(manifest.lease_ttl_seconds));
-    // Periodically purge expired leases so the map cannot grow without
-    // bound under repeated recall traffic.
-    let purge_store = lease_store.clone();
-    let purge_ttl = manifest.lease_ttl_seconds;
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(purge_ttl));
-        interval.tick().await;
-        loop {
-            interval.tick().await;
-            purge_store.purge_expired();
-        }
-    });
 
     // Embedding provider: mirror the default startup path. ONNX > OpenAI > Noop.
     let embedding: Arc<dyn EmbeddingProvider> = if let Some(ref onnx_path) = cli.onnx_model_path {

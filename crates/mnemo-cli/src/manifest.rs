@@ -20,8 +20,6 @@ pub struct Manifest {
     pub allowed_agents: BTreeSet<String>,
     #[serde(default = "default_allowed_parents")]
     pub allowed_parents: BTreeSet<String>,
-    #[serde(default = "default_lease_ttl_seconds")]
-    pub lease_ttl_seconds: u64,
     /// v0.4.0 (P0-1) — optional path to the operator-pinned MCP
     /// tool-catalog file. When set, `mnemo mcp-server` runs the
     /// attestor against the advertised catalog before exposing it
@@ -58,10 +56,6 @@ fn default_allowed_parents() -> BTreeSet<String> {
         .collect()
 }
 
-fn default_lease_ttl_seconds() -> u64 {
-    60
-}
-
 #[derive(Debug, Error)]
 pub enum ManifestError {
     #[error("manifest file not found at {path}")]
@@ -86,18 +80,6 @@ impl Manifest {
     }
 
     fn validate(&self) -> Result<(), ManifestError> {
-        if self.lease_ttl_seconds == 0 {
-            return Err(ManifestError::Invalid {
-                field: "lease_ttl_seconds",
-                reason: "must be > 0".into(),
-            });
-        }
-        if self.lease_ttl_seconds > 3600 {
-            return Err(ManifestError::Invalid {
-                field: "lease_ttl_seconds",
-                reason: "must be <= 3600 (1 hour)".into(),
-            });
-        }
         for t in &self.allowed_tools {
             if !KNOWN_TOOLS.contains(&t.as_str()) {
                 return Err(ManifestError::Invalid {

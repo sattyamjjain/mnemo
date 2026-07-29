@@ -34,7 +34,6 @@ audit_log_path    = "/var/log/mnemo/audit.jsonl"
 allowed_tools     = ["mnemo.recall", "mnemo.verify"]
 allowed_agents    = ["claude-prod"]
 allowed_parents   = ["claude", "systemd"]
-lease_ttl_seconds = 60
 ```
 
 A full annotated example lives at
@@ -165,10 +164,12 @@ and the three integration tests under
 
 ## What this does NOT cover
 
-- The capability-leased reads (B2 follow-up): `forget_subject` and
-  `export_audit_log` will require a lease token issued by a recent
-  `recall`. The store is allocated at startup; the MCP-tools-layer
-  wiring lands in a follow-up PR.
+- Capability-leased reads (the old B2 follow-up) are **not shipped**: the
+  never-wired lease store was removed as dead code. The design — per-read lease
+  tokens gating `forget_subject` — is captured in
+  [#126](https://github.com/sattyamjjain/mnemo/issues/126) for a future
+  authenticated, multi-caller transport where a lease has real cross-caller value
+  (on stdio the operator is the only caller).
 - The DPDPA consent-token-per-write path (B4).
 - The Letta-protocol-compat surface (B5).
 - Per-tool-method enforcement of the role filter at `tools/call`

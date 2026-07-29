@@ -38,11 +38,6 @@ allowed_agents = ["claude-prod", "claude-stage"]
 # bypasses this check.
 allowed_parents = ["claude", "claude-code", "systemd", "supervisord"]
 
-# Lease TTL in seconds for capability-leased reads (B2). Privileged
-# tools (`mnemo.forget_subject`, `mnemo.export_audit_log`) require a
-# lease issued by a recent `mnemo.recall`. Default 60 seconds.
-lease_ttl_seconds = 60
-
 # v0.4.2 (A1) — Optional MCP role-aware tool filter aligned with the
 # 2025-11-25 MCP authorization spec (role-based annotations,
 # https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
