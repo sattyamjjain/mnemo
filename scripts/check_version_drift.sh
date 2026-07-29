@@ -1,24 +1,29 @@
 #!/usr/bin/env bash
 #
-# Fail when the workspace version has drifted MORE THAN ONE PATCH ahead of the
-# newest version published to crates.io. This is the forcing function that stops
-# the tree from accumulating unpublished releases (the exact state that left
-# v0.5.17 / v0.5.18 tagged-but-unpublished while crates.io sat at 0.5.16).
+# Fail when ANY published workspace member has drifted more than one patch behind
+# the workspace version on crates.io. This is the forcing function that stops the
+# tree from accumulating unpublished releases.
 #
-# Rule: let W = workspace [workspace.package] version, P = crates.io max_version
-# of the canonical crate (mnemo-core).
-#   * W <= P                      -> OK  (behind or in sync)
+# Originally this guarded only mnemo-core — which is exactly how mnemo-postgres /
+# mnemo-rest / mnemo-grpc / mnemo-graph silently sat at 0.4.4/0.4.5 (2 months
+# stale, missing the v0.5.7 real pgvector ANN and v0.5.18 async VectorIndex work)
+# while mnemo-core moved to 0.5.x and the guard stayed green. It now checks every
+# publishable member.
+#
+# Rule, per crate: let W = workspace [workspace.package] version, P = that crate's
+# crates.io max_version.
+#   * crate not on crates.io yet  -> SKIP (nothing published to drift; reported)
+#   * W <= P                      -> OK
 #   * W ahead, same major.minor   -> OK only if (W.patch - P.patch) <= 1
 #   * W ahead by a minor or major -> FAIL (inherently > 1 patch ahead)
-#
-# Publish mnemo-core (and the rest of the release) to clear a failure.
+# The script fails if ANY crate fails. Publish the pending release to clear it.
 set -euo pipefail
 
-CANONICAL_CRATE="mnemo-core"
-CARGO_TOML="${1:-Cargo.toml}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CARGO_TOML="${1:-$REPO_ROOT/Cargo.toml}"
+UA='mnemo-ci-version-drift (https://github.com/sattyamjjain/mnemo)'
 
-# Workspace version from [workspace.package].version (awk: first `version =`
-# line that appears after the [workspace.package] header).
+# Workspace version from [workspace.package].version.
 workspace_version="$(
   awk '
     /^\[workspace\.package\]/ { in_wp = 1; next }
@@ -28,55 +33,80 @@ workspace_version="$(
     }
   ' "$CARGO_TOML"
 )"
-
 if [[ -z "$workspace_version" ]]; then
   echo "::error::could not read [workspace.package].version from $CARGO_TOML"
   exit 2
 fi
+echo "workspace version : $workspace_version"
 
-# Newest published version on crates.io.
-published_version="$(
-  curl -sSf "https://crates.io/api/v1/crates/${CANONICAL_CRATE}" \
-    -H 'User-Agent: mnemo-ci-version-drift (https://github.com/sattyamjjain/mnemo)' \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["crate"]["max_version"])'
-)"
+# Collect publishable crate package names: every crates/*/Cargo.toml whose
+# [package] does not set `publish = false`. (The golem WASM cdylibs and the
+# PyO3 python crate live under crates/ too but carry publish=false / are not on
+# crates.io; unpublished crates are skipped below regardless.)
+crate_names=()
+for manifest in "$REPO_ROOT"/crates/*/Cargo.toml; do
+  [[ -f "$manifest" ]] || continue
+  if grep -qE '^[[:space:]]*publish[[:space:]]*=[[:space:]]*false' "$manifest"; then
+    continue
+  fi
+  name="$(awk -F'"' '/^\[package\]/{p=1} p&&/^[[:space:]]*name[[:space:]]*=/{print $2; exit}' "$manifest")"
+  [[ -n "$name" ]] && crate_names+=("$name")
+done
 
-if [[ -z "$published_version" ]]; then
-  echo "::error::could not read crates.io max_version for ${CANONICAL_CRATE}"
+if [[ ${#crate_names[@]} -eq 0 ]]; then
+  echo "::error::no publishable crates found under $REPO_ROOT/crates"
   exit 2
 fi
 
-echo "workspace version : $workspace_version"
-echo "crates.io ($CANONICAL_CRATE) : $published_version"
+fail=0
+skipped=()
+for crate in "${crate_names[@]}"; do
+  # crates.io max_version, or empty if the crate is not published yet.
+  published="$(
+    curl -sSf -A "$UA" "https://crates.io/api/v1/crates/${crate}" 2>/dev/null \
+      | python3 -c 'import sys,json
+try:
+    print(json.load(sys.stdin)["crate"]["max_version"])
+except Exception:
+    pass' 2>/dev/null || true
+  )"
+  if [[ -z "$published" ]]; then
+    skipped+=("$crate")
+    continue
+  fi
 
-python3 - "$workspace_version" "$published_version" <<'PY'
+  # Per-crate drift verdict.
+  verdict="$(
+    python3 - "$workspace_version" "$published" <<'PY'
 import sys
-
 def parse(v):
     core = v.split("+", 1)[0].split("-", 1)[0]
     parts = core.split(".")
     return tuple(int(x) for x in (parts + ["0", "0", "0"])[:3])
-
-w = parse(sys.argv[1])
-p = parse(sys.argv[2])
-
+w = parse(sys.argv[1]); p = parse(sys.argv[2])
 if w <= p:
-    print(f"OK: workspace {sys.argv[1]} is in sync with / behind crates.io {sys.argv[2]}")
-    sys.exit(0)
-
-# w is ahead of p.
-if w[0] == p[0] and w[1] == p[1]:
-    delta = w[2] - p[2]
-    if delta <= 1:
-        print(f"OK: workspace {sys.argv[1]} is {delta} patch ahead of crates.io {sys.argv[2]}")
-        sys.exit(0)
-    print(f"::error::workspace {sys.argv[1]} is {delta} patches ahead of the newest "
-          f"published mnemo-core {sys.argv[2]} (limit: 1). Publish the pending "
-          f"release to crates.io, or roll the workspace version back.")
-    sys.exit(1)
-
-print(f"::error::workspace {sys.argv[1]} is a minor/major ahead of the newest "
-      f"published mnemo-core {sys.argv[2]} — more than one patch of drift. Publish "
-      f"the pending release to crates.io, or roll the workspace version back.")
-sys.exit(1)
+    print("OK")
+elif w[0] == p[0] and w[1] == p[1] and (w[2] - p[2]) <= 1:
+    print("OK")
+else:
+    print("DRIFT")
 PY
+  )"
+  if [[ "$verdict" == "OK" ]]; then
+    printf "  OK    %-24s crates.io %s\n" "$crate" "$published"
+  else
+    printf "::error::DRIFT %-20s crates.io %s is >1 patch behind workspace %s — publish it.\n" \
+      "$crate" "$published" "$workspace_version"
+    fail=1
+  fi
+done
+
+if [[ ${#skipped[@]} -gt 0 ]]; then
+  echo "  (not yet on crates.io, skipped: ${skipped[*]})"
+fi
+
+if [[ "$fail" -ne 0 ]]; then
+  echo "::error::one or more published crates have drifted more than one patch behind the workspace version."
+  exit 1
+fi
+echo "OK: all published crates are within one patch of workspace $workspace_version"

@@ -56,12 +56,29 @@ jobs:
           # one explicitly. Without this, the precheck always sees 403
           # and silently skips every crate.
           UA="mnemo-publish-workflow (https://github.com/sattyamjjain/mnemo)"
-          for crate in mnemo-core mnemo-graph mnemo-mcp mnemo-postgres \
-                       mnemo-rest mnemo-admin mnemo-pgwire mnemo-grpc \
-                       mnemo-compliance mnemo-letta mnemo-mesh \
-                       mnemo-codemode mnemo-deal mnemo-md-sync \
-                       mnemo-cma mnemo-baseline \
-                       mnemo-mcp-server; do
+          # TOPOLOGICAL publish order — a dependent must never appear before a
+          # crate it depends on, or its verify-build cannot resolve that dep from
+          # the registry (it is not yet uploaded). Verified against each crate's
+          # [dependencies]:
+          #   mnemo-core            (no internal deps)
+          #   mnemo-graph           -> core
+          #   mnemo-attention-state -> core        [was MISSING; mnemo-mcp needs it]
+          #   mnemo-compliance      -> core        [was AFTER mcp/rest/grpc — wrong]
+          #   mnemo-mcp             -> attention-state, compliance, core
+          #   mnemo-postgres        -> core
+          #   mnemo-rest            -> compliance, core
+          #   mnemo-grpc            -> compliance, core
+          #   mnemo-admin/pgwire/letta/mesh/codemode/deal/md-sync/cma/baseline -> core
+          #   mnemo-db              (leaf name-reservation pointer, no deps)
+          # mnemo-mcp-server is intentionally NOT here: it has a path-only dep on
+          # the unpublished `mnemo-embeddings-bench` (bench/embeddings) with no
+          # version, which `cargo publish` rejects. Publishing the CLI needs that
+          # dep versioned+published (or made optional) first — tracked separately.
+          for crate in mnemo-core mnemo-graph mnemo-attention-state \
+                       mnemo-compliance mnemo-mcp mnemo-postgres \
+                       mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire \
+                       mnemo-letta mnemo-mesh mnemo-codemode mnemo-deal \
+                       mnemo-md-sync mnemo-cma mnemo-baseline mnemo-db; do
             # 200 = already published; 404 = needs publishing.
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
               "https://crates.io/api/v1/crates/${crate}/${ver}")
@@ -100,7 +117,15 @@ jobs:
       - name: Install protoc (required by mnemo-grpc build script)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Verify workspace builds
-        run: cargo build --workspace --exclude mnemo-python
+        # Exclude the golem WASM-component crates: they are NOT published (not in
+        # the crate list below), and their `wit-bindgen` cdylib link step fails on
+        # the stock CI linker (rust-lld rejects the `:` in the generated
+        # `cabi_post_mnemo:golem-vector/...` version-script symbol). That
+        # pre-existing, unrelated failure must not gate publishing the real crates
+        # — it is exactly what stranded mnemo-postgres/rest/grpc/graph at 0.4.4
+        # while the rest of the workspace moved to 0.5.x. `cargo publish -p <crate>`
+        # below only builds each crate's own closure, never the golem crates.
+        run: cargo build --workspace --exclude mnemo-python --exclude mnemo-golem-wit --exclude mnemo-golem-host
       - name: Publish queued crates in dependency order
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

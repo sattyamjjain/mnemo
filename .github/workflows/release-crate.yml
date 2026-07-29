@@ -1,11 +1,21 @@
 name: release-crate
 
-# Publish the 0.5.x **compliance line** to crates.io on a `v*.*.*` tag.
+# Publish the 0.5.x **library line** to crates.io on a `v*.*.*` tag.
 #
-# Scope — the minimal importable set a user needs to run auditable memory,
-# published in dependency order:
+# Scope — the importable set a user needs to run auditable memory AND the
+# Postgres/REST/gRPC backends the README documents, published in dependency
+# order:
 #
-#     mnemo-core  →  mnemo-attention-state  →  mnemo-compliance  →  mnemo-mcp
+#     mnemo-core → mnemo-graph → mnemo-attention-state → mnemo-compliance →
+#     mnemo-mcp → mnemo-postgres → mnemo-rest → mnemo-grpc → (leaf) mnemo-db
+#
+# The four backend crates (graph, postgres, rest, grpc) were added here after
+# they stranded at 0.4.4/0.4.5: this tag-gated path was originally the
+# compliance line only, so `cargo add mnemo-postgres` kept resolving a
+# 2-month-old version with none of the v0.5.7 (#99) real pgvector ANN or v0.5.18
+# async VectorIndex work. Keeping them in THIS workflow (not just
+# cargo-publish.yml, whose workspace-wide build the golem-wit WASM link failure
+# reddens) means a tag reliably ships the whole line.
 #
 # `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
 # (server.rs uses `mnemo_attention_state::AttentionStateStore`); it was
@@ -69,8 +79,9 @@ jobs:
       - name: Clippy (publish closure)
         run: |
           cargo clippy --all-targets \
-            -p mnemo-core -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp -p mnemo-db -- -D warnings
+            -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp \
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db -- -D warnings
       # Full closure test suite. The recall-QUALITY benchmark
       # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
       # degrade" assertion now accepts the floor case where the approximate HNSW
@@ -80,8 +91,9 @@ jobs:
       - name: Test (publish closure)
         run: |
           cargo test \
-            -p mnemo-core -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp -p mnemo-db
+            -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp \
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db
 
   publish:
     name: Publish to crates.io
@@ -107,8 +119,9 @@ jobs:
       - name: Dry-run (coordinated packaging + verify)
         run: |
           cargo publish --dry-run \
-            -p mnemo-core -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp -p mnemo-db
+            -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
+            -p mnemo-compliance -p mnemo-mcp \
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db
 
       # --- Real publish, dependency order -----------------------------------
       - name: Publish (dependency order, idempotent)
@@ -121,11 +134,12 @@ jobs:
           echo "workspace version: ${ver}"
           # crates.io's API rejects requests without a User-Agent (403).
           UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
-          # mnemo-db is a leaf name-reservation pointer (no internal deps); it
-          # publishes last and needs no propagation wait. When the workspace
-          # version is unchanged, the four compliance-line crates 404-gate as
-          # already-present and only mnemo-db publishes.
-          crates="mnemo-core mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-db"
+          # Topological order — a dependent never precedes a crate it needs, or
+          # its verify-build cannot resolve that dep live from the sparse index.
+          # mnemo-db is a leaf name-reservation pointer (no internal deps) and
+          # publishes last. When the workspace version is unchanged, crates
+          # already on crates.io 404-gate as present and only new ones publish.
+          crates="mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db"
           for crate in $crates; do
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
               "https://crates.io/api/v1/crates/${crate}/${ver}")
@@ -147,9 +161,10 @@ jobs:
             echo "::endgroup::"
             # Let the sparse index propagate before publishing a crate that
             # depends on the one just uploaded (verify build resolves it live).
-            # No wait after the terminal crates (mnemo-mcp / the leaf mnemo-db) —
-            # nothing published later depends on them.
-            if [ "${crate}" != "mnemo-mcp" ] && [ "${crate}" != "mnemo-db" ]; then
+            # Wait after every crate except the terminal leaf mnemo-db — cheap
+            # insurance, since core/graph/attention-state/compliance/mcp each have
+            # a later dependent in this list.
+            if [ "${crate}" != "mnemo-db" ]; then
               echo "Waiting 60s for crates.io index propagation"
               sleep 60
             fi
