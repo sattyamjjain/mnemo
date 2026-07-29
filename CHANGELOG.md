@@ -4,6 +4,81 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-07-28) — crates.io publish drift: Postgres/REST/gRPC/graph crates unblocked (→ 0.5.19)
+
+**`mnemo-postgres` / `mnemo-rest` / `mnemo-grpc` had sat at 0.4.4 (and `mnemo-graph`
+at 0.4.5) for two months** — so `cargo add mnemo-postgres` resolved a version with
+none of the v0.5.7 (#99) real pgvector ANN or v0.5.18 async `VectorIndex` work, even
+though the README's Postgres story documents both.
+
+- **Root cause:** `cargo-publish.yml`'s `publish` job gated on
+  `cargo build --workspace`, which the pre-existing `mnemo-golem-wit` WASM cdylib
+  link failure reddens — so push-to-`main` never published. And its crate list was
+  in the wrong order (mcp before compliance/attention-state) and missing
+  `mnemo-attention-state` (a hard dep of `mnemo-mcp`) and `mnemo-db`.
+- **Fix:** exclude the golem crates from that verify build (they are never
+  published; `cargo publish -p <crate>` builds only each crate's own closure);
+  rewrite the plan list into verified topological order and add the missing deps;
+  drop `mnemo-mcp-server` from auto-publish (its path-only dep on the unpublished
+  `mnemo-embeddings-bench` blocks `cargo publish` — a separate follow-up). Also
+  extended the tag-gated `release-crate.yml` from the compliance line to the full
+  library line (adds graph/postgres/rest/grpc in dep order).
+- **Close the hole:** `scripts/check_version_drift.sh` now checks **every** published
+  workspace member (not just `mnemo-core`) against the workspace version and its
+  crates.io max_version, failing CI on drift. The `version-drift` CI job already
+  calls it.
+- **npm:** the `@mndfreek/mnemo-sdk` SDK (npm 0.4.4) gained a README compatibility
+  note stating it versions independently and targets a 0.5.x `mnemo-mcp-server` tool
+  surface (no npm publish this pass — no token in the release env).
+
+### Removed (2026-07-28) — capability-lease dead code (never wired)
+
+- Deleted `crates/mnemo-cli/src/lease.rs`, its `LeaseStore` allocation + purge task
+  in `main.rs`, and the `Manifest.lease_ttl_seconds` field/validation. The store was
+  allocated but **no operation was ever gated on a lease**, while its docstring
+  described the defence in the present tense — the same claimed-but-not-wired class
+  of bug #124 fixed for `role_filter`. Wiring it would be a breaking MCP change
+  (`recall` returning a token, `forget_subject` requiring one), and on stdio a
+  single-operator lease is ceremony, not isolation. The design is captured in
+  [#126](https://github.com/sattyamjjain/mnemo/issues/126) for a future
+  authenticated, multi-caller transport. README enforcement table + `docs/` claims
+  corrected to match.
+
+### Docs (2026-07-28) — benchmark headline is the CI-reproducible number; ort repair tracked
+
+- The README headline retrieval number is now the **`nomic-embed-text` (768-dim,
+  n=23) recall@1 0.739 / MRR 0.805** result, which needs only Ollama and no build
+  feature. The **ONNX `all-MiniLM-L6-v2` (384-dim, n=45) recall@1 0.689** number was
+  demoted to a clearly-labelled "not currently CI-reproducible" note — it needs
+  `--features onnx`, which CI deliberately excludes (the `ort 2.0.0-rc.11` /
+  `ndarray 0.17` integration is broken; tracked in
+  [#125](https://github.com/sattyamjjain/mnemo/issues/125)). Each figure is now
+  labelled inline with embedder + dimension + n so the two cannot be conflated. The
+  `onnx.rs` module doc block was corrected from tokenizers 0.21 / ndarray 0.16 to the
+  real pins.
+
+### Docs (2026-07-28) — README CLI Options lists all five commands + drift guard
+
+- Added `bench` (subcommand `embeddings --slo-ms`) and `compliance` (subcommand
+  `retention --profile`) to the README `## CLI Options` block (it listed only
+  `baseline` / `mcp-server` / `eval` while the binary shipped five). New test
+  `readme_cli_commands_documented` parses the built binary's `--help` command tree
+  and fails when a top-level command is missing from that block.
+
+### Changed (2026-07-28) — CHANGELOG released versions split out of [Unreleased]
+
+- Split 0.5.5–0.5.18 (which had all accumulated under `[Unreleased]`) into their real
+  dated `## [x.y.z]` sections, using git tags/dates as the source of truth; untagged
+  intermediate bumps fold forward into the next tagged release. `[Unreleased]` now
+  holds only genuinely-unreleased work. Extended the exactly-one-`[Unreleased]` guard
+  with `changelog_unreleased_has_no_released_version`, which fails when a
+  released/tagged version still has a `### ` sub-section under `[Unreleased]`.
+
+### Chore (2026-07-28) — workspace version 0.5.18 → 0.5.19
+
+- Bumped `[workspace.package].version` and the matching `[workspace.dependencies]`
+  internal pins so the drift fix ships as a single coherent release.
+
 ### Security (2026-07-28) — manifest [role_filter] is now attached in hardened mode
 
 **`fix`: the manifest `[role_filter]` was built but never passed to the server on the
@@ -126,6 +201,8 @@ dead code — it is dispatched by the server.**
   package versions **independently** of the Rust workspace (tracks PyPI 0.5.12,
   not workspace 0.5.18).
 
+## [0.5.18] — 2026-07-26
+
 ### Fixed (2026-07-26) — Postgres pgvector semantic recall works from the async runtime (v0.5.17 → v0.5.18, #99)
 
 **`fix`: make the `VectorIndex` ANN path truly async so Postgres semantic recall
@@ -160,6 +237,8 @@ can no longer panic or deadlock inside the server/CLI `#[tokio::main]` runtime.*
 - README storage-backend footnote updated: Postgres vector recall now works from
   any Tokio runtime flavor with no `block_on` bridge; #99 resolved.
 
+## [0.5.17] — 2026-07-25
+
 ### Added (2026-07-25) — forged-reasoning defense + real-embedder resistance bench (v0.5.16 → v0.5.17)
 
 **`feat`: defend against forged-reasoning memory injection — an attacker plants a
@@ -190,6 +269,8 @@ benign false-quarantine).**
   *reasoning provenance*, not poisoned *content* retrieval.
 - **README** security table gains a "Forged-reasoning defense" row. Version bump
   **0.5.16 → 0.5.17**.
+
+## [0.5.16] — 2026-07-24
 
 ### Added (2026-07-24) — ASI06 auditable memory-poisoning-resistance benchmark (v0.5.15 → v0.5.16)
 
@@ -343,6 +424,8 @@ no benchmark number yet). This lands the *integration*, not a result.
     (`check_bench_regression.py`, dataset-scoped `recall@10` for locomo/longmemeval)
     is out of scope by construction and unchanged.
 
+## [0.5.14] — 2026-07-19
+
 ### Added (2026-07-19) — v0.5.14, DPDP Rules processing-log retention-conformance profile
 
 Workspace `0.5.13 → 0.5.14` (patch bump — an additive `mnemo-compliance` surface
@@ -470,6 +553,8 @@ recall path; no dependency change).
   `mnemo-db` is newly published. **No version bump** (docs + bench + a new
   never-before-published crate published at the current `0.5.12`).
 
+## [0.5.12] — 2026-07-14
+
 ### Docs (2026-07-13) — contributor IP + regulated-AI README wedge
 
 Docs/governance only; **no version bump** (no engine, protocol, crate, or
@@ -524,6 +609,8 @@ gets a clean, previously-unpublished crates.io version and a fresh release tag).
     already owned by this project on crates.io (last at 0.4.x); no rename needed.
   - README gains an **Install from crates.io** section leading with the offline
     hash-chain verify API, pointing at [`docs/POSITIONING.md`](docs/POSITIONING.md).
+
+## [0.5.11] — 2026-07-08
 
 ### Docs (2026-07-08) — compliance-axis positioning one-pager
 
