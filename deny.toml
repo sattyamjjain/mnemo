@@ -42,4 +42,9 @@ ignore = [
     # Unmaintained / informational
     "RUSTSEC-2024-0436",   # paste unmaintained
     "RUSTSEC-2026-0002",   # rayon IterMut stacked borrows
+
+    # New 2026-07 advisories, transitive + off mnemo's call path (see
+    # .cargo/audit.toml for full rationale). Not introduced by 0.5.19.
+    "RUSTSEC-2026-0204",   # crossbeam-epoch fmt::Pointer invalid deref (via rayon)
+    "RUSTSEC-2026-0185",   # quinn-proto QUIC reassembly DoS (no QUIC listener)
 ]

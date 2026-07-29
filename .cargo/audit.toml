@@ -101,4 +101,25 @@ ignore = [
     # rayon 1.x IterMut — Stacked Borrows violation. Transitive only.
     # No exploit path in mnemo's own code.
     "RUSTSEC-2026-0002",
+
+    # ------------------------------------------------------------------
+    # New advisories 2026-07 (pre-existing in the tree; not introduced by
+    # the 0.5.19 cut, which changes no dependencies). Both transitive and
+    # off mnemo's call path.
+    # ------------------------------------------------------------------
+
+    # crossbeam-epoch < 0.9.20 — invalid pointer dereference in the
+    # `fmt::Pointer` (`{:p}`) impl for `Atomic`/`Shared`. mnemo never
+    # formats crossbeam-epoch pointers; the crate is transitive via
+    # rayon-core → crossbeam-deque. Fix: >=0.9.20; lift on the next
+    # rayon/crossbeam bump.
+    "RUSTSEC-2026-0204",
+
+    # quinn-proto < 0.11.15 — remote memory exhaustion from unbounded
+    # out-of-order QUIC stream reassembly (needs an active QUIC endpoint
+    # accepting streams). mnemo runs no QUIC listener; quinn is pulled
+    # transitively through the TLS/HTTP stack and never initialised — the
+    # same non-exposure the RUSTSEC-2026-0037 quinn ignore documents.
+    # Fix: >=0.11.15; lift on the transitive bump.
+    "RUSTSEC-2026-0185",
 ]

@@ -37,15 +37,31 @@ not-re-run claims — see
 [`bench/locomo/results/reproduction_2026-07-06.md`](bench/locomo/results/reproduction_2026-07-06.md).
 
 **Real-embedder retrieval quality (measured, not asserted):** the byte-reproducible
-number above runs under a *deterministic hash-bag* embedder — a lexical **floor**. With a
-**real local semantic embedder** (ONNX `all-MiniLM-L6-v2`, 384-dim, no API key) on the
-same 45-record slice, mnemo's vector lane recalls the gold document at **recall@1 0.689
-[Wilson 95% 0.543, 0.805]** and **recall@10 0.911** (MRR 0.770); default `auto`/RRF is
-0.615 / 0.889 and BM25-only 0.422 / 0.689 (mean of 3 seeds). Reproduce with **no
-credentials** — `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features onnx -p
-mnemo-locomo-bench --bin locomo_v1_bench` — and the runner **refuses to emit a score under
-a no-op embedder**. Setup, wide-CI/`preliminary` caveats (n=45; the Postgres semantic path
-is not exercised), and raw JSON: [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md).
+number above runs under a *deterministic hash-bag* embedder — a lexical **floor**. The
+headline real-embedder result uses **`nomic-embed-text` (768-dim, local via Ollama, no
+API key)** on the bundled LongMemEval_M held-out slice (**n=23**, mean of 5 seeds; first
+authenticated baseline 2026-06-29 @ `640b7b1`): mnemo's vector lane recalls the gold
+document at **recall@1 0.739 (recall@5 0.826, MRR 0.805)** — `vector_only` is the one
+stable strong mode. Reproduce with **no credentials and no special build feature**:
+`ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin
+semantic_recall_bench` (the runner **refuses to emit a score under a no-op embedder**).
+Full per-mode tables and the different-axes caveat vs. Mem0/Letta are in the benchmark
+tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
+
+> **A second real-embedder number — ONNX MiniLM — is _not_ currently CI-reproducible.**
+> An earlier measurement used a **different** embedder and slice: **ONNX
+> `all-MiniLM-L6-v2` (384-dim), n=45**, reporting **recall@1 0.689 [Wilson 95% 0.543,
+> 0.805]** / recall@10 0.911 (MRR 0.770). It runs only behind `--features onnx`, which
+> **CI deliberately does not build** — the `ort` integration is broken against the
+> pinned `ort 2.0.0-rc.11` / `ndarray 0.17` API (ndarray 0.16→0.17 drift, Dependabot
+> #11). So do **not** conflate 0.689 with the 0.739 headline: **different embedder
+> (MiniLM 384-dim vs nomic 768-dim), different slice (n=45 vs n=23)**, and 0.689 sits
+> outside the green CI path until the integration is repaired (tracking:
+> [#125](https://github.com/sattyamjjain/mnemo/issues/125)). Reproduce locally:
+> `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features onnx -p mnemo-locomo-bench
+> --bin locomo_v1_bench`; caveats + raw JSON:
+> [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md).
+
 And the **memory-poisoning defense is measured on a real embedder, not asserted.**
 Through a real ONNX MiniLM embedder (not a hash stand-in), mnemo's always-on
 lexical / self-referential lane drops canonical **MINJA** ASR **100% → 0%** at
@@ -57,7 +73,10 @@ correcting the hash-embedder bench's rosier z-score reading. ASR + Wilson-95 +
 benign-FPR per attack, refuse-to-score-on-noop:
 [`docs/BENCH_POISONING.md`](docs/BENCH_POISONING.md)
 (`cargo run --release --features onnx -p mnemo-poisoning-bench --bin poisoning_real_bench`).
-The byte-stable hash-embedder defense-*delta* companion is at
+This bench is **also `--features onnx`**, so — like the ONNX MiniLM retrieval number
+above — it is **not currently CI-reproducible** until the `ort` integration is repaired
+([#125](https://github.com/sattyamjjain/mnemo/issues/125)). The byte-stable
+hash-embedder defense-*delta* companion runs in CI and is at
 [`bench/poisoning/`](bench/poisoning/).
 
 Quarantine is only half the story — the other half is the **auditable layer**,
@@ -583,7 +602,7 @@ path calls it.
 | **MCP role-filter** (manifest `[role_filter]`) | ✅ when a `[role_filter]` block is present and not a no-op — a denied tool is hidden from `tools/list` and rejected by `tools/call` with `-32601`; on stdio there is no per-call caller identity, so this is a **server-wide tool denylist, not per-caller RBAC**. No block → every advertised tool reachable (unchanged) | `mnemo-mcp::role_filter` dispatch, attached by the `mnemo-cli` hardened server; `hardened_mode_attaches_role_filter` (CLI) + `role_filter_*` (library) tests |
 | **MCP tool-catalog attestation** | ❌ **pin parsed + validated only** — no serve-time check | `mnemo-cli::attest` (library + tests); startup logs a warning |
 | **Consent-token-per-write** | ❌ **library only** — core engine never calls it | `mnemo-compliance::ConsentTokenGuard` |
-| Lease tokens | ❌ store runs, but no operation is gated on a lease | `mnemo-cli::lease` (`#![allow(dead_code)]`) |
+| Lease tokens (capability-leased reads) | ❌ **not shipped** — removed as dead code (the store ran but no operation was ever gated on a lease); design captured in [#126](https://github.com/sattyamjjain/mnemo/issues/126) for a future multi-caller transport where a per-read lease has real cross-caller value | — (removed; see git history) |
 | Cloudflare Mesh / Agent-Deal / baseline exporter / CMA shim | ❌ standalone adapter crates — not invoked by the running server | `mnemo-mesh` / `mnemo-deal` / `mnemo-baseline` / `mnemo-cma` |
 
 #### Bearer-token auth (the floor)
@@ -739,6 +758,22 @@ Commands:
               sample under `crates/mnemo-core/benches/data/longmemeval_m.jsonl`.
               Pass `--with-provenance` + `--provenance-key-hex <hex>` to also
               measure the HMAC-receipt overhead.
+  bench       Run a measurement-only benchmark (v0.4.9). Subcommand:
+                embeddings  Measure every configured embedding backend
+                            (nDCG@10, recall@10, p50/p95 latency, throughput)
+                            and recommend the highest-nDCG backend whose p95 ≤
+                            the SLO. Flags: --slo-ms <MS> [default: 50],
+                            --dimensions <DIM> [default: 384],
+                            --latency-samples <N> [default: 32].
+              No retrieval defaults / RRF weights change.
+  compliance  Compliance primitives (mnemo-compliance). Subcommand:
+                retention   Print a processing-log retention-conformance profile
+                            (DPDP Rules 2025 / EU AI Act Art.19 / HIPAA
+                            §164.312(b)) and gate it against the active backend's
+                            append-only floor, failing loud if it cannot honour
+                            it. Flags: --profile <dpdp|eu-ai-act-art19|hipaa>
+                            [default: dpdp], --floor-days <N> (override the
+                            legal-minimum floor).
 ```
 
 ## Architecture

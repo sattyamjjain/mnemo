@@ -46,7 +46,6 @@ keystore_path = "{}"
 audit_log_path = "{}"
 allowed_tools = ["mnemo.recall", "mnemo.verify"]
 allowed_parents = ["claude", "systemd"]
-lease_ttl_seconds = 60
 "#,
         keystore.display(),
         dir.path().join("audit.jsonl").display()

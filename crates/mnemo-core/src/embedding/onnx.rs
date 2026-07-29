@@ -19,10 +19,17 @@
 //! onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 //!
 //! [dependencies]
-//! ort = { version = "2", optional = true }
-//! tokenizers = { version = "0.21", optional = true, default-features = false }
-//! ndarray = { version = "0.16", optional = true }
+//! ort = { version = "2.0.0-rc.11", optional = true }
+//! tokenizers = { version = "0.23", optional = true, default-features = false, features = ["fancy-regex"] }
+//! ndarray = { version = "0.17", optional = true }
 //! ```
+//!
+//! These are the versions the workspace actually pins. The `#[cfg(feature =
+//! "onnx")]` inference path is written against this `ort 2.0.0-rc.11` /
+//! `ndarray 0.17` API, but the `onnx` feature is **currently excluded from CI**
+//! (an `ort`-integration repair is tracked in
+//! <https://github.com/sattyamjjain/mnemo/issues/125>); build it locally with
+//! `--features onnx`.
 //!
 //! # Example (stub)
 //!

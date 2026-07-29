@@ -81,12 +81,16 @@ experience-memory mode to be enabled.
 
 ## A note on audit-log export
 
-`mnemo.export_audit_log` is referenced by the manifest schema and the
-capability-lease design as a **planned, lease-gated MCP tool** — it is **not**
-one of the 21 registered tools above. The audit-log export capability itself
-already exists today as a library API:
+`mnemo.export_audit_log` is referenced by the manifest schema but is **not** one
+of the 21 registered tools above. The audit-log export capability itself already
+exists today as a library API:
 [`mnemo_compliance::export_audit_log(events, format, signer)`](../compliance/eu-ai-act.md)
 (with `verify_ndjson_signed`), which produces a signed NDJSON / EU-AI-Office CSV
-bundle from the hash-chained event log. Wiring it (and `mnemo.forget_subject`)
-behind a per-read lease token at the rmcp tool layer is tracked as follow-up
-work; see [MCP server integration](../integrations/mcp-server.md).
+bundle from the hash-chained event log.
+
+The earlier **capability-lease** design (per-read lease tokens gating
+`forget_subject` / audit-log export) was **removed as dead code** — it was never
+wired, and on the stdio transport a single-operator lease is ceremony rather than
+isolation. The design is captured in
+[#126](https://github.com/sattyamjjain/mnemo/issues/126) for a future
+multi-caller (authenticated) transport where it has real value.

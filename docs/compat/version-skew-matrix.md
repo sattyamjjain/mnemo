@@ -1,5 +1,16 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-28 for the **v0.5.19** cut — a **release-infrastructure + docs**
+> change with **no public API, wire, or storage change**. It republishes the
+> `mnemo-postgres` / `mnemo-rest` / `mnemo-grpc` / `mnemo-graph` crates (stranded
+> at 0.4.4/0.4.5) up to the workspace version by unblocking the publish workflow
+> from the pre-existing `mnemo-golem-wit` link failure, and extends the drift guard
+> to every published member. Also removes the never-wired capability-lease dead
+> code (`Manifest.lease_ttl_seconds` dropped — unknown manifest fields are ignored,
+> so old manifests still parse), fixes benchmark-doc honesty, and restructures the
+> CHANGELOG. **Not breaking for any consumer.** Version pins move 0.5.18 → 0.5.19
+> in lockstep.
+>
 > Updated 2026-07-26 for the **v0.5.18** cut — a **bugfix + internal-API** change:
 > `mnemo_core::index::VectorIndex::search` / `filtered_search` are now **async**
 > (`#[async_trait]`), and the `filtered_search` filter is now

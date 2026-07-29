@@ -53,8 +53,7 @@ fn write_manifest(dir: &tempfile::TempDir, role_filter_block: &str) -> std::path
          audit_log_path = \"{}\"\n\
          allowed_tools = [\"mnemo.recall\", \"mnemo.verify\"]\n\
          allowed_agents = []\n\
-         allowed_parents = []\n\
-         lease_ttl_seconds = 60\n{role_filter_block}",
+         allowed_parents = []\n{role_filter_block}",
         keystore.display(),
         dir.path().join("audit.jsonl").display(),
     );

@@ -71,3 +71,86 @@ fn changelog_has_exactly_one_unreleased_section() {
          `## [Unreleased]` makes the ordering guard vacuous."
     );
 }
+
+/// A version that has already been RELEASED must not still have a `### …`
+/// sub-section sitting under `## [Unreleased]`. That is exactly how 0.5.5–0.5.18
+/// piled up inside [Unreleased] for weeks while their git tags and (eventually)
+/// their own sections existed. "Released" = the CHANGELOG's own `## [X.Y.Z]`
+/// dated headings (self-contained, so this never goes vacuous on a tagless
+/// shallow CI checkout), unioned with `git tag` when the checkout has tags.
+#[test]
+fn changelog_unreleased_has_no_released_version() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("CHANGELOG.md");
+    let body = std::fs::read_to_string(&path).expect("CHANGELOG.md readable");
+
+    // The [Unreleased] block: from its heading up to the next `## [` heading.
+    let start = body.find("## [Unreleased]").expect("[Unreleased] required");
+    let after = &body[start + "## [Unreleased]".len()..];
+    let end = after.find("\n## [").unwrap_or(after.len());
+    let unreleased_block = &after[..end];
+
+    // Released versions: every `## [X.Y.Z]` dated heading (not [Unreleased]) ...
+    let mut released: std::collections::BTreeSet<String> = body
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim().strip_prefix("## [")?;
+            let ver = rest.split(']').next()?;
+            (ver != "Unreleased").then(|| ver.to_string())
+        })
+        .collect();
+    // ... unioned with git tags if this checkout fetched them.
+    if let Ok(out) = std::process::Command::new("git")
+        .args(["tag", "--list", "v*"])
+        .output()
+    {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Some(v) = line.trim().strip_prefix('v') {
+                released.insert(v.to_string());
+            }
+        }
+    }
+
+    // Boundary-safe: `v0.5.1` must not match inside `v0.5.18`.
+    fn names_version(header: &str, v: &str) -> bool {
+        // `[X.Y.Z]` is self-delimited by the closing bracket.
+        if header.contains(&format!("[{v}]")) {
+            return true;
+        }
+        let pat = format!("v{v}");
+        let mut from = 0;
+        while let Some(pos) = header[from..].find(&pat) {
+            let after_idx = from + pos + pat.len();
+            let ok = header[after_idx..]
+                .chars()
+                .next()
+                .is_none_or(|c| !(c.is_ascii_digit() || c == '.'));
+            if ok {
+                return true;
+            }
+            from = after_idx;
+        }
+        false
+    }
+
+    let offenders: Vec<String> = unreleased_block
+        .lines()
+        .filter(|l| l.starts_with("### "))
+        .flat_map(|hdr| {
+            released
+                .iter()
+                .filter(move |v| names_version(hdr, v))
+                .map(move |v| format!("  {v} named in: {hdr}"))
+        })
+        .collect();
+
+    assert!(
+        offenders.is_empty(),
+        "released version(s) still have a `### ` sub-section under `## [Unreleased]`. \
+         Move each into its own `## [<version>] — <date>` section (tags/release dates \
+         are the source of truth):\n{}",
+        offenders.join("\n")
+    );
+}

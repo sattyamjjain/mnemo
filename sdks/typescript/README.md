@@ -6,6 +6,17 @@ TypeScript SDK for [Mnemo](https://github.com/sattyamjjain/mnemo) — an MCP-nat
 npm install @mndfreek/mnemo-sdk
 ```
 
+## Version & compatibility
+
+This SDK is versioned **independently** of the Rust workspace. `npm install`
+currently gives you **0.4.4** (latest on npm); the Rust workspace is on the
+0.5.x line. The SDK is a thin **MCP-over-STDIO client** — it does not embed the
+engine — so it targets the `mnemo` / `mnemo-mcp-server` binary's MCP **tool
+surface** (the 21 registered tools) rather than a specific `mnemo-core`
+version. For the documented tool set, run a **0.5.x** `mnemo-mcp-server`
+(`cargo install mnemo-mcp-server`). A version-matched npm release is tracked as
+a follow-up.
+
 ## Quick start
 
 The SDK speaks MCP over STDIO to a `mnemo` binary running on the same machine. If you don't have the binary yet:
