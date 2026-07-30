@@ -146,6 +146,25 @@ jobs:
           echo "workspace version: ${ver}"
           # crates.io's API rejects requests without a User-Agent (403).
           UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
+
+          # crates.io presence check, tolerant of transient registry hiccups.
+          # Returns the crate@ver HTTP code on stdout; retries a few times when
+          # the registry answers 000 (network) or 5xx (Heroku "Application
+          # Error", which reddened v0.5.20's first upload) so a blip on the GET
+          # alone never fails the release. 200 = present, 404 = absent.
+          crate_status() {
+            local crate="$1" code=""
+            for a in 1 2 3 4 5; do
+              code=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
+                "https://crates.io/api/v1/crates/${crate}/${ver}" || echo 000)
+              case "$code" in
+                200|404) echo "$code"; return 0 ;;
+              esac
+              sleep $((a * 5))
+            done
+            echo "$code"
+          }
+
           # Topological order — a dependent never precedes a crate it needs, or
           # its verify-build cannot resolve that dep live from the sparse index.
           # mnemo-db is a leaf name-reservation pointer (no internal deps) and
@@ -153,13 +172,12 @@ jobs:
           # already on crates.io 404-gate as present and only new ones publish.
           crates="mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db"
           for crate in $crates; do
-            http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
-              "https://crates.io/api/v1/crates/${crate}/${ver}")
+            http=$(crate_status "$crate")
             if [ "$http" = "200" ]; then
               echo "  ${crate}@${ver} — already on crates.io, skipping"
               continue
             elif [ "$http" != "404" ]; then
-              echo "  ${crate}@${ver} — unexpected HTTP ${http} from crates.io; failing"
+              echo "  ${crate}@${ver} — crates.io still answering HTTP ${http} after retries; failing"
               exit 1
             fi
             if [ -n "$DRY_RUN" ]; then
@@ -168,9 +186,33 @@ jobs:
               echo "::endgroup::"
               continue
             fi
+            # Publish with backoff — crates.io returns transient 5xx/timeouts on
+            # upload independent of the payload (a 503 killed the first v0.5.20
+            # run mid-upload). Between attempts, re-check presence: if a prior
+            # attempt's upload actually landed despite a failed HTTP response, we
+            # detect the 200 and stop rather than re-uploading (which errors).
             echo "::group::Publish ${crate}@${ver}"
-            cargo publish -p "${crate}"
+            published=""
+            for attempt in 1 2 3 4 5; do
+              if cargo publish -p "${crate}"; then
+                published=1; break
+              fi
+              # Did it land anyway? (upload succeeded, response failed.)
+              if [ "$(crate_status "$crate")" = "200" ]; then
+                echo "  ${crate}@${ver} — landed despite a failed response; continuing"
+                published=1; break
+              fi
+              if [ "$attempt" -lt 5 ]; then
+                back=$((attempt * 30))
+                echo "  publish attempt ${attempt} failed; retrying in ${back}s"
+                sleep "$back"
+              fi
+            done
             echo "::endgroup::"
+            if [ -z "$published" ]; then
+              echo "  ${crate}@${ver} — publish failed after 5 attempts; failing"
+              exit 1
+            fi
             # Let the sparse index propagate before publishing a crate that
             # depends on the one just uploaded (verify build resolves it live).
             # Wait after every crate except the terminal leaf mnemo-db — cheap
