@@ -38,6 +38,21 @@ allowed_agents = ["claude-prod", "claude-stage"]
 # bypasses this check.
 allowed_parents = ["claude", "claude-code", "systemd", "supervisord"]
 
+# v0.4.0 (P0-1) — Optional serve-time MCP tool-catalog attestation
+# (arXiv 2604.20994: function-hijacking via tool-catalog poisoning). When
+# `tool_catalog_pin_path` is set, `mnemo mcp-server` fingerprints the tools it
+# is about to advertise (after any [role_filter]) and compares them to the pin
+# BEFORE serving stdio: it refuses to start on any added/mutated tool, and on a
+# removed-only downgrade unless `allow_removed_drift = true`. Every verdict is
+# recorded as an `mcp_tool_catalog_drift` audit event. Generate the pin for your
+# exact binary (regenerate it after every mnemo upgrade), then commit it
+# chmod-restricted next to the keystore:
+#
+#   mnemo mcp-server --manifest ./manifest.toml --print-catalog-pin > tool_catalog.pin.toml
+#
+# tool_catalog_pin_path = "/etc/mnemo/tool_catalog.pin.toml"
+# allow_removed_drift   = false   # true only for an intentional tool-removal downgrade
+
 # v0.4.2 (A1) — Optional MCP role-aware tool filter aligned with the
 # 2025-11-25 MCP authorization spec (role-based annotations,
 # https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).

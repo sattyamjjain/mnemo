@@ -437,3 +437,63 @@ async fn docs_document_exactly_the_registered_tools() {
         "documented tool set must exactly equal the registered set"
     );
 }
+
+/// `advertised_tool_catalog()` returns one `(name, description, schema)` triple
+/// per tool that `tools/list` would publish — same length as
+/// `visible_tool_names()` — and honours an attached `RoleFilter`, so the CLI
+/// attests the pin against what callers actually see, not the pre-filter set.
+#[tokio::test]
+async fn advertised_tool_catalog_matches_visible_and_respects_role_filter() {
+    use mnemo_mcp::role_filter::{DefaultPolicy, ManifestRoleFilter, RoleFilterConfig};
+    use std::collections::BTreeMap;
+
+    // Unfiltered: one catalog triple per visible tool, names line up.
+    let (unfiltered, engine) = create_server();
+    let catalog = unfiltered.advertised_tool_catalog();
+    let visible = unfiltered.visible_tool_names();
+    assert_eq!(
+        catalog.len(),
+        visible.len(),
+        "catalog triples must equal visible tool count"
+    );
+    let catalog_names: std::collections::BTreeSet<&str> =
+        catalog.iter().map(|(n, _, _)| n.as_str()).collect();
+    let visible_names: std::collections::BTreeSet<&str> =
+        visible.iter().map(|s| s.as_str()).collect();
+    assert_eq!(catalog_names, visible_names);
+    // Each triple carries a non-empty schema (every tool has an input schema).
+    assert!(
+        catalog.iter().all(|(_, _, schema)| !schema.is_empty()),
+        "every advertised tool must carry an input_schema_json"
+    );
+
+    // Role-filtered (allow only mnemo.recall, default DenyAll): the catalog
+    // shrinks below the unfiltered set — the pin is attested post-filter.
+    let unfiltered_len = catalog.len();
+    let mut allow = BTreeMap::new();
+    allow.insert("mnemo.recall".to_string(), vec!["agent".to_string()]);
+    let config = RoleFilterConfig {
+        caller_roles: vec!["agent".to_string()],
+        default: DefaultPolicy::DenyAll,
+        allow,
+        deny: BTreeMap::new(),
+    };
+    let filter = std::sync::Arc::new(ManifestRoleFilter::new(config));
+    let filtered = MnemoServer::new(engine).with_role_filter(filter);
+    let filtered_catalog = filtered.advertised_tool_catalog();
+    assert_eq!(
+        filtered_catalog.len(),
+        filtered.visible_tool_names().len(),
+        "filtered catalog must still equal filtered visible count"
+    );
+    assert!(
+        filtered_catalog.len() < unfiltered_len,
+        "a role-filtered server must advertise fewer tools ({} vs {})",
+        filtered_catalog.len(),
+        unfiltered_len
+    );
+    assert!(
+        filtered_catalog.iter().any(|(n, _, _)| n == "mnemo.recall"),
+        "the one allowed tool must remain in the filtered catalog"
+    );
+}
