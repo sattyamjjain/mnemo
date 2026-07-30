@@ -105,7 +105,11 @@ jobs:
     needs: gate
     if: github.repository == 'sattyamjjain/mnemo'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The v0.5.20 closure grew from the 5-crate compliance line to 9 crates, each
+    # verify-built TWICE (coordinated dry-run + real publish) plus 60s crates.io
+    # index-propagation waits between dependency tiers. 45 min timed out on the
+    # dry-run alone; give the full walk generous headroom.
+    timeout-minutes: 180
     environment:
       name: crates-io
       url: https://crates.io/crates/mnemo-core
