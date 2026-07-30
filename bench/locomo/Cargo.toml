@@ -19,6 +19,10 @@ name = "semantic_recall_bench"
 path = "src/bin/semantic_recall_bench.rs"
 
 [[bin]]
+name = "implicit_association"
+path = "src/bin/implicit_association.rs"
+
+[[bin]]
 name = "interference"
 path = "src/bin/interference.rs"
 

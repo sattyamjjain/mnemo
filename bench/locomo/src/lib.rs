@@ -25,11 +25,14 @@
 
 pub mod dataset;
 pub mod judge;
+pub mod ollama;
 pub mod phase_cost;
 pub mod real_embedder;
 pub mod runner;
 pub mod scoring;
 pub mod stats;
+
+pub use ollama::OllamaEmbedding;
 
 pub use judge::{JudgeModel, JudgeVerdict, LoCoMoJudge, MockJudge};
 pub use phase_cost::{
