@@ -567,7 +567,7 @@ mnemo compares on the compliance-audit axis: **[docs/POSITIONING.md](docs/POSITI
 - **Memory-provenance signing on reads** — every `recall(..., with_provenance=True)` returns an HMAC-SHA256 receipt binding the cited records to a server-side key; supports key rotation. Verify offline from Python via `mnemo.provenance.verify_read_provenance`. New in v0.4.0-rc3.
 - **Hardened MCP launcher** — `mnemo mcp-server --manifest <path>` runs a safe-spawn gauntlet (refuse inherited secrets, refuse `--config` argv injection, refuse untrusted parents) BEFORE engine state is constructed. Direct response to the OX-MCP "exfiltrate-then-act" disclosure (2026-04-24). All privileged knobs come from a chmod-restricted TOML manifest. New in v0.4.0-rc3.
 - **DPDPA consent-token guard (library — not enforced by default)** — `mnemo-compliance::ConsentTokenGuard` validates a consent token's expiry / scope / revocation, and `MannsetuConsentSource` binds a DPB-registered consent manager. **The core engine does not require a consent token** — `engine.remember` performs no consent check; this is an opt-in guard a caller wires in front of writes, not a default gate. New in v0.4.0-rc3. _(See the enforcement table below.)_
-- **MCP tool-catalog pin (parsed + validated; serve-time attestation not yet wired)** — `mnemo mcp-server` loads and validates an optional tool-catalog pin from the manifest (a malformed pin refuses startup), and the attestation + drift-classification logic is implemented and unit-tested. **Attestation of the advertised tool list against the pin is not yet enforced in the MCP boot path** — the server logs a warning saying so at startup. Direct response to arXiv 2604.20994 (function-hijacking via tool-list poisoning). New in v0.4.0. _(See the enforcement table below.)_
+- **MCP tool-catalog attestation (enforced at hardened boot)** — when the manifest sets `tool_catalog_pin_path`, `mnemo mcp-server` fingerprints the tools it is about to advertise (after any `[role_filter]`) and compares them to the pin **before serving stdio**: it refuses to start on any added or mutated tool and on a removed-only downgrade unless `allow_removed_drift = true`, and records every verdict as an `mcp_tool_catalog_drift` audit event. Generate a pin for your exact binary with `mnemo mcp-server --manifest <m> --print-catalog-pin`. On stdio the catalog is static after boot, so this one check is complete for the transport (it defends against a substituted binary, a hostile dependency that injects/renames a tool, and pin drift after an upgrade); it is not a per-request check and is only as strong as the manifest file's permissions. Direct response to arXiv 2604.20994 (function-hijacking via tool-list poisoning). New in v0.4.0, wired in v0.5.20. _(See the enforcement table below.)_
 - **Cloudflare Mesh runtime adapter** — SPIFFE-style `MeshIdentity` + per-namespace `MemOp` ACL + `MeshAuditEnvelope` chained into the existing HMAC ledger. First OSS embedded memory DB to speak Cloudflare Mesh attestation natively. New in v0.4.0.
 - **Code-mode WIT recall** — `mnemo:memory@0.4` WIT world plus a wasmtime-friendly host runner. Agents call `recall` as a sandboxed WASM function instead of a JSON tool envelope, dropping per-turn token cost ~96% on 200-turn LongMemEval_S samples. New in v0.4.0.
 - **Decay-curve score lane** — `DecayLane` (Ebbinghaus + reinforcement) fuses with vector + BM25 + recency in the default recall path. `letta_mode` flag bypasses it for parity with Letta's published numbers. New in v0.4.0.
@@ -600,7 +600,7 @@ path calls it.
 | **Forged-reasoning defense** (reasoning-provenance trust filter) | ✅ opt-in — a real-embedder bench drives planted fabricated-chain-of-thought ASR **100% → 0%** (`nomic-embed-text`, Wilson 95% ASR_on [0.0%, 3.1%], n=120) at **0/180 = 0%** benign false-quarantine [0.0%, 2.1%] | `RecallRequest.reasoning_trust` (`retrieval::ReasoningTrustPolicy`) enforced in `recall`'s `passes_filters`; [`bench/forged_reasoning/`](bench/forged_reasoning/) |
 | Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |
 | **MCP role-filter** (manifest `[role_filter]`) | ✅ when a `[role_filter]` block is present and not a no-op — a denied tool is hidden from `tools/list` and rejected by `tools/call` with `-32601`; on stdio there is no per-call caller identity, so this is a **server-wide tool denylist, not per-caller RBAC**. No block → every advertised tool reachable (unchanged) | `mnemo-mcp::role_filter` dispatch, attached by the `mnemo-cli` hardened server; `hardened_mode_attaches_role_filter` (CLI) + `role_filter_*` (library) tests |
-| **MCP tool-catalog attestation** | ❌ **pin parsed + validated only** — no serve-time check | `mnemo-cli::attest` (library + tests); startup logs a warning |
+| **MCP tool-catalog attestation** | ✅ when a `[tool_catalog_pin]` block is present — the hardened server fingerprints the tools it will advertise (post role-filter) and, **before serving stdio**, refuses to start on any added/mutated tool (and on removed-only drift unless `allow_removed_drift`); every verdict is an `mcp_tool_catalog_drift` audit event. On stdio the catalog is static after boot, so this one boot-time check is complete for the transport — **not per-request**, and only as strong as the manifest file's permissions. No block → no attestation (unchanged) | `mnemo-cli::attest` wired in `run_mcp_server`; `hardened_mode_attests_tool_catalog` (CLI stdio) + `attest` unit tests; generate a pin with `--print-catalog-pin` |
 | **Consent-token-per-write** | ❌ **library only** — core engine never calls it | `mnemo-compliance::ConsentTokenGuard` |
 | Lease tokens (capability-leased reads) | ❌ **not shipped** — removed as dead code (the store ran but no operation was ever gated on a lease); design captured in [#126](https://github.com/sattyamjjain/mnemo/issues/126) for a future multi-caller transport where a per-read lease has real cross-caller value | — (removed; see git history) |
 | Cloudflare Mesh / Agent-Deal / baseline exporter / CMA shim | ❌ standalone adapter crates — not invoked by the running server | `mnemo-mesh` / `mnemo-deal` / `mnemo-baseline` / `mnemo-cma` |
@@ -928,6 +928,22 @@ claim (45-record LongMemEval_M, not _S; QA accuracy needs a generative LLM not
 run here). Full tables + JSON: [`bench/RESULTS.md`](bench/RESULTS.md) and the
 dated [`bench/locomo/results/`](bench/locomo/results/) report. Reproduce:
 `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.
+
+**Indirect-query (implicit-association) retrieval + the orientation cache** — a
+*different axis* from gold recall above: does the memory layer surface a decisive
+fact when the query shares **no wording** with it and only bridges through world
+knowledge? On a 30-row source-cited corpus (12 domains, `nomic-embed-text` 768-dim),
+every fact is directly retrievable (`direct` recall@5 ≈ 1.00) but an **indirect**
+query misses it ~13% of the time at k=5 (the blind spot). mnemo's opt-in,
+constant-token **orientation cache** — warmed by the fact's own prior access —
+surfaces the decisive entity in its bounded map ~93% of the time, lifting combined
+surfacing to **1.00 @5** and recovering the full ≈ +0.13 gap **via the map, not by
+re-ranking retrieval**. This is *retrieval surfacing*, **not** an LLM-answer score:
+it is **not** a reproduction of InMind ([arXiv:2607.24368](https://arxiv.org/abs/2607.24368),
+the framing) and **not** comparable to its 84.0% / 14.4% (which score an LLM's
+answers with an in-context arm). 30 rows ⇒ wide Wilson CIs. Full write-up:
+[`docs/benchmarks/implicit-association.md`](docs/benchmarks/implicit-association.md).
+Reproduce: `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin implicit_association`.
 
 ### STATE-Bench — agentic enterprise-task memory (entry in progress)
 

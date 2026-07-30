@@ -105,6 +105,31 @@ No "first" / "best" claim is made. Reproduce:
 `cargo run --release -p mnemo-locomo-bench --bin beam_bench`
 (writes `bench/locomo/results/beam_<date>.{md,json}`).
 
+## Implicit-association (indirect queries) + orientation cache
+
+A *different retrieval axis*: does the memory layer surface a decisive stored fact
+when the query shares **no wording** with it and only bridges through world
+knowledge — and does mnemo's constant-token **orientation cache** close that gap?
+30-row source-cited corpus (12 domains), real embedder (`nomic-embed-text`,
+768-dim), Wilson-95 intervals. Full write-up:
+[`docs/benchmarks/implicit-association.md`](../docs/benchmarks/implicit-association.md).
+
+| arm (recall@5) | value |
+|---|---:|
+| `direct` (answer-blind control — is the fact retrievable at all?) | ~1.00 |
+| `indirect` (no shared token — the blind spot) | ~0.87 |
+| `indirect+orientation` — top-k memories (sub-count A) | ~0.87 |
+| `indirect+orientation` — orientation-map surfaced (sub-count B) | ~0.93 |
+| `indirect+orientation` — combined A‖B | **1.00** |
+
+The blind spot (`direct − indirect` ≈ **+0.13** recall@5) is real; the orientation
+cache recovers it (`indirect+orientation − indirect` ≈ **+0.13**) **via its map, not
+by re-ranking retrieval** (sub-count A ≈ `indirect`). Sub-counts A and B are reported
+separately. **Not** an InMind reproduction and **not** comparable to InMind's
+84.0% / 14.4% (that scores an LLM's *answers*; this scores *retrieval surfacing*, no
+LLM). 30 rows ⇒ wide CIs. Reproduce:
+`ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin implicit_association`.
+
 ## LoCoMo claimed vs observed — reproducible by disclosure
 
 The 2026 memory-benchmark reproducibility crisis: several headline LoCoMo scores

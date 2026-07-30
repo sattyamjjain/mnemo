@@ -1,5 +1,15 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-30 for the **v0.5.20** cut — an **additive security-wiring + bench**
+> change with **no breaking public API, wire, or storage change**. It wires serve-time
+> MCP tool-catalog attestation into the hardened `mnemo mcp-server` boot path (opt-in
+> via the manifest's `tool_catalog_pin_path`; adds a `--print-catalog-pin` flag and a
+> new `MnemoServer::advertised_tool_catalog()` accessor) and adds the
+> `implicit_association` retrieval bench. **0.5.19** was bumped but never tagged; its
+> content folds forward here — this is the **first tag since the release-workflow
+> repair**, so it also validates that fix. Version pins move 0.5.19 → 0.5.20 in
+> lockstep. **Not breaking for any consumer.**
+>
 > Updated 2026-07-28 for the **v0.5.19** cut — a **release-infrastructure + docs**
 > change with **no public API, wire, or storage change**. It republishes the
 > `mnemo-postgres` / `mnemo-rest` / `mnemo-grpc` / `mnemo-graph` crates (stranded

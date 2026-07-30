@@ -4,6 +4,69 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-07-30)
+
+This `[Unreleased]` opens on the **v0.5.20** cut. Its base is `main` at
+[`7495c23`](https://github.com/sattyamjjain/mnemo/commit/7495c231b65940154ba82c31cdb04017891f9598)
+(the #127 publish-drift merge); the v0.5.20 work — serve-time tool-catalog
+attestation + the `implicit_association` bench — lands on
+`fix/mcp-catalog-attestation-and-implicit-association-bench` (push-to-`main`,
+tagged `v0.5.20`, which triggers `release-crate.yml`). Post-0.5.20 changes
+accumulate here.
+
+## [0.5.20] — 2026-07-30
+
+> **0.5.19** was bumped in `Cargo.toml` (2026-07-29, PR #127) but never tagged or
+> published (crates.io stayed at mnemo-core 0.5.16 / mnemo-postgres 0.4.4). Per this
+> repo's fold-forward convention, its content ships here in **0.5.20** — the first
+> tag since the release-workflow repair.
+
+### Security (2026-07-30) — serve-time MCP tool-catalog attestation wired at hardened boot
+
+**`feat`: the last "claimed-but-not-wired" control — MCP tool-catalog attestation
+(arXiv 2604.20994) — is now enforced.** Previously `mnemo mcp-server` loaded the
+manifest's `[tool_catalog_pin]`, logged "serve-time attestation is NOT enforced in
+this build", and served anyway (same class as the role_filter bug fixed 2026-07-28
+and the capability lease removed 2026-07-29; `attest/mod.rs` even opened with
+`#![allow(dead_code)]`).
+
+- New `MnemoServer::advertised_tool_catalog()` returns the `(name, description,
+  input_schema_json)` triples the server will advertise, filtered through any
+  `[role_filter]` (attest against what callers see, not the pre-filter superset).
+- `run_mcp_server` fingerprints them and attests against the pin **before**
+  `serve(stdio())`: it refuses to serve (non-zero exit) on any added/mutated tool or
+  `Reject`, and on removed-only drift unless `allow_removed_drift`. Every verdict is
+  recorded as an `mcp_tool_catalog_drift` audit event (the module doc's promise).
+- New `mnemo mcp-server --print-catalog-pin` emits a ready-to-paste, round-tripping
+  pin for the exact binary — the control was previously unusable (no pin generator).
+- Scope stated honestly (`attest/mod.rs`, README enforcement table, example
+  manifest): a boot-time check is complete for the **static stdio catalog** (defends
+  a substituted binary / a hostile tool-injecting dependency / post-upgrade drift);
+  it is NOT per-request and only as strong as the manifest file's permissions.
+- Tests: new `hardened_mode_attests_tool_catalog` drives the REAL binary over stdio
+  (correct pin serves; a mutated schema byte and an extra pin row both refuse to
+  serve; the latter accepted with `allow_removed_drift`) — verified red against the
+  pre-fix binary. Plus `advertised_tool_catalog` + pin round-trip unit tests.
+
+### Added (2026-07-30) — implicit-association (indirect-query) retrieval probe + orientation-cache arm
+
+- New `bench/locomo` bin `implicit_association`: measures whether mnemo surfaces a
+  decisive stored fact for an **indirect** query that shares no wording with it, and
+  whether the opt-in constant-token **orientation cache** closes that gap. Three arms
+  (`direct` control, `indirect`, `indirect+orientation`), real embedder
+  (`nomic-embed-text` 768-dim), Wilson-95, N=5, refuses to score under NoopEmbedding;
+  sub-counts A (top-k memories) and B (orientation map) reported separately.
+  Representative run: `direct` recall@5 ≈ 1.00, `indirect` ≈ 0.87 (the blind spot),
+  orientation-map surfaces the target ≈ 0.93, combined 1.00 — recovering the full
+  ≈ +0.13 gap **via the map, not by re-ranking**. Committed 30-row, 12-domain,
+  source-cited corpus `bench/locomo/data/implicit_association.jsonl` + structural
+  test; write-up `docs/benchmarks/implicit-association.md`. Framing: InMind
+  (arXiv:2607.24368) — **NOT** a reproduction and **NOT** comparable to its
+  84.0% / 14.4% (that scores an LLM's answers; this scores retrieval surfacing).
+- The Ollama embedder was extracted verbatim from `semantic_recall_bench` into
+  `bench/locomo/src/ollama.rs` (shared across the real-embedder benches; the
+  published 0.739 / 0.805 headline is unchanged).
+
 ### Fixed (2026-07-28) — crates.io publish drift: Postgres/REST/gRPC/graph crates unblocked (→ 0.5.19)
 
 **`mnemo-postgres` / `mnemo-rest` / `mnemo-grpc` had sat at 0.4.4 (and `mnemo-graph`

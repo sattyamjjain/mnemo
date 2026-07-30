@@ -12,6 +12,8 @@ mod commands;
 mod manifest;
 mod safe_spawn;
 
+use attest::CatalogAttestor;
+
 use mnemo_core::anomaly::outlier::train_baseline;
 use mnemo_core::embedding::openai::OpenAiEmbedding;
 use mnemo_core::embedding::{EmbeddingProvider, NoopEmbedding};
@@ -199,6 +201,13 @@ struct McpServerArgs {
     /// Path to the TOML manifest carrying every privileged knob.
     #[arg(long)]
     manifest: PathBuf,
+    /// Print a ready-to-paste `[tool_catalog_pin]` block for the tools this
+    /// exact binary advertises (after applying any manifest `[role_filter]`),
+    /// then exit WITHOUT serving. Pipe into a file and set
+    /// `tool_catalog_pin_path` in the manifest to enable serve-time
+    /// tool-catalog attestation (arXiv 2604.20994).
+    #[arg(long)]
+    print_catalog_pin: bool,
 }
 
 #[derive(clap::Args)]
@@ -648,13 +657,10 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         "provenance signer attached"
     );
 
-    // v0.4.0 (P0-1) — load the optional tool-catalog pin and build
-    // an attestor. The actual attestation against rmcp's advertised
-    // tool list happens in the MCP boot path (a separate follow-up
-    // wires it into mnemo-mcp's ServerHandler::list_tools — keeping
-    // the attestor here ensures the manifest's pin is parsed and
-    // validated even before that wiring lands, so a malformed pin
-    // refuses startup rather than silently passing through).
+    // v0.4.0 (P0-1) — load the optional tool-catalog pin and build an attestor.
+    // A malformed pin refuses startup here; the actual attestation against the
+    // server's advertised catalog runs once below, after the server (and any
+    // role filter) is built and before it serves stdio.
     let tool_attestor: Option<attest::PinnedAttestor> =
         if let Some(pin_path) = manifest.tool_catalog_pin_path.as_ref() {
             let pin = attest::catalog_pin::load(pin_path)?;
@@ -673,17 +679,6 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
             );
             None
         };
-    // Attestor parked here for the rmcp-side wiring follow-up. Touch
-    // it in a debug log so the binary doesn't hold a dead reference.
-    if let Some(ref a) = tool_attestor {
-        tracing::warn!(
-            allow_removed_drift = manifest.allow_removed_drift,
-            attestor_baseline_tools = a.baseline().tools.len(),
-            "MCP tool-catalog pin parsed and validated, but serve-time attestation is NOT \
-             enforced in this build — the advertised tool list is not checked against the pin yet"
-        );
-    }
-
     // v0.4.2 (A1) — load the optional `[role_filter]` block. Building the
     // `ManifestRoleFilter` here means a malformed manifest refuses startup rather
     // than silently accepting an unenforceable filter, and the filter is attached to
@@ -797,10 +792,95 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         signal_shutdown.notify_one();
     });
 
-    let mut server = MnemoServer::new(engine);
+    let mut server = MnemoServer::new(engine.clone());
     if let Some(filter) = role_filter.clone() {
         server = server.with_role_filter(filter);
     }
+
+    // `--print-catalog-pin`: emit a ready-to-paste pin for exactly the tools
+    // this binary advertises (post role-filter), then exit WITHOUT serving.
+    if args.print_catalog_pin {
+        let toml = render_catalog_pin_toml(
+            &server.advertised_tool_catalog(),
+            "REPLACE-ME:catalog-pin",
+            &chrono::Utc::now().to_rfc3339(),
+        );
+        print!("{toml}");
+        return Ok(());
+    }
+
+    // v0.4.0 (P0-1) — serve-time tool-catalog attestation (arXiv 2604.20994).
+    // Runs ONCE, over the compiled `#[tool]` catalog the server will advertise
+    // (post role-filter), before it serves stdio. On stdio the catalog is static
+    // after boot, so a boot-time check is complete for this transport: it defends
+    // against a substituted/tampered binary, a hostile dependency that injects or
+    // renames a tool, and pin drift after a version bump. It is NOT per-request
+    // and is only as strong as the manifest file's permissions.
+    if let Some(attestor) = tool_attestor.as_ref() {
+        let fingerprints: Vec<attest::ToolFingerprint> = server
+            .advertised_tool_catalog()
+            .iter()
+            .map(|(name, desc, schema)| attest::fingerprint_tool(name, desc, schema))
+            .collect();
+        let verdict = attestor.attest(&fingerprints)?;
+        // Audit EVERY verdict (before any early Err) so even a refused startup
+        // leaves an `mcp_tool_catalog_drift` trail. The module doc promises this.
+        record_catalog_drift_event(&engine, &cli.agent_id, &verdict).await;
+
+        let removed_only = verdict.is_removed_only_drift();
+        match &verdict {
+            attest::AttestationVerdict::Match => {
+                tracing::info!(
+                    pin_signer = %attestor.baseline().signer,
+                    catalog_sha = %hex::encode(attestor.baseline().catalog_sha256()),
+                    tool_count = fingerprints.len(),
+                    "MCP tool-catalog attestation PASSED — advertised catalog matches the pin"
+                );
+            }
+            attest::AttestationVerdict::Drift { removed, .. }
+                if removed_only && manifest.allow_removed_drift =>
+            {
+                let names: Vec<&str> = removed.iter().map(|t| t.name.as_str()).collect();
+                tracing::warn!(
+                    removed = ?names,
+                    "MCP tool-catalog removed-only drift ACCEPTED via allow_removed_drift — \
+                     the advertised catalog is a subset of the pin"
+                );
+            }
+            attest::AttestationVerdict::Drift {
+                added,
+                removed,
+                mutated,
+            } => {
+                let names = |v: &[attest::ToolFingerprint]| {
+                    v.iter().map(|t| t.name.clone()).collect::<Vec<_>>()
+                };
+                return Err(format!(
+                    "MCP tool-catalog attestation FAILED (arXiv 2604.20994): advertised catalog \
+                     drifted from the pin — added={:?} mutated={:?} removed={:?}. Refusing to \
+                     serve. Regenerate the pin with `--print-catalog-pin` if this change is \
+                     intended{}.",
+                    names(added.as_slice()),
+                    names(mutated.as_slice()),
+                    names(removed.as_slice()),
+                    if removed_only {
+                        ", or set allow_removed_drift = true for a removed-only downgrade"
+                    } else {
+                        ""
+                    }
+                )
+                .into());
+            }
+            attest::AttestationVerdict::Reject { reason } => {
+                return Err(format!(
+                    "MCP tool-catalog attestation REJECTED (arXiv 2604.20994): {reason}. \
+                     Refusing to serve."
+                )
+                .into());
+            }
+        }
+    }
+
     tracing::info!("Starting Mnemo MCP server on stdio (hardened mode)");
     let service = server.serve(stdio()).await?;
     tokio::select! {
@@ -819,6 +899,84 @@ async fn run_mcp_server(cli: &Cli, args: &McpServerArgs) -> Result<(), Box<dyn s
         tracing::error!("Failed to save vector index: {}", e);
     }
     Ok(())
+}
+
+/// Wrap a value as a TOML basic string, escaping `\` and `"`. Our values
+/// (tool names, an RFC3339 timestamp, a signer id) carry no control chars.
+fn toml_basic_string(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// Render a ready-to-paste `[tool_catalog_pin]` block from an advertised
+/// catalog (`(name, description, input_schema_json)` triples). The emitted TOML
+/// round-trips through [`attest::catalog_pin::load`] (asserted in tests), and
+/// each `schema_sha256` is the same fingerprint the attestor computes, so a pin
+/// generated from a binary Matches that binary's own advertised catalog.
+fn render_catalog_pin_toml(
+    catalog: &[(String, String, String)],
+    signer: &str,
+    signed_at: &str,
+) -> String {
+    let mut out = String::new();
+    out.push_str(
+        "# Generated by `mnemo mcp-server --manifest <m> --print-catalog-pin`.\n\
+         # Point the manifest's `tool_catalog_pin_path` at this file to enable\n\
+         # serve-time tool-catalog attestation (arXiv 2604.20994). Replace the\n\
+         # signer placeholder with a stable `<host>:<key_id>` before committing.\n",
+    );
+    out.push_str("[tool_catalog_pin]\n");
+    out.push_str(&format!("signer = {}\n", toml_basic_string(signer)));
+    out.push_str(&format!("signed_at = {}\n", toml_basic_string(signed_at)));
+    for (name, desc, schema) in catalog {
+        let fp = attest::fingerprint_tool(name, desc, schema);
+        out.push_str("\n[[tool_catalog_pin.tools]]\n");
+        out.push_str(&format!("name = {}\n", toml_basic_string(name)));
+        out.push_str(&format!("schema_sha256 = \"{}\"\n", fp.schema_hex()));
+    }
+    out
+}
+
+/// Append one `McpToolCatalogDrift` audit event recording an attestation
+/// verdict (the module doc promises "Every verdict is recorded"). Best-effort:
+/// a storage error is logged, never propagated, so it can run before a refused
+/// startup returns `Err` without masking the real reason.
+async fn record_catalog_drift_event(
+    engine: &mnemo_core::query::MnemoEngine,
+    agent_id: &str,
+    verdict: &attest::AttestationVerdict,
+) {
+    let names =
+        |v: &[attest::ToolFingerprint]| v.iter().map(|t| t.name.clone()).collect::<Vec<String>>();
+    let (label, added, removed, mutated, reason) = match verdict {
+        attest::AttestationVerdict::Match => ("match", vec![], vec![], vec![], None),
+        attest::AttestationVerdict::Drift {
+            added,
+            removed,
+            mutated,
+        } => ("drift", names(added), names(removed), names(mutated), None),
+        attest::AttestationVerdict::Reject { reason } => {
+            ("reject", vec![], vec![], vec![], Some(reason.clone()))
+        }
+    };
+    let payload = serde_json::json!({
+        "verdict": label,
+        "added": added,
+        "removed": removed,
+        "mutated": mutated,
+        "reason": reason,
+    });
+    let event = mnemo_core::query::event_builder::build_event(
+        engine,
+        agent_id,
+        mnemo_core::model::event::EventType::McpToolCatalogDrift,
+        payload,
+        "mcp_tool_catalog_attestation",
+        None,
+    )
+    .await;
+    if let Err(e) = engine.storage.insert_event(&event).await {
+        tracing::error!(event_id = %event.id, error = %e, "failed to record McpToolCatalogDrift audit event");
+    }
 }
 
 /// Handle `mnemo eval` (v0.4.0-rc3 Task B6).
@@ -1055,4 +1213,47 @@ async fn run_bench_embeddings(
     let table = mnemo_embeddings_bench::render_table(&results, &rec);
     print!("{table}");
     Ok(())
+}
+
+#[cfg(test)]
+mod catalog_pin_tests {
+    use super::*;
+
+    /// The `--print-catalog-pin` output must round-trip through the loader, and
+    /// the loaded fingerprints must equal what the attestor computes from the
+    /// same catalog — i.e. a pin generated from a binary Matches that binary.
+    #[test]
+    fn rendered_pin_round_trips_and_matches() {
+        let catalog = vec![
+            (
+                "mnemo.recall".to_string(),
+                "Search memories".to_string(),
+                r#"{"type":"object"}"#.to_string(),
+            ),
+            (
+                "mnemo.verify".to_string(),
+                "Verify hash chain".to_string(),
+                r#"{"type":"object","properties":{}}"#.to_string(),
+            ),
+        ];
+        let toml = render_catalog_pin_toml(&catalog, "test:signer", "2026-07-30T00:00:00Z");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pin.toml");
+        std::fs::write(&path, &toml).unwrap();
+        let pin = attest::catalog_pin::load(&path).expect("emitted pin must load");
+        assert_eq!(pin.signer, "test:signer");
+        assert_eq!(pin.tools.len(), 2);
+
+        // The loaded pin must MATCH the same catalog run through the attestor.
+        let fingerprints: Vec<attest::ToolFingerprint> = catalog
+            .iter()
+            .map(|(n, d, s)| attest::fingerprint_tool(n, d, s))
+            .collect();
+        let attestor = attest::PinnedAttestor::new(pin);
+        assert_eq!(
+            attestor.attest(&fingerprints).unwrap(),
+            attest::AttestationVerdict::Match
+        );
+    }
 }

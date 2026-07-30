@@ -1,0 +1,65 @@
+{
+  "arms": {
+    "direct": {
+      "n": 150,
+      "recall@1": 0.9866666666666667,
+      "recall@5": 1.0,
+      "recall@5_wilson95": [
+        0.9750297556319235,
+        1.0
+      ]
+    },
+    "indirect": {
+      "n": 150,
+      "recall@1": 0.4,
+      "recall@5": 0.8666666666666667,
+      "recall@5_wilson95": [
+        0.803019825502258,
+        0.9120019952944858
+      ]
+    },
+    "indirect_orientation": {
+      "combined_A_or_B": {
+        "recall@5": 1.0,
+        "recall@5_wilson95": [
+          0.9750297556319235,
+          1.0
+        ]
+      },
+      "n": 150,
+      "orientation_map_surfaced_B": {
+        "rate": 0.9333333333333333,
+        "wilson95": [
+          0.8816376448839411,
+          0.9633881433303926
+        ]
+      },
+      "top_k_memories_A": {
+        "recall@1": 0.36666666666666664,
+        "recall@5": 0.8666666666666667
+      }
+    }
+  },
+  "bench": "implicit_association",
+  "corpus": {
+    "path": "bench/locomo/data/implicit_association.jsonl",
+    "rows": 30,
+    "sha256": "bc591e337b004e2ae9ae3a55fc897d25ca89ef147fe75760c12b35c886a5534e"
+  },
+  "deltas": {
+    "direct_minus_indirect_recall@5": 0.1333333333333333,
+    "indirect_orientation_minus_indirect_recall@5": 0.1333333333333333
+  },
+  "embedder": {
+    "backend": "ollama",
+    "dim": 768,
+    "model": "nomic-embed-text"
+  },
+  "framing": "InMind arXiv:2607.24368 (framing, NOT a baseline)",
+  "protocol": {
+    "limit": 10,
+    "orientation_warm": "2 prior recalls of the row's direct_query",
+    "repeats": 5,
+    "token_budget": 512
+  }
+}

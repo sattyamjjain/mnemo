@@ -126,6 +126,31 @@ impl MnemoServer {
             None => None,
         }
     }
+
+    /// The advertised tool catalog as `(name, description, input_schema_json)`
+    /// triples — exactly what `tools/list` publishes, taken from
+    /// `tool_router.list_all()` and filtered through any attached [`RoleFilter`]
+    /// (so a pin is attested against what callers actually see, not the
+    /// pre-filter superset). `description` is the empty string when the tool
+    /// registers none; `input_schema_json` is the canonical `serde_json`
+    /// encoding of the tool's `input_schema`. Consumed by the CLI's hardened-mode
+    /// tool-catalog attestation and its `--print-catalog-pin` generator.
+    pub fn advertised_tool_catalog(&self) -> Vec<(String, String, String)> {
+        let visible: std::collections::HashSet<String> =
+            self.visible_tool_names().into_iter().collect();
+        self.tool_router
+            .list_all()
+            .into_iter()
+            .filter(|t| visible.contains(t.name.as_ref()))
+            .map(|t| {
+                (
+                    t.name.to_string(),
+                    t.description.as_deref().unwrap_or("").to_string(),
+                    serde_json::to_string(&*t.input_schema).unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
 }
 
 #[tool_router]

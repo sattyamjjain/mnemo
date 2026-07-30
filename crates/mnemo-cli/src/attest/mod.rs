@@ -21,13 +21,19 @@
 //! Every verdict is recorded as a `McpToolCatalogDrift` audit event
 //! so the operator's existing audit-log export catches the incident.
 //!
-//! The rmcp-side wiring (calling `attestor.attest(&advertised)` from
-//! `ServerHandler::list_tools`) is a separate follow-up. The public
-//! API here is exercised end-to-end by the unit tests + the
-//! manifest loader + the binary's startup path; `#[allow(dead_code)]`
-//! markers document the items that need that follow-up.
-
-#![allow(dead_code)]
+//! ## Scope (wired at hardened boot, v0.5.20)
+//!
+//! Attestation runs **once**, in `mnemo mcp-server --manifest`, over the
+//! compiled `#[tool]` catalog the server advertises (after any `[role_filter]`),
+//! before it serves stdio — the binary refuses to serve on any `added`/`mutated`
+//! drift or `Reject`, and on removed-only drift unless `allow_removed_drift` is
+//! set. On the **stdio** transport the advertised catalog is static after boot,
+//! so a boot-time check is complete for this transport: it defends against a
+//! substituted/tampered binary, a hostile dependency that injects or renames a
+//! tool, and pin drift after a version bump. It is **not** a per-request check
+//! and is only as strong as the manifest file's permissions. Operators generate
+//! a pin for their exact binary with `mnemo mcp-server --manifest <m>
+//! --print-catalog-pin`.
 
 pub mod catalog_pin;
 
@@ -85,6 +91,7 @@ impl PinnedToolCatalog {
         h.finalize().into()
     }
 
+    #[allow(dead_code)] // public helper; exercised by tests, not the boot path
     pub fn names(&self) -> Vec<&str> {
         self.tools.iter().map(|t| t.name.as_str()).collect()
     }
@@ -109,6 +116,7 @@ pub enum AttestationVerdict {
 }
 
 impl AttestationVerdict {
+    #[allow(dead_code)] // public helper; exercised by tests, not the boot path
     pub fn is_safe(&self) -> bool {
         matches!(self, AttestationVerdict::Match)
     }
@@ -132,6 +140,10 @@ pub trait CatalogAttestor: Send + Sync {
 
 #[derive(Debug, Error, PartialEq)]
 pub enum AttestError {
+    // Reserved: the boot path only builds an attestor when a pin is present, so
+    // this "no baseline" case is not constructed today — kept for a future
+    // caller that attests without a guaranteed pin.
+    #[allow(dead_code)]
     #[error("attestor has no pinned baseline; the manifest must include `[tool_catalog_pin]`")]
     NoBaseline,
     #[error("baseline is empty — refusing to attest a vacuous catalog")]
