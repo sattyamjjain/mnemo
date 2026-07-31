@@ -1,5 +1,18 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-07-31 for the **v0.5.21** cut — a **release-reconciliation + docs**
+> change with **no public API, wire, or storage change**. It records the eight
+> `crates.io`-published-but-not-version-tracked crates (admin/baseline/cma/codemode/
+> deal/md-sync/mesh/letta, all at 0.4.4) in the honesty registry, reconciles
+> `planned-crates.md`, documents that the Python SDK (`mnemo-db`) versions
+> **independently** at 0.5.12, and — crucially — **corrects the 0.5.19/0.5.20
+> "crates.io publish drift … unblocked" claim**: those republishes did **not**
+> reach crates.io. The workflow-code fixes were real but not sufficient; the
+> proximate blocker is an **expired `CARGO_REGISTRY_TOKEN`** (crates.io returns
+> `403 authentication failed`), pending rotation. Until then the core five stay at
+> 0.5.16 and the backends at 0.4.4/0.4.5 on crates.io. Version pins move
+> 0.5.20 → 0.5.21 in lockstep. **Not breaking for any consumer.**
+>
 > Updated 2026-07-30 for the **v0.5.20** cut — an **additive security-wiring + bench**
 > change with **no breaking public API, wire, or storage change**. It wires serve-time
 > MCP tool-catalog attestation into the hardened `mnemo mcp-server` boot path (opt-in
