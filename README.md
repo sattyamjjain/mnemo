@@ -357,6 +357,8 @@ pip install mnemo-db
 
 > **Why `mnemo-db` and not `mnemo`?** A 2021 notebook project (last release 2021-07-06, unrelated) holds the unqualified `mnemo` name on PyPI. Our distribution publishes as `mnemo-db`; the import path stays `from mnemo import …` so existing code is unaffected.
 
+> **Version line.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**; the Rust crates track the workspace version (0.5.x) on their own cadence. A gap between the two is expected, not skew.
+
 ```python
 from mnemo import MnemoClient
 

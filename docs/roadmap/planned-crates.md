@@ -52,4 +52,53 @@ concrete design + a consumer that wires it in.
   describe what `mnemo-bench-cf` *would* measure. Every number there is a `TBD`
   placeholder, not a run result.
 
-_Last reconciled: 2026-07-03 (v0.5.5)._
+## Published-but-not-version-tracked crates (exist, on crates.io at 0.4.4)
+
+> **Different category from the Planned list above.** These crates **do exist**
+> under `crates/`, **are** `[workspace] members`, and **are already on crates.io**
+> — but only at **0.4.4**, because they are **not** in the tag-gated publish
+> closure (`.github/workflows/release-crate.yml`) and so do not move with the
+> workspace version. A user reading crates.io sees 0.4.4 against a 0.5.x
+> workspace. This section exists so that gap is **recorded, not silent.**
+
+**Decision (2026-07-31, v0.5.21): keep them OUT of the publish closure.** The
+closure is scoped to exactly what `README.md` tells a user to install — the engine
++ compliance + the three interface surfaces (`cargo add mnemo-core
+mnemo-compliance mnemo-mcp`; `mnemo-postgres` / `mnemo-rest` / `mnemo-grpc`) plus
+the `mnemo-db` name-pointer. The eight below are **advanced integration adapters**
+listed only in the README feature table (by repo path, "New in v0.4.x"), each an
+optional shim to an external system with **no in-workspace consumer** (verified:
+seven are depended on by nobody; `mnemo-admin` is a dep of the unpublishable
+`mnemo-cli` only). Widening the auto-publish set to carry eight adapters that no
+documented install path references would be scope creep, so they stay at 0.4.4 and
+are recorded here instead.
+
+| Crate | crates.io | What it is | Why not in the closure |
+|---|---|---|---|
+| `mnemo-admin` | 0.4.4 | Admin dashboard API handlers | Dep of `mnemo-cli` only (itself unpublishable); no `cargo add` path |
+| `mnemo-baseline` | 0.4.4 | Per-agent behavioural baseline + OTel/OCSF drift emitters | Optional telemetry adapter; no workspace consumer |
+| `mnemo-cma` | 0.4.4 | Anthropic CMA-Memory drop-in compat shim | Optional external-format bridge; no workspace consumer |
+| `mnemo-codemode` | 0.4.4 | Sandboxed-WIT code-mode recall | Optional; no workspace consumer |
+| `mnemo-deal` | 0.4.4 | Chained-HMAC agent-deal ledger + discovery/reputation | Optional substrate; no workspace consumer |
+| `mnemo-md-sync` | 0.4.4 | Bidirectional Markdown-wiki ↔ Mnemo sync | Optional; no workspace consumer |
+| `mnemo-mesh` | 0.4.4 | SPIFFE-style identity + per-namespace ACL | Optional; no workspace consumer |
+| `mnemo-letta` | 0.4.4 | Letta-protocol-compatible REST surface | Optional; no workspace consumer |
+
+**Not yanked.** Yanking is destructive to anyone who pinned `0.4.4`, buys nothing
+here (these are honest older cuts, not broken or malicious), and requires the same
+crates.io credential the closure publish is currently blocked on. If any is later
+judged genuinely dead, check its crates.io reverse-dependencies first, then yank
+deliberately — do not fold it into a routine release.
+
+**Unpublished by design (leave alone).** `mnemo-amp`, `mnemo-golem-host`, and
+`mnemo-golem-wit` are **intentionally not on crates.io**: the two `golem-*` crates
+are the WASM-component vertical slice (`golem-wit` is a `wasm32-wasip2` cdylib whose
+version-script link the host toolchain rejects — the chronic Build/Test red), and
+`mnemo-amp` is a workspace-internal crate with no standalone publish story. They
+carry workspace version pins for lockstep builds but ship no crates.io release.
+Do not re-litigate publishing them.
+
+_Last reconciled: 2026-07-31 (v0.5.21). The seven Planned entries above were
+re-verified against `ls crates/` — none of `mnemo-envelope` / `mnemo-aas01` /
+`mnemo-mgt` / `mnemo-bench-cf` / `mnemo-langgraph` / `mnemo-purview` /
+`mnemo-toolhive` exists in the tree; the list is unchanged and still accurate._

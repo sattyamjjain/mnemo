@@ -4,15 +4,88 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
-### Landing trace (2026-07-30)
+### Landing trace (2026-07-31)
 
-This `[Unreleased]` opens on the **v0.5.20** cut. Its base is `main` at
-[`7495c23`](https://github.com/sattyamjjain/mnemo/commit/7495c231b65940154ba82c31cdb04017891f9598)
-(the #127 publish-drift merge); the v0.5.20 work — serve-time tool-catalog
-attestation + the `implicit_association` bench — lands on
-`fix/mcp-catalog-attestation-and-implicit-association-bench` (push-to-`main`,
-tagged `v0.5.20`, which triggers `release-crate.yml`). Post-0.5.20 changes
-accumulate here.
+This `[Unreleased]` opens on the **v0.5.21** cut. Its base is `main` at
+[`f302d98`](https://github.com/sattyamjjain/mnemo/commit/f302d98c8)
+(the `release-crate.yml` retry-hardening merge). Post-0.5.21 changes accumulate
+here.
+
+## [0.5.21] — 2026-07-31
+
+A **release-reconciliation + honesty** pass: no public API, wire, or storage
+change. It corrects the standing claim that the stranded backend crates had
+republished (they had not), records the eight published-but-untracked adapter
+crates, reconciles the honesty registry, and pins down how the Python SDK
+versions. **The crates.io publish is still blocked on an operator action** —
+see the first entry.
+
+### Fixed (2026-07-31) — honest correction: the 0.5.19/0.5.20 crates.io republish never landed; root cause is an expired token
+
+The 0.5.20 entry below (folding 0.5.19) states the
+`mnemo-postgres` / `mnemo-rest` / `mnemo-grpc` / `mnemo-graph` crates were
+**"unblocked (→ 0.5.19)"**. That is not what happened on crates.io, and this
+repo's value is that its docs are true — so, plainly:
+
+- **As of 0.5.21, nothing has published since v0.5.16 (2026-07-24).** The core
+  five are still `0.5.16`, the four backends still `0.4.4`/`0.4.5`. `cargo add
+  mnemo-postgres` still resolves 0.4.4.
+- **The workflow-code fixes were real but not sufficient.** #127 correctly fixed
+  `cargo-publish.yml` (golem exclusion, topological order, missing deps) and
+  extended `release-crate.yml` to the full library line, and three follow-ups
+  hardened the tag path further (below). None of that could publish, because —
+- **the proximate blocker is an expired `CARGO_REGISTRY_TOKEN`.** The v0.5.20 tag
+  ran the release workflow four times; the run that reached the real upload got
+  `403 Forbidden: authentication failed` on all five retry attempts. The repo
+  secret was last set 2026-04-25; crates.io tokens of that era carry a ~90-day
+  expiry (≈ 2026-07-24), which is exactly why **v0.5.16 published on 2026-07-24
+  and every tag from v0.5.17 onward failed.** Rotating the crates.io token and
+  updating the repo secret is the one remaining step; the tag path then publishes
+  the whole closure at 0.5.21.
+- **v0.5.19 was never a git tag** (only a `Cargo.toml` bump, folded into 0.5.20),
+  so there is no v0.5.19 crates.io release and none is fabricated.
+
+### Changed (2026-07-30) — `release-crate.yml` hardened for the 9-crate closure
+
+Three plumbing bugs surfaced (and were fixed) while diagnosing the above; all are
+in the current `v0.5.20` tag and carried forward here:
+
+- **`protoc` installed** in both gate and publish jobs — `mnemo-grpc` (added to the
+  closure in #127) has a `prost` build script that shells out to it
+  (`4fa0b0e`).
+- **Publish-job timeout 45 → 180 min** — the closure grew from five crates to nine,
+  each verify-built twice (coordinated dry-run + real publish) with 60s
+  index-propagation waits; 45 min timed out mid-dry-run (`0188535`).
+- **Transient-5xx retry** — a crates.io `503 Application Error` killed one upload
+  mid-run; each `cargo publish` now retries with backoff and re-checks presence so
+  an upload that landed despite a failed HTTP response is not re-uploaded
+  (`c14a933`).
+
+### Docs (2026-07-31) — eight published-but-untracked crates recorded; planned registry reconciled
+
+- `docs/roadmap/planned-crates.md` gains a **"Published-but-not-version-tracked"**
+  section recording `mnemo-admin` / `-baseline` / `-cma` / `-codemode` / `-deal` /
+  `-md-sync` / `-mesh` / `-letta` (all on crates.io at **0.4.4**, none in the
+  publish closure). **Decision: keep them out of the closure** — they are advanced
+  integration adapters referenced only by repo path in the README feature table,
+  with no documented `cargo add` path and no in-workspace consumer (seven depended
+  on by nobody; `mnemo-admin` a dep of the unpublishable `mnemo-cli` only). Not
+  yanked. `mnemo-amp` / `mnemo-golem-host` / `mnemo-golem-wit` noted as unpublished
+  by design.
+- The seven **Planned — not built** entries were re-verified against `ls crates/`
+  (none exists in the tree; list unchanged) and the reconciliation stamp moved
+  `2026-07-03 (v0.5.5)` → `2026-07-31 (v0.5.21)`.
+
+### Docs (2026-07-31) — Python SDK versions independently; GitHub Release reconciliation
+
+- **Python SDK (`mnemo-db` on PyPI) versions independently of the Rust workspace**
+  — by design: `.github/workflows/pypi-publish.yml` reads `python/pyproject.toml`'s
+  version (not the workspace `Cargo.toml`) and publishes via OIDC trusted-publisher.
+  Its current version is **0.5.12**; the Rust workspace is 0.5.21. README now states
+  this explicitly so the two version lines are not read as skew.
+- A **GitHub Release** was created for the existing `v0.5.20` tag (its body notes
+  the crates.io publish is token-blocked), moving `/releases/latest` off the stale
+  `v0.5.18`. No `v0.5.19` release exists because no such tag exists.
 
 ## [0.5.20] — 2026-07-30
 
@@ -68,6 +141,12 @@ and the capability lease removed 2026-07-29; `attest/mod.rs` even opened with
   published 0.739 / 0.805 headline is unchanged).
 
 ### Fixed (2026-07-28) — crates.io publish drift: Postgres/REST/gRPC/graph crates unblocked (→ 0.5.19)
+
+> **Correction (0.5.21, 2026-07-31):** the "unblocked" in this heading describes the
+> *workflow code*, which was fixed — but the crates **did not actually republish**.
+> They are still at 0.4.4/0.4.5 on crates.io. The real blocker was an **expired
+> `CARGO_REGISTRY_TOKEN`** (`403 authentication failed`), not the plumbing this
+> section fixed. See the 0.5.21 "honest correction" entry above.
 
 **`mnemo-postgres` / `mnemo-rest` / `mnemo-grpc` had sat at 0.4.4 (and `mnemo-graph`
 at 0.4.5) for two months** — so `cargo add mnemo-postgres` resolved a version with
