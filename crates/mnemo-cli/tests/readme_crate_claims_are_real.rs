@@ -77,19 +77,34 @@ fn repo_root() -> PathBuf {
         .expect("repo root resolves")
 }
 
-/// Parse the `members = [ ... ]` array from the root `Cargo.toml` into a list
-/// of member paths (e.g. `crates/mnemo-core`, `bench/locomo`, `python`).
-fn workspace_member_paths(root: &Path) -> Vec<String> {
+/// Parse a `<key> = [ ... ]` string-array from the root `Cargo.toml`, anchored
+/// on the `<key> = [` assignment so a comment mentioning the word (e.g. the
+/// prose above `exclude`) can't be mistaken for the key.
+fn workspace_path_array(root: &Path, key: &str) -> Vec<String> {
     let cargo = std::fs::read_to_string(root.join("Cargo.toml")).expect("root Cargo.toml readable");
-    let start = cargo.find("members").expect("workspace has a members key");
-    let open = cargo[start..].find('[').expect("members array opens") + start;
-    let close = cargo[open..].find(']').expect("members array closes") + open;
+    let anchor = format!("{key} = [");
+    let Some(start) = cargo.find(&anchor) else {
+        return Vec::new();
+    };
+    let open = cargo[start..].find('[').expect("array opens") + start;
+    let close = cargo[open..].find(']').expect("array closes") + open;
     cargo[open + 1..close]
         .split(',')
         .map(|s| s.trim().trim_matches('"').trim())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect()
+}
+
+/// Real crate directories the workspace owns: `members` PLUS `exclude`. An
+/// excluded crate (e.g. the `mnemo-golem-wit` WASM component, kept out of the
+/// default `cargo build` because it links only for wasm32-wasip2) is still a
+/// real, source-backed crate the README may reference by path — so the phantom
+/// -name fence must treat it as real, not flag it.
+fn workspace_member_paths(root: &Path) -> Vec<String> {
+    let mut paths = workspace_path_array(root, "members");
+    paths.extend(workspace_path_array(root, "exclude"));
+    paths
 }
 
 /// Read the `[package] name = "..."` from a member's `Cargo.toml`.

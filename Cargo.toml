@@ -20,7 +20,6 @@ members = [
     "crates/mnemo-baseline",
     "crates/mnemo-attention-state",
     "crates/mnemo-db",
-    "crates/mnemo-golem-wit",
     "crates/mnemo-golem-host",
     "crates/mnemo-amp",
     "bench/locomo",
@@ -33,6 +32,21 @@ members = [
     "bench/forged_reasoning",
     "python",
 ]
+
+# mnemo-golem-wit is a cdylib WASM *component* (the golem:vector WIT provider).
+# Its host-import externs (`mnemo:golem-vector/host@…`) have no native
+# definition, so it cannot link for a native host target — a plain
+# `cargo build --workspace` fails at the link stage with "Undefined symbols …
+# _cabi_post_mnemo:golem-vector/…". Having it in `members` is precisely what made
+# `cargo build --workspace` red from 69a8ca6 (2026-05-21) onward. It is excluded
+# (not deleted) and carries its own `[workspace]` + explicit package fields so it
+# still builds standalone with:
+#   cargo component build --release \
+#     --manifest-path crates/mnemo-golem-wit/Cargo.toml --target wasm32-wasip2
+# (`-p mnemo-golem-wit` does NOT work — an excluded crate is not reachable from
+# the workspace root.) Nothing in the workspace depends on it (mnemo-golem-host
+# does not), so excluding it is inert for every other crate.
+exclude = ["crates/mnemo-golem-wit"]
 
 [workspace.package]
 version = "0.5.21"

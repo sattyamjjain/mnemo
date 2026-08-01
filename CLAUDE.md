@@ -15,14 +15,14 @@ Provides persistent, searchable, versioned memory with vector similarity, full-t
 ## Build & Development Commands
 
 ```bash
-# Build entire workspace
-cargo build --all
+# Build entire workspace (excludes the maturin-built PyO3 crate — same as ci.yml)
+cargo build --workspace --exclude mnemo-python
 
-# Build release binary
-cargo build --release -p mnemo-cli
+# Build release binary (the CLI crate is published as `mnemo-mcp-server`)
+cargo build --release -p mnemo-mcp-server
 
-# Run all tests (132 tests: unit + integration + MCP + pgwire + REST + admin + gRPC + doctests)
-cargo test --all
+# Run the full test suite (excludes mnemo-python; run it to see the current count)
+cargo test --workspace --exclude mnemo-python
 
 # Run tests for a specific crate
 cargo test -p mnemo-core
@@ -31,8 +31,11 @@ cargo test -p mnemo-mcp
 # Run a single test by name
 cargo test -p mnemo-core test_name
 
-# Lint
-cargo clippy --all-targets --all-features
+# Lint. Do NOT turn on all features: the mnemo-core `onnx` feature is broken
+# against the current `ort` API (issue #125) and would poison every workspace
+# check, so CI omits it deliberately. mnemo-grpc's build script needs `protoc`
+# on PATH.
+cargo clippy --all-targets --workspace --exclude mnemo-python
 
 # Format check / apply
 cargo fmt --all -- --check
@@ -44,7 +47,7 @@ cargo bench -p mnemo-core
 # Build with optional features
 cargo build -p mnemo-core --features onnx        # ONNX local embeddings
 cargo build -p mnemo-core --features s3           # S3 cold storage
-cargo build -p mnemo-cli --features postgres      # PostgreSQL backend
+cargo build -p mnemo-mcp-server --features postgres  # PostgreSQL backend
 
 # Docker
 docker build -t mnemo .
@@ -157,7 +160,7 @@ mnemo/
 
 - Monorepo structure established from initial release
 - Recent: dependency update (tonic 0.14, pyo3 0.28, reqwest 0.13, rand 0.9) + security hardening (30 fixes)
-- CI enforces: `cargo fmt --check`, `cargo clippy --all-features`, `cargo test --all`, `cargo build --all`, `cargo audit`
+- CI enforces (see `.github/workflows/ci.yml`): `cargo fmt --all -- --check`, `cargo clippy --all-targets --workspace --exclude mnemo-python`, `cargo test --workspace --exclude mnemo-python`, `cargo build --workspace --exclude mnemo-python`, `cargo audit`, plus a live-pgvector Postgres job and a crates.io version-drift guard
 - Apache-2.0 license
 
 <!-- END AUTO-MANAGED -->

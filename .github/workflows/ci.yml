@@ -21,6 +21,14 @@ env:
 #   `--all-features` to clippy — the broken feature would poison every
 #   workspace check. Default features still cover the entire production
 #   surface.
+# - `mnemo-golem-wit` is a cdylib WASM component (the golem:vector WIT
+#   provider); it is in `[workspace] exclude`, not `members`, because its
+#   WASM-only host imports have no native definition and the native cdylib
+#   link fails ("Undefined symbols … _cabi_post_mnemo:golem-vector/…"). That
+#   is what reddened `cargo build --workspace` from 69a8ca6 (2026-05-21) until
+#   it was excluded. Build it standalone (it carries its own `[workspace]`) with
+#   `cargo component build --release --manifest-path
+#   crates/mnemo-golem-wit/Cargo.toml --target wasm32-wasip2`.
 jobs:
   fmt:
     name: Format
