@@ -27,4 +27,4 @@ tempfile = { workspace = true }
 # init the C library does inside `Connection::open`; running two of
 # them in parallel on Ubuntu CI surfaces "Current transaction is
 # aborted". `#[serial]` forces sequential execution per test.
-serial_test = "3"
+serial_test = "4"
