@@ -16,13 +16,14 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-# wasmtime is the WASM-component runtime. Tracks the stable v45
-# component-model release. NOTE: this crate's source does not yet call
-# the wasmtime API (the Linker/Store/bindgen wiring is deferred — see the
-# lib.rs module doc), so the version is a forward-looking pin; bumps are
-# resolve/compile-only until the loader integration lands.
-wasmtime = { version = "46.0", features = ["component-model"] }
-wasmtime-wasi = "46.0"
+# wasmtime is the WASM-component runtime. Tracks the stable v47
+# component-model release (wasmtime + wasmtime-wasi move in lockstep). NOTE:
+# this crate's source does not yet call the wasmtime API (the Linker/Store/
+# bindgen wiring is deferred — see the lib.rs module doc), so the version is a
+# forward-looking pin; bumps are resolve/compile-only until the loader
+# integration lands.
+wasmtime = { version = "47.0", features = ["component-model"] }
+wasmtime-wasi = "47.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
