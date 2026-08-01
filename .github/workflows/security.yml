@@ -74,7 +74,7 @@ jobs:
         # baseline against the new rule set — the 9 added rules surface only
         # new medium/high/low findings, no new critical, so the `fail-on: critical`
         # gate still passes. Bump deliberately after reviewing the tool's CHANGELOG.
-        uses: sattyamjjain/agent-audit-kit@v0.3.60
+        uses: sattyamjjain/agent-audit-kit@v0.3.62
         with:
           path: .
           config: .agent-audit-kit.yml
