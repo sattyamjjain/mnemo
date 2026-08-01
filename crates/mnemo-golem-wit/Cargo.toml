@@ -1,9 +1,20 @@
+# This crate is in the root `[workspace] exclude` (its cdylib WASM component
+# cannot link for a native host target, which is what reddened
+# `cargo build --workspace`). An excluded crate is OUTSIDE the workspace, so it
+# can neither inherit `[workspace.package]` fields (`version.workspace = true`
+# would fail "failed to find a workspace root") nor be reached by `-p` from the
+# root. Hence: explicit package fields, and its own empty `[workspace]` table
+# below so it is a self-contained root. Build it standalone with:
+#   cargo component build --release \
+#     --manifest-path crates/mnemo-golem-wit/Cargo.toml --target wasm32-wasip2
+[workspace]
+
 [package]
 name = "mnemo-golem-wit"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.5.21"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/sattyamjjain/mnemo"
 description = "WASM-component WIT bindings for the mnemo.golem-vector provider (v0.4.6 vertical slice of golemcloud/golem-ai#21). Built with cargo-component; runs under the mnemo-golem-host wasmtime runner."
 
 # A WIT-bindings crate is a cdylib (the actual WASM component) plus a

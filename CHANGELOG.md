@@ -11,6 +11,46 @@ This `[Unreleased]` opens on the **v0.5.21** cut. Its base is `main` at
 (the `release-crate.yml` retry-hardening merge). Post-0.5.21 changes accumulate
 here.
 
+### Fixed (2026-08-01) — `main` has not built since 2026-05-21; the golem WIT cdylib was in the default workspace build
+
+`cargo build --workspace` (the CLI's CI **Build** job) had been red on every
+push for **72 days** — last green was run
+[26205093362](https://github.com/sattyamjjain/mnemo/actions/runs/26205093362) @
+`7370bc0` (2026-05-21); it went red at run
+[26213447616](https://github.com/sattyamjjain/mnemo/actions/runs/26213447616) @
+`69a8ca6`, the commit that added `crates/mnemo-golem-wit` and
+`crates/mnemo-golem-host` to `[workspace] members`.
+
+- **Cause.** `mnemo-golem-wit` is a `cdylib` WASM *component*. A workspace build
+  must produce a **native** dynamic library for every member cdylib, and this
+  one cannot link natively — its WIT host imports have no native definition:
+  `Undefined symbols … _cabi_post_mnemo:golem-vector/vectors@0.1.0`. Clippy
+  emits metadata and never links, so Clippy stayed green while Build stayed red —
+  the asymmetry that let this hide for 72 days.
+- **Fix.** Moved `crates/mnemo-golem-wit` from `[workspace] members` to
+  `[workspace] exclude`. Because an excluded crate is outside the workspace (it
+  can neither inherit `[workspace.package]` nor be reached by `-p` from the
+  root), it was made self-contained — its own empty `[workspace]` table plus
+  explicit `version`/`edition`/`license`/`repository` — so it still builds
+  standalone with `cargo component build --release --manifest-path
+  crates/mnemo-golem-wit/Cargo.toml --target wasm32-wasip2` (verified). It is not
+  orphaned. `mnemo-golem-host` stays a member — it is a plain native crate and
+  does **not** depend on `mnemo-golem-wit`, so nothing else moves.
+- **Fence.** New `crates/mnemo-cli/tests/workspace_builds_clean.rs` fails if any
+  `[workspace] members` entry declares a `cdylib` crate-type (allow-listing only
+  the maturin-built `mnemo-python`), so this class of regression cannot silently
+  return. A maintainer note in `ci.yml` documents the exclusion alongside the
+  existing mnemo-python / mnemo-grpc / onnx notes.
+- **Two latent failures the green build unmasked** (both never-run since 2026-05-21,
+  fixed here so `cargo test --workspace` is actually green, not just compiling):
+  `mnemo-golem-host`'s 3 lib tests called `strategy = "semantic"` recall under
+  `NoopEmbedding`, which the v0.5.13 fail-loud guard now refuses — swapped the test
+  engine to the workspace-standard `DeterministicEmbedding` (the assertions check id
+  membership / collection scoping, not scores, so they are unchanged). And
+  `readme_crate_claims_are_real.rs` treated only `members` as real crates, so moving
+  `mnemo-golem-wit` to `exclude` made the README's by-path reference to it read as a
+  phantom crate — the fence now counts `exclude` entries as real too.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage

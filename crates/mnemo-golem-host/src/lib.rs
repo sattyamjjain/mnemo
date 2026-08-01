@@ -155,8 +155,8 @@ impl MnemoGolemProvider for MnemoGolemHost {
         req.metadata = Some(metadata);
         req.tags = Some(vec!["golem-vector".to_string(), id]);
         // Stash the pre-computed vector in the record's content
-        // metadata; mnemo's NoopEmbedding will produce a separate
-        // vector at the index layer. A future row may wire a
+        // metadata; the engine's configured embedder produces a
+        // separate vector at the index layer. A future row may wire a
         // ProvidedEmbedding pathway so the vector arrives via the
         // WIT lands in mnemo's index directly.
         self.engine.remember(req).await?;
@@ -176,8 +176,8 @@ impl MnemoGolemProvider for MnemoGolemHost {
         // through today's RecallRequest (it takes a query string +
         // embeds it). For the vertical slice, we use the
         // semantic-only strategy + a sentinel query text that
-        // identifies the collection; the in-memory NoopEmbedding
-        // test setup ensures the wiring is exercised. A future row
+        // identifies the collection; the in-memory test setup
+        // ensures the wiring is exercised. A future row
         // adds a `ProvidedEmbedding` field to RecallRequest so
         // the WIT-provided vector lands in the index directly.
         let mut req = RecallRequest::new(format!("golem-vector:{collection}"));
@@ -244,14 +244,19 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    use mnemo_core::embedding::NoopEmbedding;
+    use mnemo_core::embedding::DeterministicEmbedding;
     use mnemo_core::index::usearch::UsearchIndex;
     use mnemo_core::storage::duckdb::DuckDbStorage;
 
     fn make_engine() -> Arc<MnemoEngine> {
         let storage = Arc::new(DuckDbStorage::open_in_memory().unwrap());
         let index = Arc::new(UsearchIndex::new(8).unwrap());
-        let embedding = Arc::new(NoopEmbedding::new(8));
+        // A semantic-capable deterministic embedder — the search/delete paths
+        // below use `strategy = "semantic"`, which mnemo's v0.5.13 fail-loud
+        // guard refuses to run under `NoopEmbedding` (it returns no vectors).
+        // These tests were written when Noop still served recall; the guard
+        // broke them, and the 72-day-red workspace build hid it.
+        let embedding = Arc::new(DeterministicEmbedding::new(8));
         Arc::new(MnemoEngine::new(
             storage,
             index,
@@ -275,9 +280,9 @@ mod tests {
             .search_vectors("col-a", vec![0.15_f32; 8], 5)
             .await
             .unwrap();
-        // NoopEmbedding makes the *scores* meaningless, but the
-        // wiring should surface both golem ids that were written
-        // under "col-a".
+        // Scores are not asserted (the sentinel-query wiring below is what is
+        // under test); the recall must surface both golem ids written to
+        // "col-a".
         let ids: std::collections::HashSet<_> = hits.into_iter().map(|(id, _)| id).collect();
         assert!(ids.contains("v-1"), "expected v-1 among hits, got {ids:?}");
         assert!(ids.contains("v-2"), "expected v-2 among hits, got {ids:?}");

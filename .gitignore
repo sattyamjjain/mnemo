@@ -50,3 +50,7 @@ Thumbs.db
 
 # Playwright MCP scratch (snapshots, console logs)
 .playwright-mcp/
+
+# mnemo-golem-wit is an excluded, self-rooted workspace (see root Cargo.toml);
+# its standalone `cargo component build` writes here.
+/crates/mnemo-golem-wit/target/
