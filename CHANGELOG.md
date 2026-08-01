@@ -51,6 +51,22 @@ push for **72 days** — last green was run
   `mnemo-golem-wit` to `exclude` made the README's by-path reference to it read as a
   phantom crate — the fence now counts `exclude` entries as real too.
 
+### Changed (2026-08-01) — contributor docs reconciled with what CI actually runs
+
+`CLAUDE.md`'s auto-managed build-commands block told contributors (human or agent)
+to run commands CI never runs: `cargo build --all` / `cargo test --all` (which do
+**not** exclude the maturin-only `mnemo-python`) and `cargo clippy --all-targets`
+with the full feature set (which turns on the broken `onnx`/`ort` feature that
+ci.yml deliberately omits, issue #125). Replaced the three with the exact strings
+CI runs (`--workspace --exclude mnemo-python`), added the feature-set/#125 and
+`protoc` caveats under the lint command, corrected the CLI package name in two
+commands (`-p mnemo-cli` → `-p mnemo-mcp-server`; the crate is published as
+`mnemo-mcp-server`), fixed the stale "CI enforces" bullet in Git Insights, and
+deleted the unverifiable "132 tests" parenthetical that nobody could reproduce
+(the workspace suite now reports 567). Fixed the `python/pyproject.toml` comment's
+stale "currently 0.5.18" → "0.5.21"; the independent PyPI `version = "0.5.12"` is
+correct and untouched.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
