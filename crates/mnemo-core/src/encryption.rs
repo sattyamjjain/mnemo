@@ -53,8 +53,9 @@ impl ContentEncryption {
         // Random 96-bit nonce straight from the OS CSPRNG. Using `getrandom`
         // directly (rather than aes-gcm's re-exported RNG) keeps this stable
         // across the aead/rand_core version churn that the 0.11 bump introduced.
+        // getrandom 0.3+ renamed the free `getrandom()` function to `fill()`.
         let mut nonce_bytes = [0u8; 12];
-        getrandom::getrandom(&mut nonce_bytes)
+        getrandom::fill(&mut nonce_bytes)
             .map_err(|e| Error::Internal(format!("nonce RNG failed: {e}")))?;
         let nonce: Nonce<Aes256Gcm> = nonce_bytes.into();
 
