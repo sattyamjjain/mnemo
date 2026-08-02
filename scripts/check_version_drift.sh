@@ -60,6 +60,14 @@ fi
 
 fail=0
 skipped=()
+drift_versions=()        # registry versions of drifting crates, for the grouped tally
+drift_rows=()            # "crate|registry" for the drift-only recap
+
+# Collect EVERY crate's verdict first (never exit on the first mismatch), then
+# print one aligned table so an operator reading a red job sees repo vs registry
+# side by side for all crates without cloning anything.
+printf "\n  %-24s %-9s %-11s %s\n" "crate" "repo" "crates.io" "status"
+printf "  %-24s %-9s %-11s %s\n" "------------------------" "---------" "-----------" "------"
 for crate in "${crate_names[@]}"; do
   # crates.io max_version, or empty if the crate is not published yet.
   published="$(
@@ -71,6 +79,7 @@ except Exception:
     pass' 2>/dev/null || true
   )"
   if [[ -z "$published" ]]; then
+    printf "  %-24s %-9s %-11s unpublished\n" "$crate" "$workspace_version" "-"
     skipped+=("$crate")
     continue
   fi
@@ -93,20 +102,41 @@ else:
 PY
   )"
   if [[ "$verdict" == "OK" ]]; then
-    printf "  OK    %-24s crates.io %s\n" "$crate" "$published"
+    printf "  %-24s %-9s %-11s ok\n" "$crate" "$workspace_version" "$published"
   else
-    printf "::error::DRIFT %-20s crates.io %s is >1 patch behind workspace %s — publish it.\n" \
-      "$crate" "$published" "$workspace_version"
+    printf "  %-24s %-9s %-11s DRIFT >1 patch behind\n" "$crate" "$workspace_version" "$published"
+    drift_versions+=("$published")
+    drift_rows+=("${crate}|${published}")
     fail=1
   fi
 done
 
 if [[ ${#skipped[@]} -gt 0 ]]; then
-  echo "  (not yet on crates.io, skipped: ${skipped[*]})"
+  echo "  (unpublished, not on crates.io: ${skipped[*]})"
 fi
 
 if [[ "$fail" -ne 0 ]]; then
-  echo "::error::one or more published crates have drifted more than one patch behind the workspace version."
+  echo ""
+  echo "::error::version drift: published crates are more than one patch behind workspace ${workspace_version}."
+  # Grouped tally — one line per stuck registry version, e.g.
+  # "13 crate(s) stranded at 0.4.4". Portable (no associative arrays), so it
+  # runs on macOS bash 3.2 as well as the CI ubuntu bash.
+  echo "  stranded, grouped by the version they are stuck on:"
+  printf '%s\n' "${drift_versions[@]}" | sort -rV | uniq -c | while read -r count ver; do
+    printf "::error::  %s crate(s) stranded at %s (workspace is %s)\n" "$count" "$ver" "$workspace_version"
+  done
+  # Also drop a readable summary into the GitHub job page when running in CI.
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo "### ❌ Version drift — ${#drift_rows[@]} crate(s) behind workspace ${workspace_version}"
+      echo
+      echo "| crate | crates.io |"
+      echo "|---|---|"
+      for row in "${drift_rows[@]}"; do echo "| ${row%%|*} | ${row##*|} |"; done
+      echo
+      echo "Cut and publish the release (tag \`v${workspace_version}\`) to clear this. If the walk fails on the token, rotate \`CARGO_REGISTRY_TOKEN\`."
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
   exit 1
 fi
 echo "OK: all published crates are within one patch of workspace $workspace_version"

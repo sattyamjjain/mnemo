@@ -108,6 +108,12 @@ cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 ```
 
+> **Heads-up (2026-08-02):** the newest version on crates.io today is **0.5.16**
+> (published 2026-07-24), so `cargo add` currently resolves that. v0.5.17–v0.5.21
+> are tagged but not yet published — the release walk is blocked on rotating an
+> expired `CARGO_REGISTRY_TOKEN`. This note goes away in the same commit that
+> lands the publish.
+
 > **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
 > name on crates.io is an unrelated project. Install `mnemo-core` +
 > `mnemo-mcp` as above. The [`mnemo-db`](https://crates.io/crates/mnemo-db)
