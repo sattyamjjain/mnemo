@@ -15,7 +15,17 @@ name: release-crate
 # 2-month-old version with none of the v0.5.7 (#99) real pgvector ANN or v0.5.18
 # async VectorIndex work. Keeping them in THIS workflow (not just
 # cargo-publish.yml, whose workspace-wide build the golem-wit WASM link failure
-# reddens) means a tag reliably ships the whole line.
+# reddens) means a tag ships the whole line — PROVIDED the registry token is
+# valid.
+#
+# STATUS (as of 2026-08-02): still not shipped. v0.5.17 / v0.5.18 / v0.5.20 were
+# all tagged and NONE reached crates.io; every walk died uploading mnemo-core
+# with "403 Forbidden: authentication failed" — an EXPIRED CARGO_REGISTRY_TOKEN
+# (last rotated 2026-04-25, ~90-day expiry ≈ 2026-07-24; v0.5.16 published
+# 2026-07-24 was the last that beat it). The timeout / 5xx-retry commits treated
+# it as transient; it is not. The token preflight below now fails fast and loud
+# with the operator action, instead of burning ~10 min to rediscover the 403.
+# This ships the moment the operator rotates the token.
 #
 # `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
 # (server.rs uses `mnemo_attention_state::AttentionStateStore`); it was
@@ -121,6 +131,48 @@ jobs:
       - name: Install protoc (required by mnemo-grpc build script)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      # --- Token preflight (fail fast, fail loud) ---------------------------
+      # THE reason v0.5.17 / v0.5.18 / v0.5.20 all tagged but never reached
+      # crates.io: an EXPIRED CARGO_REGISTRY_TOKEN. Every one of those walks
+      # packaged + verify-built mnemo-core (~5 min) and then died on the upload
+      # with "403 Forbidden: authentication failed", after burning 5 retry
+      # attempts — because the earlier fixes (timeout, 5xx retry) assumed the
+      # failure was transient. It is not: a bad token is an OPERATOR action, not
+      # a bug to work around. So validate the token up front, before building
+      # anything, and fail with an explicit, actionable message + run summary.
+      - name: Verify CARGO_REGISTRY_TOKEN is present and accepted by crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
+          fail() {
+            echo "::error::$1"
+            {
+              echo "## ❌ Release aborted — crates.io token problem"
+              echo
+              echo "$1"
+              echo
+              echo "**Operator action required** (no code change fixes this):"
+              echo "1. Generate a new token at <https://crates.io/settings/tokens> — scopes **publish-new** + **publish-update**, a long/no expiry."
+              echo "2. Update the repo secret \`CARGO_REGISTRY_TOKEN\` (Settings → Secrets and variables → Actions)."
+              echo "3. Re-run this workflow (or push the tag again)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            fail "CARGO_REGISTRY_TOKEN is MISSING (the repo secret is empty)."
+          fi
+          # Validate WITHOUT publishing: crates.io GET /api/v1/me returns 200 for
+          # a valid token and 403 for a missing/expired/revoked one.
+          code=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
+            -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
+            https://crates.io/api/v1/me || echo 000)
+          if [ "$code" != "200" ]; then
+            fail "CARGO_REGISTRY_TOKEN is present but crates.io rejected it (HTTP ${code} from /api/v1/me; 403 = expired or revoked). This is the exact failure that stranded v0.5.17 / v0.5.18 / v0.5.20 mid-upload."
+          fi
+          echo "crates.io token accepted (whoami → 200). Proceeding to publish."
+
       # --- Dry-run first (task step 4) --------------------------------------
       # A PER-CRATE dry-run cannot resolve the not-yet-published internal deps
       # (mnemo-core@<ver> is not on the registry until the real publish below), so
@@ -171,20 +223,47 @@ jobs:
           # publishes last. When the workspace version is unchanged, crates
           # already on crates.io 404-gate as present and only new ones publish.
           crates="mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db"
+
+          # Outcome ledger (WI1.3). A partial publish that reports success is the
+          # failure mode that produced today's stranded state, so record every
+          # crate as published-now / already-present / NOT-published and print
+          # the ledger on EVERY exit — success OR failure — to the log and the
+          # job summary. The walk is resumable: re-running skips crates already
+          # at ${ver} (404-gate), so a failure mid-walk loses no completed work.
+          published=(); present=()
+          summarize() {
+            local done_set=" ${published[*]:-} ${present[*]:-} "
+            local nd=()
+            for c in $crates; do
+              case "$done_set" in *" $c "*) ;; *) nd+=("$c") ;; esac
+            done
+            echo "──────── publish ledger (${ver}) ────────"
+            echo "  published now  : ${published[*]:-none}"
+            echo "  already present: ${present[*]:-none}"
+            echo "  NOT published  : ${nd[*]:-none}"
+            {
+              echo "### Publish ledger — ${ver}"
+              echo "- **published now:** ${published[*]:-none}"
+              echo "- **already present:** ${present[*]:-none}"
+              echo "- **NOT published:** ${nd[*]:-none}"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          }
+          trap summarize EXIT
+
           for crate in $crates; do
             http=$(crate_status "$crate")
             if [ "$http" = "200" ]; then
               echo "  ${crate}@${ver} — already on crates.io, skipping"
-              continue
+              present+=("$crate"); continue
             elif [ "$http" != "404" ]; then
-              echo "  ${crate}@${ver} — crates.io still answering HTTP ${http} after retries; failing"
+              echo "::error::${crate}@${ver} — crates.io still answering HTTP ${http} after retries; failing (later crates NOT published)"
               exit 1
             fi
             if [ -n "$DRY_RUN" ]; then
               echo "::group::dry-run publish ${crate} (workflow_dispatch dry_run)"
               cargo publish -p "${crate}" --dry-run --no-verify
               echo "::endgroup::"
-              continue
+              published+=("$crate"); continue
             fi
             # Publish with backoff — crates.io returns transient 5xx/timeouts on
             # upload independent of the payload (a 503 killed the first v0.5.20
@@ -192,27 +271,36 @@ jobs:
             # attempt's upload actually landed despite a failed HTTP response, we
             # detect the 200 and stop rather than re-uploading (which errors).
             echo "::group::Publish ${crate}@${ver}"
-            published=""
+            ok=""
             for attempt in 1 2 3 4 5; do
-              if cargo publish -p "${crate}"; then
-                published=1; break
+              if out=$(cargo publish -p "${crate}" 2>&1); then
+                echo "$out"; ok=1; break
               fi
-              # Did it land anyway? (upload succeeded, response failed.)
+              echo "$out"
+              # Landed anyway? (upload succeeded, HTTP response failed.)
               if [ "$(crate_status "$crate")" = "200" ]; then
                 echo "  ${crate}@${ver} — landed despite a failed response; continuing"
-                published=1; break
+                ok=1; break
+              fi
+              # An auth failure is NOT transient — the preflight passed, so the
+              # token was revoked/expired mid-run. Do not burn 4 more attempts.
+              if echo "$out" | grep -qiE 'authentication failed|403 Forbidden|401 Unauthorized'; then
+                echo "::endgroup::"
+                echo "::error::${crate}@${ver} — crates.io rejected the token mid-walk (auth failure). Rotate CARGO_REGISTRY_TOKEN and re-run; crates already published are skipped on resume."
+                exit 1
               fi
               if [ "$attempt" -lt 5 ]; then
                 back=$((attempt * 30))
-                echo "  publish attempt ${attempt} failed; retrying in ${back}s"
+                echo "  publish attempt ${attempt} failed (transient); retrying in ${back}s"
                 sleep "$back"
               fi
             done
             echo "::endgroup::"
-            if [ -z "$published" ]; then
-              echo "  ${crate}@${ver} — publish failed after 5 attempts; failing"
+            if [ -z "$ok" ]; then
+              echo "::error::${crate}@${ver} — publish failed after 5 attempts (transient errors persisted); re-run to resume (published crates are skipped)."
               exit 1
             fi
+            published+=("$crate")
             # Let the sparse index propagate before publishing a crate that
             # depends on the one just uploaded (verify build resolves it live).
             # Wait after every crate except the terminal leaf mnemo-db — cheap

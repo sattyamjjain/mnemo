@@ -67,6 +67,51 @@ deleted the unverifiable "132 tests" parenthetical that nobody could reproduce
 stale "currently 0.5.18" → "0.5.21"; the independent PyPI `version = "0.5.12"` is
 correct and untouched.
 
+### Fixed (2026-08-02) — the tag-gated publish walk fails fast and loud on an expired token; drift guard now names every stranded crate
+
+**Why the whole 0.5.x line is stranded on crates.io.** `v0.5.17`, `v0.5.18`, and
+`v0.5.20` were all tagged; **none reached crates.io**. Every `release-crate.yml`
+walk packaged + verify-built `mnemo-core` (~5 min) and then died on the upload with
+`403 Forbidden: authentication failed`, after burning five retry attempts. The
+cause is a single **expired `CARGO_REGISTRY_TOKEN`** (last rotated 2026-04-25,
+~90-day expiry ≈ 2026-07-24 — `v0.5.16` published 2026-07-24 was the last that beat
+it). The earlier timeout / 5xx-retry commits treated it as transient; it is not.
+Today's registry state is the result: `mnemo-core`/`-mcp`/`-compliance`/
+`-attention-state`/`-db` stuck at **0.5.16** (2026-07-24), `mnemo-graph` at **0.4.5**,
+and thirteen crates (`-postgres`, `-rest`, `-grpc`, `-admin`, `-pgwire`, `-letta`,
+`-mesh`, `-codemode`, `-deal`, `-md-sync`, `-cma`, `-baseline`, `mnemo-mcp-server`)
+at **0.4.4** (2026-05-18) — `cargo add mnemo-postgres` still resolves the pre-#99
+pgvector version.
+
+- **`release-crate.yml`:** a token **preflight** now validates
+  `CARGO_REGISTRY_TOKEN` against `crates.io/api/v1/me` *before building anything*
+  and, if it is missing or rejected, fails in seconds with an explicit
+  operator-action message and a job-summary block (rotate the token) — instead of
+  spending ~10 min to rediscover the 403 mid-upload. The walk (already topological
+  + idempotent + resumable via the 404-skip) now prints a **published / already-present
+  / NOT-published ledger on every exit**, so a partial publish can never report
+  success, and short-circuits a mid-walk auth failure instead of retrying it.
+- **`scripts/check_version_drift.sh`:** the failure output is now a side-by-side
+  table (crate · repo version · crates.io version · status) plus a grouped tally —
+  e.g. "13 crate(s) stranded at 0.4.4" — so an operator reading the red job sees the
+  whole picture from the log without cloning. Pass/fail semantics unchanged.
+- **`README.md`:** a dated note under the crates.io install block states the actual
+  newest published version (0.5.16) while the publish is blocked, so the doc does not
+  claim a current line the registry disagrees with. It is removed by the commit that
+  lands the publish.
+- **Still blocked on the operator:** rotating the token is not a code fix. Once
+  `CARGO_REGISTRY_TOKEN` is refreshed, re-running the tag walk ships the whole line
+  and this entry's registry lag clears.
+
+### Changed (2026-08-02) — batched the six open Dependabot bumps; fixed the getrandom 0.4 API break
+
+Consolidated six stale Dependabot PRs (all red from the then-broken workspace build
+plus the drift guard) into one signed-off change: `getrandom` 0.2→0.4 (its 0.3+ drop
+of the free `getrandom()` fn broke `encryption.rs` — updated to `getrandom::fill()`),
+`base64` 0.22→0.23, `duckdb` `=1.10504.0`→`=1.10505.0`, `wasmtime`+`wasmtime-wasi`
+46→47 as a matched pair, and `actions/setup-python` v6→v7. Green on CI except the
+documented drift guard; superseded and closed #117/#119/#120/#121/#122/#123.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
