@@ -28,8 +28,9 @@
 //! Each record is self-contained: its `query` is answerable from its own
 //! `content`, so the record is the gold document. For each query we take
 //! the rank of the originating record (matched by `lme_id` metadata):
-//! **recall@1/@3/@5**, **MRR**, and per-query **p50/p95 latency**
-//! (latency includes the local embedding round-trip for vector/hybrid).
+//! **recall@1/@3/@5/@10**, **MRR**, the per-seed **recall@5 spread** (min–max
+//! over seeds), and per-query **p50/p95 latency** (latency includes the local
+//! embedding round-trip for vector/hybrid).
 //!
 //! # Honest protocol
 //!
@@ -147,6 +148,9 @@ struct RunResult {
     recall_at_1: usize,
     recall_at_3: usize,
     recall_at_5: usize,
+    // recall@10 is only meaningful when the retrieval limit is >= 10 (the CLI
+    // default); at a smaller --limit it collapses to recall@limit.
+    recall_at_10: usize,
     reciprocal_rank_sum: f64,
     failures: usize,
     latencies_ms: Vec<f64>,
@@ -182,6 +186,11 @@ struct EvalRow {
     recall1: f64,
     recall3: f64,
     recall5: f64,
+    recall10: f64,
+    // Run-to-run spread of recall@5: the min and max over the `repeats` seeds
+    // (so a reader sees the seed jitter, not just the mean point estimate).
+    recall5_lo: f64,
+    recall5_hi: f64,
     mrr: f64,
     fails: f64,
     p50: f64,
@@ -204,6 +213,24 @@ fn mean(xs: &[f64]) -> f64 {
     } else {
         xs.iter().sum::<f64>() / xs.len() as f64
     }
+}
+
+/// Min and max of a slice — the run-to-run spread across seeds.
+fn min_max(xs: &[f64]) -> (f64, f64) {
+    if xs.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut lo = xs[0];
+    let mut hi = xs[0];
+    for &x in xs {
+        if x < lo {
+            lo = x;
+        }
+        if x > hi {
+            hi = x;
+        }
+    }
+    (lo, hi)
 }
 
 fn default_dataset_path() -> PathBuf {
@@ -328,6 +355,7 @@ async fn run_once(
         recall_at_1: 0,
         recall_at_3: 0,
         recall_at_5: 0,
+        recall_at_10: 0,
         reciprocal_rank_sum: 0.0,
         failures: 0,
         latencies_ms: Vec::with_capacity(queries.len()),
@@ -360,6 +388,9 @@ async fn run_once(
             if rank <= 5 {
                 res.recall_at_5 += 1;
             }
+            if rank <= 10 {
+                res.recall_at_10 += 1;
+            }
             res.reciprocal_rank_sum += 1.0 / rank as f64;
         }
     }
@@ -384,6 +415,7 @@ async fn eval_avg(
     let mut r1 = Vec::new();
     let mut r3 = Vec::new();
     let mut r5 = Vec::new();
+    let mut r10 = Vec::new();
     let mut mrr = Vec::new();
     let mut fails = Vec::new();
     let mut p50 = Vec::new();
@@ -403,11 +435,13 @@ async fn eval_avg(
         r1.push(run.r(run.recall_at_1));
         r3.push(run.r(run.recall_at_3));
         r5.push(run.r(run.recall_at_5));
+        r10.push(run.r(run.recall_at_10));
         mrr.push(run.mrr());
         fails.push(run.failures as f64);
         p50.push(run.p(0.50));
         p95.push(run.p(0.95));
     }
+    let (recall5_lo, recall5_hi) = min_max(&r5);
     EvalRow {
         name: name.to_string(),
         detail,
@@ -416,6 +450,9 @@ async fn eval_avg(
         recall1: mean(&r1),
         recall3: mean(&r3),
         recall5: mean(&r5),
+        recall10: mean(&r10),
+        recall5_lo,
+        recall5_hi,
         mrr: mean(&mrr),
         fails: mean(&fails),
         p50: mean(&p50),
@@ -515,12 +552,22 @@ fn render_markdown(
     md.push_str(&format!(
         "## Held-out eval results (mean of {repeats} seeds)\n\n"
     ));
-    md.push_str("| Mode | config | recall@1 | recall@3 | recall@5 | MRR | p50 ms | p95 ms |\n");
-    md.push_str("|---|---|---:|---:|---:|---:|---:|---:|\n");
+    md.push_str("| Mode | config | recall@1 | recall@3 | recall@5 | recall@5 spread (min–max/seed) | recall@10 | MRR | p50 ms | p95 ms |\n");
+    md.push_str("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
     for r in eval_rows {
         md.push_str(&format!(
-            "| `{}` | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.1} | {:.1} |\n",
-            r.name, r.detail, r.recall1, r.recall3, r.recall5, r.mrr, r.p50, r.p95
+            "| `{}` | {} | {:.3} | {:.3} | {:.3} | [{:.3}, {:.3}] | {:.3} | {:.3} | {:.1} | {:.1} |\n",
+            r.name,
+            r.detail,
+            r.recall1,
+            r.recall3,
+            r.recall5,
+            r.recall5_lo,
+            r.recall5_hi,
+            r.recall10,
+            r.mrr,
+            r.p50,
+            r.p95
         ));
     }
 
@@ -599,6 +646,9 @@ fn render_json(
             "recall@1": r.recall1,
             "recall@3": r.recall3,
             "recall@5": r.recall5,
+            "recall@10": r.recall10,
+            "recall@5_seed_min": r.recall5_lo,
+            "recall@5_seed_max": r.recall5_hi,
             "mrr": r.mrr,
             "failures_mean": r.fails,
             "p50_ms": r.p50,
@@ -816,13 +866,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli.repeats
     );
     println!(
-        "{:<18} {:>9} {:>9} {:>9} {:>7} {:>8} {:>8}",
-        "mode", "recall@1", "recall@3", "recall@5", "MRR", "p50_ms", "p95_ms"
+        "{:<18} {:>9} {:>9} {:>9} {:>10} {:>7} {:>18} {:>8} {:>8}",
+        "mode",
+        "recall@1",
+        "recall@3",
+        "recall@5",
+        "recall@10",
+        "MRR",
+        "r@5 spread[lo,hi]",
+        "p50_ms",
+        "p95_ms"
     );
     for r in &eval_rows {
         println!(
-            "{:<18} {:>9.3} {:>9.3} {:>9.3} {:>7.3} {:>8.1} {:>8.1}",
-            r.name, r.recall1, r.recall3, r.recall5, r.mrr, r.p50, r.p95
+            "{:<18} {:>9.3} {:>9.3} {:>9.3} {:>10.3} {:>7.3} {:>18} {:>8.1} {:>8.1}",
+            r.name,
+            r.recall1,
+            r.recall3,
+            r.recall5,
+            r.recall10,
+            r.mrr,
+            format!("[{:.3},{:.3}]", r.recall5_lo, r.recall5_hi),
+            r.p50,
+            r.p95
         );
     }
     println!(

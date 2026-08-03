@@ -15,12 +15,15 @@ env:
 #   `cargo`. Every workspace-wide cargo command excludes it.
 # - `mnemo-grpc` needs `protoc`; we install it up front on every job that
 #   compiles the workspace.
-# - The `onnx` feature of `mnemo-core` is currently broken against the
-#   installed `ort` API (ndarray 0.16→0.17 drift from Dependabot PR #11).
-#   Until that integration is repaired, we deliberately do NOT pass
-#   `--all-features` to clippy — the broken feature would poison every
-#   workspace check. Default features still cover the entire production
-#   surface.
+# - The `onnx` feature of `mnemo-core` builds and tests against the pinned
+#   `ort 2.0.0-rc.11` / `ndarray 0.17` / `tokenizers 0.23` API (the migration
+#   that repaired the old ndarray-0.16 drift from Dependabot PR #11; issue #125).
+#   It is NOT enabled in the workspace-wide clippy/test jobs — not because it is
+#   broken, but because `ort` is a heavy native dependency (it compiles ONNX
+#   Runtime and downloads its prebuilt library) and would slow every job. It has
+#   its own dedicated `onnx` job below (`cargo build`+`test -p mnemo-core
+#   --features onnx`) so it can never silently rot again. Default features still
+#   cover the entire production surface.
 # - `mnemo-golem-wit` is a cdylib WASM component (the golem:vector WIT
 #   provider); it is in `[workspace] exclude`, not `members`, because its
 #   WASM-only host imports have no native definition and the native cdylib
@@ -63,6 +66,24 @@ jobs:
       - name: Install protoc (required by mnemo-grpc build script)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo test --workspace --exclude mnemo-python
+
+  # Dedicated job for the `onnx` feature. It builds and tests fine against the
+  # pinned ort 2.0.0-rc.11 / ndarray 0.17 API, but `ort` compiles ONNX Runtime
+  # and downloads a prebuilt native lib, so it is kept out of the workspace-wide
+  # jobs (which stay default-features + fast) and exercised here instead. This is
+  # the guard that stops the feature silently rotting again (issue #125). It does
+  # NOT run end-to-end ONNX inference — that needs a real model on disk
+  # (MNEMO_ONNX_MODEL_PATH), exercised by the out-of-tree benches — but it proves
+  # the feature compiles, links the native runtime, and its test suite passes.
+  onnx-feature:
+    name: onnx feature (mnemo-core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p mnemo-core --features onnx
+      - run: cargo test -p mnemo-core --features onnx
 
   build:
     name: Build
