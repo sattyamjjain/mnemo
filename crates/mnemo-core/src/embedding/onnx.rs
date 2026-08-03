@@ -25,11 +25,16 @@
 //! ```
 //!
 //! These are the versions the workspace actually pins. The `#[cfg(feature =
-//! "onnx")]` inference path is written against this `ort 2.0.0-rc.11` /
-//! `ndarray 0.17` API, but the `onnx` feature is **currently excluded from CI**
-//! (an `ort`-integration repair is tracked in
-//! <https://github.com/sattyamjjain/mnemo/issues/125>); build it locally with
-//! `--features onnx`.
+//! "onnx")]` inference path is written against — and builds + tests against —
+//! this `ort 2.0.0-rc.11` / `ndarray 0.17` / `tokenizers 0.23` API (the
+//! migration that repaired the old ndarray-0.16 drift). A dedicated `onnx
+//! feature` CI job (`.github/workflows/ci.yml`) builds and tests `--features
+//! onnx` so it cannot silently rot; it stays out of the workspace-wide jobs only
+//! because `ort` is a heavy native dependency. The one open item on
+//! <https://github.com/sattyamjjain/mnemo/issues/125> is a model-fetch CI job to
+//! make the ONNX MiniLM recall number itself reproducible (end-to-end inference
+//! needs a real model on disk via `MNEMO_ONNX_MODEL_PATH`, which the build+test
+//! job does not fetch). Build locally with `--features onnx`.
 //!
 //! # Example (stub)
 //!

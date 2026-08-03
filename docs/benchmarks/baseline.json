@@ -1,10 +1,16 @@
 {
-  "_comment": "First authenticated benchmark baseline, published 2026-06-29 at commit 640b7b1. METRIC IS RETRIEVAL QUALITY (gold recall@k / MRR over a real local semantic embedder), NOT end-to-end LLM-judged QA accuracy — no generative LLM runs in this harness. The nightly gate (.github/workflows/benchmarks-nightly.yml) compares subsequent runs against the `results` rows below; a recall@k regression beyond MNEMO_BENCH_REGRESSION_PP (default 3.0 pp) fails the job. Reproduce: `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.",
-  "version": "0.5.4",
-  "updated_at": "2026-06-29",
-  "commit": "640b7b1626e714b94bd3ba7146915011e1dcbf28",
+  "_comment": "Retrieval-quality baseline (gold recall@k / MRR over a real local semantic embedder), NOT end-to-end LLM-judged QA accuracy — no generative LLM runs in this harness. Refreshed 2026-08-03 from a run on Apple M4 / macOS 26.5.2 / rustc 1.97.0; this refresh adds recall@10 and the per-seed recall@5 spread. The nightly gate (.github/workflows/benchmarks-nightly.yml) runs the Python locomo_runner and compares recall@10 by strategy against this file; note the gate is currently dormant because the nightly needs OPENAI/ANTHROPIC/HF secrets (issue #44) that are not set, and its strategy vocabulary (auto/vector_only/hybrid_rrf) is the Python runner's, not this Rust harness's mode labels. Reproduce these numbers: `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench`.",
+  "version": "0.5.21",
+  "updated_at": "2026-08-03",
+  "commit": "cc2c365",
   "metric": "retrieval_gold_recall_and_mrr",
   "harness": "mnemo-locomo-bench :: semantic_recall_bench",
+  "machine": {
+    "hardware": "Apple M4 (10-core), 16 GB",
+    "os": "macOS 26.5.2 (arm64)",
+    "rustc": "1.97.0",
+    "ollama": "0.32.3"
+  },
   "embedder": {
     "backend": "ollama",
     "model": "nomic-embed-text",
@@ -13,11 +19,11 @@
   },
   "datasets": {
     "longmemeval_m_slice": {
-      "split": "longmemeval_m_cleaned (bundled 45-record slice)",
+      "split": "longmemeval_m (bundled 45-record slice)",
       "n": 23,
       "repeats": 5,
-      "seed_averaging": "5 in-process seeds (not restart-averaged)",
-      "commit": "640b7b1626e714b94bd3ba7146915011e1dcbf28",
+      "seed_averaging": "5 in-process seeds (not restart-averaged); recall@5 min/max over seeds reported as recall@5_seed_min/max",
+      "commit": "cc2c365",
       "results": [
         {
           "mode": "vector_only",
@@ -25,9 +31,12 @@
           "recall@1": 0.739,
           "recall@3": 0.826,
           "recall@5": 0.826,
-          "mrr": 0.805,
-          "p50_ms": 33.9,
-          "p95_ms": 48.4,
+          "recall@10": 1.0,
+          "recall@5_seed_min": 0.826,
+          "recall@5_seed_max": 0.826,
+          "mrr": 0.806,
+          "p50_ms": 39.0,
+          "p95_ms": 51.2,
           "failures_mean": 0.0,
           "note": "headline / stable strong mode"
         },
@@ -37,21 +46,29 @@
           "recall@1": 0.522,
           "recall@3": 0.609,
           "recall@5": 0.739,
+          "recall@10": 0.739,
+          "recall@5_seed_min": 0.739,
+          "recall@5_seed_max": 0.739,
           "mrr": 0.586,
-          "p50_ms": 29.0,
-          "p95_ms": 35.5,
-          "failures_mean": 1.0
+          "p50_ms": 31.9,
+          "p95_ms": 41.1,
+          "failures_mean": 1.0,
+          "note": "lexical floor — loses to vector_only on every metric"
         },
         {
           "mode": "rrf_hybrid",
           "strategy": "auto (default equal weights)",
-          "recall@1": 0.478,
-          "recall@3": 0.757,
+          "recall@1": 0.426,
+          "recall@3": 0.739,
           "recall@5": 0.809,
-          "mrr": 0.638,
-          "p50_ms": 46.0,
-          "p95_ms": 65.9,
-          "failures_mean": 1.0
+          "recall@10": 0.957,
+          "recall@5_seed_min": 0.783,
+          "recall@5_seed_max": 0.826,
+          "mrr": 0.604,
+          "p50_ms": 42.1,
+          "p95_ms": 50.2,
+          "failures_mean": 1.0,
+          "note": "mnemo's default auto fusion — LOSES to vector_only on MRR (0.604 vs 0.806) on this slice; the equal-weight RRF drags in BM25 candidates"
         },
         {
           "mode": "rrf_hybrid_tuned",
@@ -61,10 +78,14 @@
           "recall@1": 0.696,
           "recall@3": 0.783,
           "recall@5": 0.826,
-          "mrr": 0.765,
-          "p50_ms": 44.5,
-          "p95_ms": 62.4,
-          "failures_mean": 1.0
+          "recall@10": 0.957,
+          "recall@5_seed_min": 0.826,
+          "recall@5_seed_max": 0.826,
+          "mrr": 0.766,
+          "p50_ms": 42.1,
+          "p95_ms": 48.3,
+          "failures_mean": 1.0,
+          "note": "held-out swept weights recover most of the MRR gap but still do not beat pure vector; graph lane weight is 0"
         }
       ],
       "token_efficiency": {

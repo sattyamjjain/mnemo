@@ -48,19 +48,22 @@ semantic_recall_bench` (the runner **refuses to emit a score under a no-op embed
 Full per-mode tables and the different-axes caveat vs. Mem0/Letta are in the benchmark
 tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
 
-> **A second real-embedder number — ONNX MiniLM — is _not_ currently CI-reproducible.**
-> An earlier measurement used a **different** embedder and slice: **ONNX
+> **A second real-embedder number — ONNX MiniLM — is not part of the CI-reproducible
+> headline set.** An earlier measurement used a **different** embedder and slice: **ONNX
 > `all-MiniLM-L6-v2` (384-dim), n=45**, reporting **recall@1 0.689 [Wilson 95% 0.543,
-> 0.805]** / recall@10 0.911 (MRR 0.770). It runs only behind `--features onnx`, which
-> **CI deliberately does not build** — the `ort` integration is broken against the
-> pinned `ort 2.0.0-rc.11` / `ndarray 0.17` API (ndarray 0.16→0.17 drift, Dependabot
-> #11). So do **not** conflate 0.689 with the 0.739 headline: **different embedder
-> (MiniLM 384-dim vs nomic 768-dim), different slice (n=45 vs n=23)**, and 0.689 sits
-> outside the green CI path until the integration is repaired (tracking:
-> [#125](https://github.com/sattyamjjain/mnemo/issues/125)). Reproduce locally:
-> `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features onnx -p mnemo-locomo-bench
-> --bin locomo_v1_bench`; caveats + raw JSON:
-> [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md).
+> 0.805]** / recall@10 0.911 (MRR 0.770). It runs behind `--features onnx`, which now
+> **builds and tests cleanly** against the pinned `ort 2.0.0-rc.11` / `ndarray 0.17` /
+> `tokenizers 0.23` API (the migration that repaired the old ndarray-0.16 drift), and CI
+> guards that with a dedicated `onnx feature` job. What CI does **not** do is *run* this
+> number: reproducing 0.689 needs a downloaded `all-MiniLM-L6-v2` ONNX model on disk
+> (`MNEMO_ONNX_MODEL_PATH`), which the build+test job does not fetch — so the headline
+> stays the credential-free Ollama nomic number. Do **not** conflate 0.689 with the 0.739
+> headline: **different embedder (MiniLM 384-dim vs nomic 768-dim), different slice (n=45
+> vs n=23)**. Reproduce locally: `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features
+> onnx -p mnemo-locomo-bench --bin locomo_v1_bench`; caveats + raw JSON:
+> [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md). Making 0.689 itself
+> CI-reproducible (a model-fetch bench job) is the remaining item on
+> [#125](https://github.com/sattyamjjain/mnemo/issues/125).
 
 And the **memory-poisoning defense is measured on a real embedder, not asserted.**
 Through a real ONNX MiniLM embedder (not a hash stand-in), mnemo's always-on

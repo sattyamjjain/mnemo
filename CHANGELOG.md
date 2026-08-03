@@ -112,6 +112,42 @@ of the free `getrandom()` fn broke `encryption.rs` — updated to `getrandom::fi
 46→47 as a matched pair, and `actions/setup-python` v6→v7. Green on CI except the
 documented drift guard; superseded and closed #117/#119/#120/#121/#122/#123.
 
+### Fixed (2026-08-03) — the `onnx` feature was repaired but CI and the docs still said "broken"
+
+The `onnx` feature of `mnemo-core` was, at some point, quietly migrated to the pinned
+`ort 2.0.0-rc.11` / `ndarray 0.17` / `tokenizers 0.23` API — it **builds and its whole
+`mnemo-core` test suite passes** under `--features onnx`. But nothing reverted the fallout
+of the earlier breakage: CI still excluded it, the README still said the integration was
+"broken," `onnx.rs`'s module doc said "currently excluded from CI," and a v0.3.0 checklist
+still had "[ ] Repair onnx" open — while `CHANGELOG.md` line ~600 already said it was
+migrated. A listed feature whose docs and CI disagree with its own code is the same class
+of defect as a feature that silently does not work: someone reads "broken," never enables
+it, and the working code rots. **It now builds again and is covered by CI** — a dedicated
+`onnx feature` job (`.github/workflows/ci.yml`) runs `cargo build`+`test -p mnemo-core
+--features onnx` so it cannot silently rot again — and the five stale doc/CI locations were
+reconciled to match. (The feature is kept out of the *workspace-wide* jobs only because
+`ort` compiles ONNX Runtime and downloads a native lib, not because it is broken.) The one
+open item on [#125](https://github.com/sattyamjjain/mnemo/issues/125) is a model-fetch CI
+job to make the ONNX MiniLM **recall number itself** reproducible (end-to-end inference
+needs a real model on disk, which the build+test job does not fetch).
+
+### Added (2026-08-03) — the public benchmark page has mnemo's own numbers in it (closes #44)
+
+`docs/benchmarks/2026-04-25-mnemo-v0.3.4.md` shipped in April 2026 with mnemo's rows
+`_pending_`, waiting on an authenticated LLM-judged nightly run that never landed (the
+OpenAI/Anthropic/gated-HF secrets in #44 were never wired). They are **populated now**,
+produced by a **real embedder** (Ollama `nomic-embed-text`, 768-dim) via the credential-free
+Rust `semantic_recall_bench` harness — the retrieval-quality metric `baseline.json` has
+recorded since 2026-06-29 — on a fresh run on this machine, with the model, dimensionality,
+dataset, hardware (Apple M4 / macOS 26.5.2 / rustc 1.97.0), date, and reproduce command on
+the page. **Losses are published alongside wins:** the default `auto` RRF fusion loses to
+pure `vector_only` on MRR (0.604 vs 0.806), and BM25 loses on every metric. The page is
+reframed to state honestly that these are **retrieval** numbers, not the LLM-judged QA of
+the reference leaderboard (a different axis). The bench itself gained **recall@10** and a
+**run-to-run recall@5 spread** (it previously reported only the mean); `baseline.json` was
+refreshed with both. `graph_boosted` and `p99` are left explicitly empty with one-line
+reasons rather than estimated. Closes #44.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
