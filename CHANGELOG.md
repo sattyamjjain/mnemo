@@ -148,6 +148,43 @@ the reference leaderboard (a different axis). The bench itself gained **recall@1
 refreshed with both. `graph_boosted` and `p99` are left explicitly empty with one-line
 reasons rather than estimated. Closes #44.
 
+### Fixed (2026-08-04) - the drift guard was noise, and the onnx feature ran nowhere anyone could see
+
+Three things, one theme: a check or a feature that looks fine but proves nothing, so a real
+gap hides behind a green-looking surface.
+
+- **The version-drift guard was red on every push, which taught everyone to ignore it.**
+  The guard failed on any published crate more than one patch behind the workspace. That is
+  correct, but the registry has been permanently behind since the tag-gated publish broke on
+  an expired `CARGO_REGISTRY_TOKEN`, so the job was red on every single push. A check that is
+  always red is worse than no check: the one time a NEW crate falls behind, nobody looks.
+  Rebuilt it around a committed baseline (`scripts/version-drift-baseline.json`): green when
+  the registry matches the workspace or the recorded baseline, red only when a new divergence
+  appears (a new stranded crate, or the workspace version advanced past the baseline without
+  publishing, which widens the pile). The red message now names each crate with its registry
+  version, its workspace version, and the age of the gap in days. Refresh after a real publish
+  with `bash scripts/check_version_drift.sh --update-baseline`.
+- **The publish is still blocked, and this is why it stayed hidden.** The token preflight
+  (added `b0f06f65`) confirms `CARGO_REGISTRY_TOKEN` is still rejected by crates.io (HTTP 403
+  from `/api/v1/me`); the secret has not changed since 2026-04-25. Nothing published:
+  `mnemo-core` stays 0.5.16, `mnemo-postgres` stays 0.4.4 (77 days behind). Rotating the token
+  is an operator action, not a code change. The always-red drift guard above is part of why
+  the 77-day gap read as normal for so long.
+- **The `onnx` feature built and its tests passed, but nothing exercised the inference path.**
+  The `--features onnx` tests only asserted that construction errors without a model on disk,
+  so a build could ship where tokenize, ort inference, mean-pool, and normalise all silently
+  never ran. That is the same latent-stub class as the Postgres semantic-recall stub fixed in
+  v0.5.7. Added an end-to-end test (gated on `MNEMO_ONNX_MODEL_PATH`, skips green when unset)
+  that embeds real text through `all-MiniLM-L6-v2` and asserts a 384-dim, finite, non-zero,
+  L2-normalised vector where distinct sentences differ; the `onnx feature` CI job now downloads
+  the model and runs it. Verified locally against the real model. Advances #125.
+- **Recorded the capability-leased-reads design (#126) as `docs/adr/0001` instead of leaving
+  it as folklore.** The dead `lease.rs` was removed earlier; the design is now written down as
+  a dated ADR (the threat it defends, why a per-read lease rather than a session token, what it
+  costs on the recall path, and the honest reason it is not built on a single-caller stdio
+  transport). Not implemented, and labelled so, because an unbuilt feature in a dated ADR is
+  credibility and an unbuilt feature on a capability list is the opposite.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
