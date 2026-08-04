@@ -560,6 +560,61 @@ mod tests {
         }
     }
 
+    // End-to-end real-inference test (issue #125). Proves the `onnx` feature
+    // does ACTUAL work — tokenize -> ort inference -> mean-pool -> L2-normalise
+    // -> a sane embedding — not just that it compiles or that construction errors
+    // without a model. That distinction is the whole point of #125: a feature
+    // that builds but never demonstrably runs is the same class of latent defect
+    // as the Postgres semantic-recall stub fixed in v0.5.7.
+    //
+    // Gated on MNEMO_ONNX_MODEL_PATH so `cargo test --features onnx` stays green
+    // without a model on disk; the dedicated `onnx feature` CI job downloads
+    // all-MiniLM-L6-v2 and sets the var, so CI exercises this path on every push.
+    // Run locally:
+    //   MNEMO_ONNX_MODEL_PATH=/path/to/all-MiniLM-L6-v2/model.onnx \
+    //     cargo test -p mnemo-core --features onnx real_inference -- --nocapture
+    #[cfg(feature = "onnx")]
+    #[tokio::test]
+    async fn test_onnx_real_inference_end_to_end() {
+        let model_path = match std::env::var("MNEMO_ONNX_MODEL_PATH") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!(
+                    "skipping onnx e2e inference: set MNEMO_ONNX_MODEL_PATH to an \
+                     all-MiniLM-L6-v2 model.onnx (tokenizer.json alongside) to run it"
+                );
+                return;
+            }
+        };
+        // all-MiniLM-L6-v2 is 384-dim.
+        let provider =
+            OnnxEmbedding::new(&model_path, 384).expect("onnx model + tokenizer.json should load");
+
+        let a = provider
+            .embed("the cat sat on the mat")
+            .await
+            .expect("embed a");
+        let b = provider
+            .embed("quarterly revenue guidance for the fiscal year")
+            .await
+            .expect("embed b");
+
+        assert_eq!(a.len(), 384, "embedding dimensionality");
+        assert!(a.iter().all(|x| x.is_finite()), "all components finite");
+        assert!(
+            a.iter().any(|&x| x.abs() > 1e-4),
+            "embedding is non-zero (real signal, not a NoopEmbedding-style constant)"
+        );
+        let norm = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 1e-2, "L2-normalised (norm={norm})");
+        // Distinct sentences must not collapse to near-identical vectors.
+        let cos = a.iter().zip(&b).map(|(x, y)| x * y).sum::<f32>();
+        assert!(
+            cos < 0.99,
+            "distinct sentences must differ (cos={cos}) — proves real inference"
+        );
+    }
+
     #[cfg(not(feature = "onnx"))]
     #[tokio::test]
     async fn test_onnx_embed_returns_error_without_runtime() {

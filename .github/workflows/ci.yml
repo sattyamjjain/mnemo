@@ -83,7 +83,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p mnemo-core --features onnx
-      - run: cargo test -p mnemo-core --features onnx
+      # Fetch a real all-MiniLM-L6-v2 ONNX model (384-dim) so the end-to-end
+      # inference test (issue #125) actually exercises tokenize -> ort inference
+      # -> mean-pool -> L2-normalise, not just that the feature compiles. Without
+      # a model the onnx unit tests only assert that construction errors; a
+      # feature that builds but never demonstrably runs is the latent-stub class
+      # of bug (cf. the Postgres semantic-recall stub fixed in v0.5.7). The test
+      # is gated on MNEMO_ONNX_MODEL_PATH and skips (still green) when it is unset.
+      - name: Download all-MiniLM-L6-v2 ONNX (for the end-to-end inference test)
+        run: |
+          mkdir -p "$RUNNER_TEMP/minilm"
+          curl -sSL --retry 3 --retry-delay 5 --fail \
+            -o "$RUNNER_TEMP/minilm/model.onnx" \
+            https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx
+          curl -sSL --retry 3 --retry-delay 5 --fail \
+            -o "$RUNNER_TEMP/minilm/tokenizer.json" \
+            https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json
+      - name: Test onnx feature (real end-to-end inference)
+        env:
+          MNEMO_ONNX_MODEL_PATH: ${{ runner.temp }}/minilm/model.onnx
+        run: cargo test -p mnemo-core --features onnx
 
   build:
     name: Build
