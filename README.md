@@ -592,6 +592,11 @@ mnemo compares on the compliance-audit axis: **[docs/POSITIONING.md](docs/POSITI
 
 ### Security: what is and isn't enforced today
 
+To report a suspected vulnerability privately, see [`SECURITY.md`](SECURITY.md):
+supported versions, private reporting via GitHub security advisories, a
+first-response time that can actually be kept, which backends are in scope, and
+what is out of scope.
+
 mnemo ships a lot of security *machinery*; not all of it is on the default
 request path yet. This table is the honest picture — verified against the code,
 not the roadmap. "Enforced" means a live code path rejects/acts; "library /
@@ -1000,6 +1005,12 @@ not exist yet. What the mnemo row claims, and all it claims, is that the retriev
 layer surfaces the right memory ~74% of the time at k=1 with a real embedder, fully
 reproducible from the command above. Closing the gap to a comparable QA-accuracy row
 is tracked as the open end-to-end-eval work, not something we are reporting here.
+
+For the long-form, axis-by-axis version of this against the three memory layers a
+2026 search returns first, see
+[`docs/comparisons/mem0-zep-letta.md`](docs/comparisons/mem0-zep-letta.md): where
+mnemo is behind (QA accuracy, temporal knowledge graph) and where it is ahead
+(on-prem, offline-verifiable tamper-evident audit).
 
 ### BEAM-style multi-hop / open-domain (reproduced vs. self-reported)
 

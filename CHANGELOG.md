@@ -185,6 +185,37 @@ gap hides behind a green-looking surface.
   transport). Not implemented, and labelled so, because an unbuilt feature in a dated ADR is
   credibility and an unbuilt feature on a capability list is the opposite.
 
+### Added (2026-08-05) - a root SECURITY.md and a comparison against the crates people actually search
+
+- A root `SECURITY.md`. A crate that positions on DPDP and HIPAA should say how to report a
+  problem privately, and this one did not. It states supported versions, private reporting
+  through GitHub security advisories, a first-response time that can be kept (10 working days,
+  not 48 hours), which storage backends are in scope, and what is out of scope.
+- `docs/comparisons/mem0-zep-letta.md`, the three names a 2026 search for agent memory returns
+  first, with mnemo's own recall@1 of 0.739 from `bench/locomo` cited by path and an honest note
+  on where it is behind: it loses the QA-accuracy row and the temporal-knowledge-graph row, and
+  wins on-prem plus offline-verifiable tamper-evident audit.
+
+### Fixed (2026-08-05) - the publish walk, validated end to end so it stops failing in silence
+
+crates.io was serving `mnemo-postgres` 0.4.4 from May while the workspace was at 0.5.21, so
+`cargo add mnemo-postgres` shipped code without the pgvector ANN backend. The token expired on
+2026-04-25 and nothing failed loudly for months. This is the close of that hole, not a version
+bump.
+
+- The whole nine-crate walk was dry-run end to end (`cargo publish --dry-run` across
+  core, graph, attention-state, compliance, mcp, postgres, rest, grpc, db in one coordinated
+  invocation): every crate packages and verify-builds at 0.5.21, with no failure for any reason
+  other than the upload itself. The ordered publish command list is recorded for the operator.
+- The silent part is already fixed: the tag-gated `release-crate.yml` preflight (added
+  2026-08-02) validates `CARGO_REGISTRY_TOKEN` against crates.io before building anything and
+  aborts loudly on a bad token, and the drift guard (2026-08-04) is now signal rather than the
+  permanent red it had become.
+- What remains is not a code change: the registry token has to be a live, unrevoked crates.io
+  token in the repo secret. As of this entry the secret is still being rejected (HTTP 403 from
+  `/api/v1/me`), so nothing is published yet. Once the token is live, pushing the `v0.5.21` tag
+  runs the validated walk and closes the loop.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
