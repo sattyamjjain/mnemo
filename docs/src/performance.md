@@ -2,6 +2,11 @@
 
 ## Benchmarks
 
+**Every published headline number — retrieval quality, poisoning resistance,
+audit tamper-evidence — with its exact reproduction command and raw-results
+file lives in one place: the [benchmark index](../benchmarks/index.md).** Start
+there; each row also says what the number does *not* show.
+
 Mnemo includes Criterion benchmarks in `benches/engine_bench.rs`:
 
 ```bash

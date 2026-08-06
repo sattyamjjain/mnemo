@@ -96,7 +96,8 @@ jobs:
           cargo clippy --all-targets \
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db -- -D warnings
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db \
+            -p mnemo-embeddings-bench -p mnemo-mcp-server -- -D warnings
       # Full closure test suite. The recall-QUALITY benchmark
       # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
       # degrade" assertion now accepts the floor case where the approximate HNSW
@@ -108,7 +109,8 @@ jobs:
           cargo test \
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db \
+            -p mnemo-embeddings-bench -p mnemo-mcp-server
 
   publish:
     name: Publish to crates.io
@@ -185,7 +187,8 @@ jobs:
           cargo publish --dry-run \
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db \
+            -p mnemo-embeddings-bench -p mnemo-mcp-server
 
       # --- Real publish, dependency order -----------------------------------
       - name: Publish (dependency order, idempotent)
@@ -219,10 +222,13 @@ jobs:
 
           # Topological order — a dependent never precedes a crate it needs, or
           # its verify-build cannot resolve that dep live from the sparse index.
-          # mnemo-db is a leaf name-reservation pointer (no internal deps) and
-          # publishes last. When the workspace version is unchanged, crates
-          # already on crates.io 404-gate as present and only new ones publish.
-          crates="mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db"
+          # mnemo-embeddings-bench needs only mnemo-core; mnemo-mcp-server (the
+          # `mnemo` binary) needs core/mcp/rest/compliance/postgres and
+          # embeddings-bench, so it publishes LAST. When the workspace version is
+          # unchanged, crates already on crates.io 404-gate as present and only
+          # new ones publish, so re-running the tag after this change publishes
+          # only the two crates added here.
+          crates="mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
 
           # Outcome ledger (WI1.3). A partial publish that reports success is the
           # failure mode that produced today's stranded state, so record every

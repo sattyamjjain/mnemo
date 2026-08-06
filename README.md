@@ -45,8 +45,12 @@ document at **recall@1 0.739 (recall@5 0.826, MRR 0.805)** — `vector_only` is 
 stable strong mode. Reproduce with **no credentials and no special build feature**:
 `ollama pull nomic-embed-text && cargo run --release -p mnemo-locomo-bench --bin
 semantic_recall_bench` (the runner **refuses to emit a score under a no-op embedder**).
-Full per-mode tables and the different-axes caveat vs. Mem0/Letta are in the benchmark
-tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
+Every published number — this one and the poisoning / audit / retrieval numbers
+below — is collected in one place with its exact reproduction command, its raw
+results file, and a "what this does **not** show" column:
+**[`docs/benchmarks/index.md`](docs/benchmarks/index.md)** (the single benchmark
+entry point). Full per-mode tables and the different-axes caveat vs. Mem0/Letta
+are in the benchmark tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
 
 > **A second real-embedder number — ONNX MiniLM — is not part of the CI-reproducible
 > headline set.** An earlier measurement used a **different** embedder and slice: **ONNX
@@ -109,13 +113,17 @@ on-prem, hash-chain-audited memory in your own Rust service:
 ```bash
 cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
+cargo install mnemo-mcp-server          # the server binary; installs as `mnemo`
 ```
 
-> **Heads-up (2026-08-02):** the newest version on crates.io today is **0.5.16**
-> (published 2026-07-24), so `cargo add` currently resolves that. v0.5.17–v0.5.21
-> are tagged but not yet published — the release walk is blocked on rotating an
-> expired `CARGO_REGISTRY_TOKEN`. This note goes away in the same commit that
-> lands the publish.
+> **Current release: `0.5.21`.** The whole line publishes in lockstep at the
+> workspace version, so `cargo add mnemo-core` resolves 0.5.21 and
+> `cargo install mnemo-mcp-server` gives a `mnemo` binary that matches the
+> libraries. Two guards keep this honest instead of stale: the test
+> [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
+> fails if this number drifts from the workspace `[workspace.package].version`,
+> and [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) fails if
+> crates.io drifts from the workspace.
 
 > **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
 > name on crates.io is an unrelated project. Install `mnemo-core` +

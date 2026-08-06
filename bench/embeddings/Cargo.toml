@@ -3,7 +3,11 @@ name = "mnemo-embeddings-bench"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-publish = false
+repository.workspace = true
+# Published (not publish=false) because the `mnemo bench embeddings` subcommand in
+# the mnemo-mcp-server binary depends on it at runtime; a published binary cannot
+# depend on an unpublished path crate, which is what stranded mnemo-mcp-server at
+# 0.4.4 while the libraries moved to 0.5.21.
 description = "Embedding-backend selection benchmark — quality (recall@10, nDCG@10) + latency (p50, p95, vec/s) across OpenAI / ONNX / Noop on a labeled fixture, with an SLA-aware recommender. Anchored on arXiv:2605.23618 (v0.4.9)."
 
 [lib]

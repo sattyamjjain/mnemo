@@ -140,3 +140,6 @@ mnemo-attention-state = { path = "crates/mnemo-attention-state", version = "0.5.
 mnemo-golem-wit = { path = "crates/mnemo-golem-wit", version = "0.5.21" }
 mnemo-golem-host = { path = "crates/mnemo-golem-host", version = "0.5.21" }
 mnemo-amp = { path = "crates/mnemo-amp", version = "0.5.21" }
+# Published so the mnemo-mcp-server binary (which uses it for `bench embeddings`)
+# can depend on it with a version, not a bare path.
+mnemo-embeddings-bench = { path = "bench/embeddings", version = "0.5.21" }
