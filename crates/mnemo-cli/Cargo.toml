@@ -42,9 +42,10 @@ sha2 = { workspace = true }
 chrono = { workspace = true }
 
 # v0.4.9 — `mnemo bench embeddings --slo-ms <N>` subcommand. Path-only
-# dep (bench crates carry publish = false and are not in the workspace
-# internal-deps section).
-mnemo-embeddings-bench = { path = "../../bench/embeddings" }
+# dep for the `bench embeddings` subcommand. It is now a published crate with a
+# workspace version pin, so this binary is itself publishable (it was stranded at
+# 0.4.4 when this was a bare path dep that cargo publish rejects).
+mnemo-embeddings-bench = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

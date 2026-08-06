@@ -173,6 +173,19 @@ base_crates = base.get("crates", {})
 
 ws_advanced = parse(workspace_version) > parse(base_ws)
 
+# Binary-vs-libraries parity. The published mnemo-mcp-server (the `mnemo` binary a
+# stranger installs) must not trail the published mnemo-core by more than one patch.
+# It sat at 0.4.4 for 80 days while the libraries reached 0.5.21, because it was
+# excluded from the publish walk and no guard watched the binary-vs-library gap
+# specifically. This is a HARD check, NOT baselined: a binary that trails its own
+# libraries is a bug a stranger hits on `cargo install`, so it fails even when the
+# workspace-vs-registry drift is an acknowledged, blocked-on-token state.
+reg = {n: v for (n, v, _u) in rows}
+parity_fail = None
+core_v, mcp_v = reg.get("mnemo-core", ""), reg.get("mnemo-mcp-server", "")
+if core_v and mcp_v and behind(core_v, mcp_v):
+    parity_fail = (mcp_v, core_v)
+
 resolved, acknowledged, new_div, unpublished = [], [], [], []
 for name, ver, upd in rows:
     if not ver:
@@ -213,23 +226,36 @@ for n, v, u, why in new_div:
 if unpublished:
     print(f"  (unpublished, not on crates.io: {' '.join(unpublished)})")
 
-if new_div:
+if new_div or parity_fail:
     print()
-    print(f"::error::version drift: {len(new_div)} NEW divergence(s) since the recorded "
-          f"baseline (workspace {base_ws}). The standing drift is acknowledged; this is "
-          f"drift getting WORSE.")
-    for n, v, u, why in new_div:
-        print(f"::error::  {n}: crates.io {v} vs workspace {workspace_version}, "
-              f"gap age {fmt_age(u)} — {why}")
+    if new_div:
+        print(f"::error::version drift: {len(new_div)} NEW divergence(s) since the recorded "
+              f"baseline (workspace {base_ws}). The standing drift is acknowledged; this is "
+              f"drift getting WORSE.")
+        for n, v, u, why in new_div:
+            print(f"::error::  {n}: crates.io {v} vs workspace {workspace_version}, "
+                  f"gap age {fmt_age(u)} — {why}")
+    if parity_fail:
+        mcp_v, core_v = parity_fail
+        print(f"::error::binary-vs-libraries drift: mnemo-mcp-server is {mcp_v} on crates.io "
+              f"while mnemo-core is {core_v}. The `mnemo` binary a stranger installs trails "
+              f"its own libraries by more than one patch. Publish mnemo-mcp-server so "
+              f"`cargo install mnemo-mcp-server` matches the libraries.")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-            f.write(f"### version drift — {len(new_div)} NEW divergence(s)\n\n")
-            f.write("| crate | crates.io | workspace | gap age | reason |\n|---|---|---|---|---|\n")
-            for n, v, u, why in new_div:
-                f.write(f"| {n} | {v} | {workspace_version} | {fmt_age(u)} | {why} |\n")
-            f.write("\nBump-without-publish or a new stranded crate widened the gap. "
-                    "Publish (rotate `CARGO_REGISTRY_TOKEN` first if the walk 403s), or "
-                    "refresh the baseline once the new state is intended.\n")
+            if new_div:
+                f.write(f"### version drift — {len(new_div)} NEW divergence(s)\n\n")
+                f.write("| crate | crates.io | workspace | gap age | reason |\n|---|---|---|---|---|\n")
+                for n, v, u, why in new_div:
+                    f.write(f"| {n} | {v} | {workspace_version} | {fmt_age(u)} | {why} |\n")
+                f.write("\nBump-without-publish or a new stranded crate widened the gap. "
+                        "Publish (rotate `CARGO_REGISTRY_TOKEN` first if the walk 403s), or "
+                        "refresh the baseline once the new state is intended.\n")
+            if parity_fail:
+                mcp_v, core_v = parity_fail
+                f.write(f"### binary-vs-libraries drift\n\nmnemo-mcp-server `{mcp_v}` trails "
+                        f"mnemo-core `{core_v}` by more than one patch. Publish the server "
+                        f"binary so `cargo install mnemo-mcp-server` matches the libraries.\n")
     sys.exit(1)
 
 # GREEN.

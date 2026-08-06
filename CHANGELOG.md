@@ -216,6 +216,40 @@ bump.
   `/api/v1/me`), so nothing is published yet. Once the token is live, pushing the `v0.5.21` tag
   runs the validated walk and closes the loop.
 
+### Fixed (2026-08-06) - the installable binary trails its own libraries, and the README understated the release
+
+mnemo-core and mnemo-compliance are on crates.io at 0.5.21, but `cargo install mnemo-mcp-server`
+still gives the 0.4.4 binary from May, so a stranger installs a `mnemo` that is behind the very
+libraries it embeds. Root cause: the CLI crate depends on `mnemo-embeddings-bench` for the
+`bench embeddings` subcommand, and that crate was `publish = false` with a path-only dependency,
+which `cargo publish` refuses, so mnemo-mcp-server could never enter the publish walk. Fixed at
+the source, with a guard so the drift is a failing check rather than a silent regression.
+
+- `bench/embeddings` is now a published crate (version-pinned in the workspace), and both it and
+  mnemo-mcp-server are in the `release-crate.yml` publish walk (topological order: embeddings-bench
+  after core, mcp-server last). `cargo publish --dry-run` verify-builds both at 0.5.21.
+- `scripts/check_version_drift.sh` gained a hard, non-baselined parity check that fails when
+  published mnemo-mcp-server trails published mnemo-core by more than one patch. It is red now, on
+  purpose (the binary really is behind), and goes green the moment the server publishes.
+- Publishing itself is still blocked on the same operator step as the 2026-08-05 entry: the
+  `CARGO_REGISTRY_TOKEN` secret is rejected by crates.io (403 from `/api/v1/me`). No code change
+  fixes that; the parity guard is the honest stand-in until the token is live.
+- The README carried a stale "newest on crates.io is 0.5.16" heads-up while crates.io was already
+  at 0.5.21, understating the project. It is replaced with a single-sourced `Current release:
+  0.5.21` line, fenced by `crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`,
+  which fails if the README number drifts from `[workspace.package].version`.
+
+### Added (2026-08-06) - one benchmark index so every number has a command and a caveat
+
+- `docs/benchmarks/index.md` is the single entry point for every published number: one table with
+  the benchmark, its headline figure, the exact reproduction command, the raw-results file it was
+  read from, and a "what this does not show" column. Numbers are transcribed from the existing
+  result files, not re-run. Linked from the README benchmark section and the docs Performance page.
+- Recorded, not reconciled, one cross-file delta found while building it: the README quotes
+  semantic-recall `vector_only` MRR 0.805 from the 2026-06-22 run, while the 2026-08-03 refresh
+  reports 0.806; recall@1 (0.739) is identical across both. The 0.001 gap is inside the bench's
+  own sub-0.05 tie threshold and is noted in the index rather than papered over.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
