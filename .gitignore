@@ -54,3 +54,7 @@ Thumbs.db
 # mnemo-golem-wit is an excluded, self-rooted workspace (see root Cargo.toml);
 # its standalone `cargo component build` writes here.
 /crates/mnemo-golem-wit/target/
+
+# mdBook build output (docs/book.toml sets build-dir = "book"); built in CI and
+# deployed to Pages, never committed.
+/docs/book/

@@ -1,7 +1,6 @@
 [book]
 authors = ["Mnemo Contributors"]
 language = "en"
-multilingual = false
 src = "src"
 title = "Mnemo Documentation"
 description = "MCP-native memory database for AI agents"
@@ -10,4 +9,5 @@ description = "MCP-native memory database for AI agents"
 build-dir = "book"
 
 [output.html]
-git-repository-url = "https://github.com/mnemo-ai/mnemo"
+git-repository-url = "https://github.com/sattyamjjain/mnemo"
+edit-url-template = "https://github.com/sattyamjjain/mnemo/edit/main/docs/{path}"

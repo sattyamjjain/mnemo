@@ -3,8 +3,11 @@
 [![CI](https://github.com/sattyamjjain/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/sattyamjjain/mnemo/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust](https://img.shields.io/badge/rust-2024_edition-orange.svg)](https://www.rust-lang.org/)
+[![Docs](https://img.shields.io/badge/docs-sattyamjjain.github.io-blue.svg)](https://sattyamjjain.github.io/mnemo/)
 
 **On-prem, MCP-native, cryptographically-auditable memory for regulated AI** (EU AI Act Art.12 · India DPDP · HIPAA §164.312(b)).
+
+📖 **Documentation:** <https://sattyamjjain.github.io/mnemo/> — the full mdBook (quickstart, architecture, MCP tool reference, REST/SDK guides, compliance docs), deployed from [`docs/`](docs/) on every push to `main`.
 
 Mnemo (from Greek *mneme* — memory) is an **embedded** database (DuckDB in-process, or your own PostgreSQL) whose primitives — **REMEMBER**, **RECALL**, **FORGET**, **SHARE** — are exposed as [MCP](https://modelcontextprotocol.io/) tools any AI agent connects to directly. What sets it apart for regulated deployments: every write and delete is a **SHA-256 hash-chained `agent_events` entry an external verifier can check offline** (no store, no hosted tier to trust), and [`mnemo-compliance`](crates/mnemo-compliance) layers signed audit-log export + DPDPA consent records on top.
 
@@ -113,17 +116,23 @@ on-prem, hash-chain-audited memory in your own Rust service:
 ```bash
 cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
-cargo install mnemo-mcp-server          # the server binary; installs as `mnemo`
+cargo install mnemo-mcp-server          # server binary → `mnemo` (NOTE: crates.io still 0.4.4 — see below)
 ```
 
-> **Current release: `0.5.21`.** The whole line publishes in lockstep at the
-> workspace version, so `cargo add mnemo-core` resolves 0.5.21 and
-> `cargo install mnemo-mcp-server` gives a `mnemo` binary that matches the
-> libraries. Two guards keep this honest instead of stale: the test
+> **Current release: `0.5.21`.** Most of the line publishes in lockstep at the
+> workspace version, so `cargo add mnemo-core` / `mnemo-compliance` / `mnemo-mcp`
+> resolve 0.5.21. **`mnemo-mcp-server` is the exception — it is currently behind at
+> `0.4.4`** because the publish walk is blocked on a rejected registry token
+> ([#140](https://github.com/sattyamjjain/mnemo/issues/140)), so `cargo install
+> mnemo-mcp-server` gives the 2026-05-18 binary, not 0.5.21. Until the token is
+> rotated, build the current server from source —
+> `cargo build --release -p mnemo-mcp-server` (runs as `mnemo`). Two guards keep
+> this honest instead of stale: the test
 > [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
-> fails if this number drifts from the workspace `[workspace.package].version`,
+> fails if the stated release drifts from the workspace `[workspace.package].version`,
 > and [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) fails if
-> crates.io drifts from the workspace.
+> crates.io drifts from the workspace — including the `mnemo-mcp-server` parity gap
+> above, which it flags today.
 
 > **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
 > name on crates.io is an unrelated project. Install `mnemo-core` +

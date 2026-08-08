@@ -69,12 +69,14 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: AgentAuditKit MCP security scan
-        # Pinned to v0.3.60 (latest released tag, 2026-07-27; 271 rules). Bumped
-        # from v0.3.52 after re-deriving the .agent-audit-kit.yml suppression
-        # baseline against the new rule set — the 9 added rules surface only
-        # new medium/high/low findings, no new critical, so the `fail-on: critical`
-        # gate still passes. Bump deliberately after reviewing the tool's CHANGELOG.
-        uses: sattyamjjain/agent-audit-kit@v0.3.60
+        # Pinned to v0.3.68 (latest released tag). This jumps straight past the
+        # stale Dependabot PR #132 (0.3.60 -> 0.3.62) to current. The gate stays
+        # `fail-on: critical` with the .agent-audit-kit.yml suppression baseline
+        # (e.g. AAK-AGENT-001 CLAUDE.md false positive); if a rule added between
+        # 0.3.60 and 0.3.68 surfaces a NEW critical, this job fails loudly and the
+        # baseline must be re-derived — that is the intended signal, not a reason
+        # to unpin. Bump deliberately after reviewing the tool's CHANGELOG.
+        uses: sattyamjjain/agent-audit-kit@v0.3.68
         with:
           path: .
           config: .agent-audit-kit.yml

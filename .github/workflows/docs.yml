@@ -1,0 +1,77 @@
+name: Docs
+
+# Build the mdBook under docs/ and publish it to GitHub Pages on every push to
+# main. The book was previously only readable by cloning the repo; this puts it
+# at https://sattyamjjain.github.io/mnemo/. A dead internal link fails the build
+# (scripts/check_docs_links.py) before anything is deployed, so a 404 can never
+# reach the published site.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/check_docs_links.py"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/check_docs_links.py"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# Least privilege + the id-token/pages grants the Pages deploy needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One Pages deployment at a time; do not cancel an in-flight publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  MDBOOK_VERSION: "0.5.4"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Internal-link fence: a dead relative link in docs/src fails here, before
+      # build or deploy. External links are out of scope on purpose (offline,
+      # deterministic).
+      - name: Check internal docs links
+        run: python3 scripts/check_docs_links.py
+
+      - name: Install mdBook ${{ env.MDBOOK_VERSION }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL "$url" | tar -xz -C /usr/local/bin
+          mdbook --version
+
+      - name: Build book
+        run: mdbook build docs
+
+      # docs/book because book.toml sets build-dir = "book" relative to docs/.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/book
+
+  # Deploy only from main; PRs run build + link check but do not publish.
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
