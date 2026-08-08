@@ -1,5 +1,14 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-08-08 for the **v0.5.22** cut — the **`rmcp` 2.2 → 3.0** MCP-transport
+> major. mnemo's own public API, wire format, and storage are **unchanged**: the break
+> was internal, three `ServerHandler` methods in `mnemo-mcp` adapting to rmcp 3.0's new
+> `CallToolResponse` / `ReadResourceResponse` enums and `ListToolsResult` caching fields
+> (all synchronous calls resolve to `Complete`, tool listing stays uncached). Consumers
+> embedding `MnemoServer` should note the MCP runtime dep is now a new major. Version pins
+> move 0.5.21 → 0.5.22 in lockstep. crates.io is **unchanged** — publishing is still
+> blocked on the `CARGO_REGISTRY_TOKEN` rotation (#140), so this cut lives in-tree only.
+>
 > Updated 2026-07-31 for the **v0.5.21** cut — a **release-reconciliation + docs**
 > change with **no public API, wire, or storage change**. It records the eight
 > `crates.io`-published-but-not-version-tracked crates (admin/baseline/cma/codemode/
