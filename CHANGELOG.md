@@ -312,8 +312,10 @@ router still accepts. No behaviour change: every mnemo tool call and resource re
   at `Default` so tool listing keeps its pre-3.0 uncached semantics.
 - Docs' `rmcp 2.2` version claims updated to `rmcp 3.0` (fenced by
   `docs_rmcp_version_matches_workspace`). Full workspace + all targets build; the `mnemo-mcp` test
-  suite (32 tests), clippy `-D warnings`, and `cargo fmt` are green. The workspace version is
-  **not** bumped here — that happens to `0.5.22` when this lands.
+  suite (32 tests), clippy `-D warnings`, and `cargo fmt` are green. Landing this bumped the
+  workspace to **0.5.22** (a real code change, unlike the docs/publish fixes above) — workspace
+  version and the internal dep pins moved 0.5.21 -> 0.5.22, and the README `Current release:` line
+  with it. (crates.io itself is unchanged: publishing is still blocked on the token, #140.)
 
 ## [0.5.21] — 2026-07-31
 

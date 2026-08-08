@@ -119,7 +119,7 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo` (NOTE: crates.io still 0.4.4 — see below)
 ```
 
-> **Current release: `0.5.21`.** Most of the line publishes in lockstep at the
+> **Current release: `0.5.22`.** Most of the line publishes in lockstep at the
 > workspace version, so `cargo add mnemo-core` / `mnemo-compliance` / `mnemo-mcp`
 > resolve 0.5.21. **`mnemo-mcp-server` is the exception — it is currently behind at
 > `0.4.4`** because the publish walk is blocked on a rejected registry token
