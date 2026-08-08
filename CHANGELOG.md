@@ -225,9 +225,12 @@ libraries it embeds. Root cause: the CLI crate depends on `mnemo-embeddings-benc
 which `cargo publish` refuses, so mnemo-mcp-server could never enter the publish walk. Fixed at
 the source, with a guard so the drift is a failing check rather than a silent regression.
 
-- `bench/embeddings` is now a published crate (version-pinned in the workspace), and both it and
-  mnemo-mcp-server are in the `release-crate.yml` publish walk (topological order: embeddings-bench
-  after core, mcp-server last). `cargo publish --dry-run` verify-builds both at 0.5.21.
+- `bench/embeddings` is now a *publishable* crate (no longer `publish = false`; version-pinned in
+  the workspace) and, with mnemo-mcp-server, is in the `release-crate.yml` publish walk (topological
+  order: embeddings-bench after core, mcp-server last). `cargo publish --dry-run` verify-builds both
+  at 0.5.21. It is **not yet on crates.io** — like mnemo-mcp-server, its actual publish is blocked on
+  the rejected token below. (This entry originally read "is now a published crate", which was wrong:
+  the crate was made publishable, not published.)
 - `scripts/check_version_drift.sh` gained a hard, non-baselined parity check that fails when
   published mnemo-mcp-server trails published mnemo-core by more than one patch. It is red now, on
   purpose (the binary really is behind), and goes green the moment the server publishes.
@@ -249,6 +252,48 @@ the source, with a guard so the drift is a failing check rather than a silent re
   semantic-recall `vector_only` MRR 0.805 from the 2026-06-22 run, while the 2026-08-03 refresh
   reports 0.806; recall@1 (0.739) is identical across both. The 0.001 gap is inside the bench's
   own sub-0.05 tie threshold and is noted in the index rather than papered over.
+
+### Fixed (2026-08-08) - the README claimed a lockstep publish that is not happening
+
+mnemo-mcp-server has been on 0.4.4 since 18 May while the libraries moved 17 patch releases ahead,
+and the README said the line publishes in lockstep. It does not, and no code change makes it: the
+publish walk is blocked on a registry token crates.io rejects (403 from `/api/v1/me`), the same
+blocker recorded since the 2026-08-05 entry. The token cannot be rotated from the codebase, so
+instead of leaving the README asserting something false for another day, the claim now states the
+truth.
+
+- The README lockstep sentence now says mnemo-mcp-server is behind at 0.4.4, `cargo install`
+  gives the May binary, and you should build from source (`cargo build --release -p
+  mnemo-mcp-server`) until the token is rotated. Tracking issue: #140.
+- The 2026-08-06 entry's "`bench/embeddings` is now a published crate" was itself wrong — the
+  crate was made *publishable* (not `publish = false`), not published; it is not on crates.io
+  either, blocked on the same token. Corrected in place.
+- The parity guard in `scripts/check_version_drift.sh` still fails on the mnemo-mcp-server-vs-core
+  gap; it stays red until the server actually publishes, which is the point.
+
+### Added (2026-08-08) - the mdBook docs are deployed instead of clone-only
+
+- `docs/` was 73 files of mdBook readable only by cloning the repo — the compliance docs a
+  regulated buyer needs were unreachable. `.github/workflows/docs.yml` now builds the book and
+  deploys it to GitHub Pages on every push to `main`: <https://sattyamjjain.github.io/mnemo/>.
+  Pages is enabled; the URL is in the README, `Cargo.toml` `documentation`, and the repo About.
+- A dead internal link now fails the build before deploy (`scripts/check_docs_links.py`). It
+  immediately caught two (`concepts/conflict-resolution.md`, `dpdpa-mannsetu.md`), now fixed.
+  `book.toml` also pointed `git-repository-url` at a non-existent `mnemo-ai/mnemo` org (fixed to
+  `sattyamjjain/mnemo`), and its mdBook-0.5-incompatible `multilingual` key was removed so the
+  book actually builds.
+
+### Changed (2026-08-08) - dependency bumps
+
+- Batched the three patch Dependabot bumps: #131 `@modelcontextprotocol/sdk`, #133 `@swc/core`,
+  #134 `@types/node` (all `sdks/typescript`).
+- Bumped `agent-audit-kit` straight to the current `v0.3.68` in `security.yml`, past the stale
+  Dependabot #132 (0.3.60 -> 0.3.62), which was closed.
+- Bumped `serial_test` 3 -> 4 (#135, closed in favour of this branch). The 4.0 break is
+  internal/MSRV; the `#[serial_test::serial]` usage in `mnemo-admin` tests is unchanged.
+- `rmcp` 2.2 -> 3.0 (#136) is a transport-crate major (removed deprecated v3 APIs, DiscoverResult
+  and OAuth-error changes) affecting ~150 call sites in `mnemo-mcp`; it is being migrated on its
+  own branch and is intentionally **not** part of this change.
 
 ## [0.5.21] — 2026-07-31
 

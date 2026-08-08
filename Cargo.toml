@@ -54,6 +54,7 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"
 homepage = "https://github.com/sattyamjjain/mnemo"
+documentation = "https://sattyamjjain.github.io/mnemo/"
 description = "MCP-native memory database for AI agents"
 
 [workspace.dependencies]

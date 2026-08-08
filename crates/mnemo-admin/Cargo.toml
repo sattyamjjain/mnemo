@@ -27,4 +27,7 @@ tempfile = { workspace = true }
 # init the C library does inside `Connection::open`; running two of
 # them in parallel on Ubuntu CI surfaces "Current transaction is
 # aborted". `#[serial]` forces sequential execution per test.
-serial_test = "3"
+# v0.5.x — bumped 3 -> 4 (Dependabot #135). The 4.0 break is an internal/MSRV
+# change; the `#[serial_test::serial]` attribute used in tests/admin_test.rs is
+# unchanged, so there are no call sites to migrate.
+serial_test = "4"

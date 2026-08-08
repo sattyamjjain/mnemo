@@ -67,7 +67,7 @@ write the operator can replay.
 The adapter does **not** pre-resolve conflicts at write time. When
 two participants `write` overlapping content within 60 seconds, both
 records land in Mnemo and the existing
-[`ResolutionStrategy::EvidenceWeighted`](../concepts/conflict-resolution.md)
+`ResolutionStrategy::EvidenceWeighted`
 scorer ranks them at recall time. Pre-resolving at write time would
 amount to silently dropping one participant's contribution — the
 exact failure mode shared memory is supposed to avoid.
