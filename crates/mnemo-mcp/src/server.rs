@@ -1446,10 +1446,12 @@ impl ServerHandler for MnemoServer {
             .into_iter()
             .filter(|t| visible.contains(t.name.as_ref()))
             .collect();
+        // rmcp 3.0: `tools` is now `Option<Vec<Tool>>` and the struct gained
+        // caching fields (cache_scope / result_type / ttl_ms). `..Default::default()`
+        // leaves those unset so tool-listing keeps its pre-3.0 (uncached) semantics.
         Ok(rmcp::model::ListToolsResult {
             tools,
-            meta: None,
-            next_cursor: None,
+            ..Default::default()
         })
     }
 
@@ -1462,7 +1464,11 @@ impl ServerHandler for MnemoServer {
         &self,
         request: rmcp::model::CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<rmcp::model::CallToolResult, McpError> {
+    ) -> Result<rmcp::model::CallToolResponse, McpError> {
+        // rmcp 3.0: `call_tool` returns the `CallToolResponse` enum
+        // (Complete / InputRequired / Task). The tool router already yields that
+        // enum, so we pass its result through unchanged — every mnemo tool call is
+        // synchronous, so it resolves to `CallToolResponse::Complete`.
         let name = request.name.to_string();
         if let Some(reason) = self.tool_call_denial(&name) {
             return Err(McpError::new(
@@ -1521,7 +1527,7 @@ impl ServerHandler for MnemoServer {
         &self,
         request: rmcp::model::ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<rmcp::model::ReadResourceResult, McpError> {
+    ) -> Result<rmcp::model::ReadResourceResponse, McpError> {
         self.touch_activity();
         let uri = request.uri.clone();
         let Some(id_str) = uri.strip_prefix(MEMORY_RESOURCE_SCHEME) else {
@@ -1545,7 +1551,11 @@ impl ServerHandler for MnemoServer {
             text: record.content,
             meta: None,
         };
-        Ok(rmcp::model::ReadResourceResult::new(vec![contents]))
+        // rmcp 3.0: `read_resource` returns the `ReadResourceResponse` enum. The
+        // read is synchronous and always completes, so wrap in `Complete`.
+        Ok(rmcp::model::ReadResourceResponse::Complete(
+            rmcp::model::ReadResourceResult::new(vec![contents]),
+        ))
     }
 
     fn get_info(&self) -> ServerInfo {

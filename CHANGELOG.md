@@ -293,7 +293,27 @@ truth.
   internal/MSRV; the `#[serial_test::serial]` usage in `mnemo-admin` tests is unchanged.
 - `rmcp` 2.2 -> 3.0 (#136) is a transport-crate major (removed deprecated v3 APIs, DiscoverResult
   and OAuth-error changes) affecting ~150 call sites in `mnemo-mcp`; it is being migrated on its
-  own branch and is intentionally **not** part of this change.
+  own branch and is intentionally **not** part of this change. See the rmcp entry below for the
+  migration itself.
+
+### Changed (2026-08-08) - rmcp 2.2 -> 3.0 transport migration (own branch)
+
+The MCP transport crate (`rmcp`) was bumped 2.2 -> 3.0 (resolves 3.1.2). Despite ~150 `rmcp`
+references in `mnemo-mcp`, the actual break surface is three `ServerHandler` methods in
+`server.rs` — the other references are internal `CallToolResult` / content-block uses the tool
+router still accepts. No behaviour change: every mnemo tool call and resource read is synchronous.
+
+- `call_tool` now returns the new `CallToolResponse` enum (`Complete` / `InputRequired` / `Task`).
+  The tool router already yields it, so the result passes through unchanged and resolves to
+  `Complete` for mnemo's synchronous tools.
+- `read_resource` now returns `ReadResourceResponse`; the read is wrapped in
+  `ReadResourceResponse::Complete(..)`.
+- `ListToolsResult` gained caching fields (`cache_scope` / `result_type` / `ttl_ms`); they are left
+  at `Default` so tool listing keeps its pre-3.0 uncached semantics.
+- Docs' `rmcp 2.2` version claims updated to `rmcp 3.0` (fenced by
+  `docs_rmcp_version_matches_workspace`). Full workspace + all targets build; the `mnemo-mcp` test
+  suite (32 tests), clippy `-D warnings`, and `cargo fmt` are green. The workspace version is
+  **not** bumped here — that happens to `0.5.22` when this lands.
 
 ## [0.5.21] — 2026-07-31
 
