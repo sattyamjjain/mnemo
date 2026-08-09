@@ -121,16 +121,19 @@ cargo install mnemo-mcp-server          # server binary → `mnemo` (NOTE: crate
 
 > **Current release: `0.5.22`.** Most of the line publishes in lockstep at the
 > workspace version, so `cargo add mnemo-core` / `mnemo-compliance` / `mnemo-mcp`
-> resolve 0.5.21. **`mnemo-mcp-server` is the exception — it is currently behind at
-> `0.4.4`** because the publish walk is blocked on a rejected registry token
+> resolve 0.5.22. **`mnemo-mcp-server` is the exception — it is currently behind at
+> `0.4.4`** because the publish walk cannot finish: the server depends on
+> `mnemo-embeddings-bench`, a new crate that is not on crates.io yet
 > ([#140](https://github.com/sattyamjjain/mnemo/issues/140)), so `cargo install
-> mnemo-mcp-server` gives the 2026-05-18 binary, not 0.5.21. Until the token is
-> rotated, build the current server from source —
+> mnemo-mcp-server` gives the 2026-05-18 binary, not 0.5.22. Until it publishes,
+> build the current server from source —
 > `cargo build --release -p mnemo-mcp-server` (runs as `mnemo`). Two guards keep
 > this honest instead of stale: the test
 > [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
-> fails if the stated release drifts from the workspace `[workspace.package].version`,
-> and [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) fails if
+> fails if the stated release — or any bare current-band `0.5.2x` release literal
+> anywhere in this README (the `v`-prefixed feature history is exempt) — drifts
+> from the workspace `[workspace.package].version`, and
+> [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) fails if
 > crates.io drifts from the workspace — including the `mnemo-mcp-server` parity gap
 > above, which it flags today.
 
