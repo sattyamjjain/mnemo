@@ -317,6 +317,21 @@ router still accepts. No behaviour change: every mnemo tool call and resource re
   version and the internal dep pins moved 0.5.21 -> 0.5.22, and the README `Current release:` line
   with it. (crates.io itself is unchanged: publishing is still blocked on the token, #140.)
 
+### Docs (2026-08-09) - stated exactly what the Python SDK 0.5.12 is wire-compatible with
+
+The README's Python "Version line" note called the 0.5.12-vs-0.5.22 gap "expected, not skew" but
+left the actual compatibility implicit. Made it explicit for both surfaces of the SDK, rather than
+cutting a 0.5.13 PyPI release (publishing is an operator action):
+
+- **In-process `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is*
+  `mnemo-core` 0.5.12 — a month behind the 0.5.22 workspace; it lacks engine changes from
+  0.5.13–0.5.22 (for example, the v0.5.17 forged-reasoning recall defense).
+- **The MCP adapters** (`agno` / `camel` / `agno-memory`) do not embed a server — they spawn the
+  external `mnemo mcp-server` binary and bind to its MCP **tool surface** (the 21 registered tools),
+  not a specific `mnemo-core` version. So they are wire-compatible with any 0.5.x `mnemo-mcp-server`
+  (build 0.5.22 from source, #140). The rmcp 2.2 → 3.0 transport migration (0.5.22) and the v0.5.20
+  tool-catalog attestation are properties of that server binary, not the SDK.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
