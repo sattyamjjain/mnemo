@@ -16,6 +16,17 @@ name: cargo-publish
 #   With the check, the workflow is idempotent: re-running on the same
 #   commit is safe.
 #
+# Release gate — a crates.io publish requires a matching git tag
+#   crates.io is append-only, so every published version should be
+#   bisectable back to a commit. The 0.5.22 line shipped from THIS
+#   push-to-main path with no `v0.5.22` tag (release-crate.yml, the
+#   tag-triggered path, never ran — which is also why the tag-only
+#   crates mnemo-embeddings-bench + mnemo-mcp-server never published).
+#   The plan job now refuses to publish a version that has no `v<ver>`
+#   tag on the remote. It gates ONLY when something would actually
+#   publish, so a doc-only push stays a clean no-op. Push the tag first:
+#     git tag -a vX.Y.Z -m "mnemo vX.Y.Z" <commit> && git push origin vX.Y.Z
+#
 # Prerequisites
 #   - CARGO_REGISTRY_TOKEN repo secret (set 2026-04-25; rotates per
 #     normal token-rotation cadence).
@@ -95,7 +106,36 @@ jobs:
               exit 1
             fi
           done
-          echo "to_publish=${to_publish# }" >> "$GITHUB_OUTPUT"
+          to_publish="${to_publish# }"
+
+          # --- Release gate: no crates.io publish without a matching tag -------
+          # A doc-only push has an empty queue and must stay a clean no-op, so
+          # gate ONLY when something would actually publish. crates.io is
+          # append-only: an untagged publish leaves a version nobody can bisect
+          # to (this is how 0.5.22 shipped tagless). `git ls-remote` checks the
+          # remote directly, so it works with the default shallow checkout.
+          if [ -n "$to_publish" ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v${ver}" >/dev/null 2>&1; then
+              echo "release gate: tag v${ver} exists on the remote — publish allowed"
+            else
+              echo "::error::release gate: [${to_publish}] would publish ${ver} to crates.io, but no matching tag v${ver} exists. crates.io is permanent; an untagged publish is unbisectable (this is how 0.5.22 shipped tagless). Create and push the tag first, then re-run."
+              {
+                echo "## ❌ Release gate — missing tag for ${ver}"
+                echo
+                echo "Queued to publish: \`${to_publish}\` — but there is no \`v${ver}\` git tag on the remote."
+                echo "crates.io publishes are permanent; an untagged publish cannot be bisected back to a commit."
+                echo
+                echo "**Fix:**"
+                echo '```'
+                echo "git tag -a v${ver} -m \"mnemo v${ver}\" <commit>"
+                echo "git push origin v${ver}"
+                echo '```'
+                echo "Then re-run this workflow."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          fi
+          echo "to_publish=${to_publish}" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: plan

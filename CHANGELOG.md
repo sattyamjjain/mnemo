@@ -343,6 +343,76 @@ authenticates but not that it can create a crate.
   publish is the authority (a genuinely dead token fails at the first upload with a specific error).
   This is what stranded the `v0.5.22` walk at the preflight even though the token can publish.
 
+### Fixed (2026-08-09) - a crates.io publish can no longer happen without a matching tag
+
+The 0.5.22 library line published to crates.io from the **push-to-main** path (`cargo-publish.yml`)
+with **no `v0.5.22` git tag** — so a crate on crates.io could not be bisected back to a commit, and
+the tag-triggered `release-crate.yml` (the ONLY path that publishes `mnemo-embeddings-bench` +
+`mnemo-mcp-server`) never ran, leaving those two stranded. `cargo-publish.yml` now refuses to
+publish a version with no `v<ver>` tag on the remote:
+
+- The gate fires **only when the publish queue is non-empty** — a doc-only push has nothing to
+  publish and stays a clean no-op.
+- It checks the remote directly with `git ls-remote --tags`, so it works with the default shallow
+  checkout (no full-history fetch).
+- Verified against the live remote: `v0.5.21` (present) → allowed, `v0.5.22` (absent) → blocked.
+
+The `v0.5.21` and `v0.5.22` tags + GitHub Releases are reconciled as a release step (the 0.5.21
+changelog already apologised for this exact untagged-publish defect class; this closes it).
+
+### Docs (2026-08-09) - stated exactly what the Python SDK 0.5.12 is wire-compatible with
+
+The README's Python "Version line" note called the 0.5.12-vs-0.5.22 gap "expected, not skew" but
+left the actual compatibility implicit. Made it explicit for both surfaces of the SDK, rather than
+cutting a 0.5.13 PyPI release (publishing is an operator action):
+
+- **In-process `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is*
+  `mnemo-core` 0.5.12 — a month behind the 0.5.22 workspace; it lacks engine changes from
+  0.5.13–0.5.22 (for example, the v0.5.17 forged-reasoning recall defense).
+- **The MCP adapters** (`agno` / `camel` / `agno-memory`) do not embed a server — they spawn the
+  external `mnemo mcp-server` binary and bind to its MCP **tool surface** (the 21 registered tools),
+  not a specific `mnemo-core` version. So they are wire-compatible with any 0.5.x `mnemo-mcp-server`
+  (build 0.5.22 from source, #140). The rmcp 2.2 → 3.0 transport migration (0.5.22) and the v0.5.20
+  tool-catalog attestation are properties of that server binary, not the SDK.
+
+### Fixed (2026-08-09) - the version-drift guard was blind to npm, and the npm publish failed silently on a bad token
+
+`scripts/check_version_drift.sh` watched crates.io but not npm, so
+`sdks/typescript/package.json` drifting ahead of the published `@mndfreek/mnemo-sdk` went
+unnoticed — it is on **0.4.8** while npm is stuck at **0.4.4**. Separately, `npm-publish.yml`
+failed on every push to main since the 0.4.4 release: each run built the tarball, passed tests,
+type-checked, and signed a provenance statement to the public transparency log — then the final
+`npm publish` PUT died with a bare `404 Not Found` (npm's response for a scoped package when the
+token is invalid or lacks write access).
+
+- **Drift guard.** Added an npm block to `check_version_drift.sh` with the same baselined semantics
+  as the crates.io check: GREEN on the acknowledged standing gap (`package.json` 0.4.8 vs npm
+  0.4.4), RED only on a NEW divergence — a further `package.json` bump without an npm publish. A
+  positive-control run confirmed both paths. The baseline (`version-drift-baseline.json`) now
+  records the npm state, and its stale crates entries were refreshed 0.5.21 → 0.5.22 to match
+  crates.io.
+- **Publish preflight.** `npm-publish.yml` now validates `NPM_TOKEN` with `npm whoami` BEFORE
+  building or signing anything, failing fast with the operator fix (rotate the token) instead of the
+  cryptic post-provenance 404. The token itself is an operator action; no code change publishes the
+  stranded 0.4.5–0.4.8 versions.
+### Fixed (2026-08-09) - the README contradicted itself on the current release, and the fence could not see it
+
+The release/install block stated crates `resolve 0.5.21` and that `cargo install mnemo-mcp-server`
+gives the binary "not 0.5.21", while its own `Current release:` heading — and crates.io — were both
+**0.5.22**. The existing `readme_crates_version_matches_workspace.rs` pinned only the single
+`Current release:` line, so two stale `0.5.21` literals three sentences away passed unnoticed.
+
+- **Prose.** Both literals corrected to `0.5.22`. The same block blamed the stranded
+  `mnemo-mcp-server` on "a rejected registry token"; that is disproven — nine library crates
+  published 0.5.22 on 2026-08-08, so the token authenticates. Reworded to the real cause: the server
+  depends on `mnemo-embeddings-bench`, a new crate not yet on crates.io, so the publish walk cannot
+  finish (#140).
+- **Fence.** Extended the test with a band guard that fails on any *bare* `0.5.2x` release literal
+  anywhere in the README that is not the workspace version. `v`-prefixed feature history (`wired in
+  v0.5.20`, `New in v0.4.0`) is exempt — those are true statements about the past and must not be
+  rewritten when the workspace climbs into their patch band. A positive-control test proves the fence
+  fires on a stale bare literal and skips the `v`-prefixed form, so it cannot rot into a vacuous pass.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
