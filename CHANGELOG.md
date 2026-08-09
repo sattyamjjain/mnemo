@@ -337,6 +337,23 @@ token is invalid or lacks write access).
   building or signing anything, failing fast with the operator fix (rotate the token) instead of the
   cryptic post-provenance 404. The token itself is an operator action; no code change publishes the
   stranded 0.4.5–0.4.8 versions.
+### Fixed (2026-08-09) - the README contradicted itself on the current release, and the fence could not see it
+
+The release/install block stated crates `resolve 0.5.21` and that `cargo install mnemo-mcp-server`
+gives the binary "not 0.5.21", while its own `Current release:` heading — and crates.io — were both
+**0.5.22**. The existing `readme_crates_version_matches_workspace.rs` pinned only the single
+`Current release:` line, so two stale `0.5.21` literals three sentences away passed unnoticed.
+
+- **Prose.** Both literals corrected to `0.5.22`. The same block blamed the stranded
+  `mnemo-mcp-server` on "a rejected registry token"; that is disproven — nine library crates
+  published 0.5.22 on 2026-08-08, so the token authenticates. Reworded to the real cause: the server
+  depends on `mnemo-embeddings-bench`, a new crate not yet on crates.io, so the publish walk cannot
+  finish (#140).
+- **Fence.** Extended the test with a band guard that fails on any *bare* `0.5.2x` release literal
+  anywhere in the README that is not the workspace version. `v`-prefixed feature history (`wired in
+  v0.5.20`, `New in v0.4.0`) is exempt — those are true statements about the past and must not be
+  rewritten when the workspace climbs into their patch band. A positive-control test proves the fence
+  fires on a stale bare literal and skips the `v`-prefixed form, so it cannot rot into a vacuous pass.
 
 ## [0.5.21] — 2026-07-31
 
