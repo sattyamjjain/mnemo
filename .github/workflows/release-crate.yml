@@ -23,9 +23,13 @@ name: release-crate
 # with "403 Forbidden: authentication failed" — an EXPIRED CARGO_REGISTRY_TOKEN
 # (last rotated 2026-04-25, ~90-day expiry ≈ 2026-07-24; v0.5.16 published
 # 2026-07-24 was the last that beat it). The timeout / 5xx-retry commits treated
-# it as transient; it is not. The token preflight below now fails fast and loud
-# with the operator action, instead of burning ~10 min to rediscover the 403.
-# This ships the moment the operator rotates the token.
+# it as transient; it is not. UPDATE (2026-08-09): the token preflight below no
+# longer HARD-fails on a /api/v1/me non-200 — that false-blocked a working
+# GRANULAR token (the 0.5.22 libraries shipped 2026-08-08 with a token that
+# publishes but 403s on /me, which has no account-read scope). It now hard-fails
+# only on a MISSING secret; a /me non-200 is advisory and the real publish is the
+# authority. This ships the moment the operator uses a token that can publish and
+# carries publish-new (to create the still-new mnemo-embeddings-bench crate).
 #
 # `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
 # (server.rs uses `mnemo_attention_state::AttentionStateStore`); it was
@@ -148,7 +152,7 @@ jobs:
       # failure was transient. It is not: a bad token is an OPERATOR action, not
       # a bug to work around. So validate the token up front, before building
       # anything, and fail with an explicit, actionable message + run summary.
-      - name: Verify CARGO_REGISTRY_TOKEN is present and accepted by crates.io
+      - name: Preflight CARGO_REGISTRY_TOKEN (missing = fail; /api/v1/me = advisory)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -171,15 +175,30 @@ jobs:
           if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
             fail "CARGO_REGISTRY_TOKEN is MISSING (the repo secret is empty)."
           fi
-          # Validate WITHOUT publishing: crates.io GET /api/v1/me returns 200 for
-          # a valid token and 403 for a missing/expired/revoked one.
+          # /api/v1/me returns 200 for a CLASSIC full-access token. A GRANULAR
+          # (scoped) publish token has no account-read scope and returns 403 here
+          # even though it can `cargo publish` perfectly well — the 0.5.22 libraries
+          # were published on 2026-08-08 by exactly such a token (via
+          # cargo-publish.yml, which has no /me check). So a non-200 is NOT a
+          # reliable "token is dead" signal: hard-failing on it false-blocked this
+          # very walk. Hard-fail only on a MISSING secret (above); treat /me as
+          # ADVISORY otherwise and let the real publish be the authority — a
+          # genuinely expired/unauthorized token fails at the first actual upload
+          # with a specific auth error (and a new crate additionally needs
+          # publish-new), which the walk already reports.
           code=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
             -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
             https://crates.io/api/v1/me || echo 000)
-          if [ "$code" != "200" ]; then
-            fail "CARGO_REGISTRY_TOKEN is present but crates.io rejected it (HTTP ${code} from /api/v1/me; 403 = expired or revoked). This is the exact failure that stranded v0.5.17 / v0.5.18 / v0.5.20 mid-upload."
+          if [ "$code" = "200" ]; then
+            echo "crates.io token accepted (whoami -> 200; full-access). Proceeding to publish."
+          else
+            echo "::warning::CARGO_REGISTRY_TOKEN did not pass /api/v1/me (HTTP ${code}). This is EXPECTED for a granular/scoped publish token (no account-read scope) and does NOT mean it cannot publish — the 0.5.22 libraries shipped 2026-08-08 with such a token. Proceeding; the real publish below is the authority."
+            {
+              echo "## ⚠️ Token did not pass /api/v1/me (HTTP ${code}) — proceeding anyway"
+              echo
+              echo "A granular/scoped crates.io token returns 403 on \`/api/v1/me\` (no account-read scope) yet still publishes; the 0.5.22 libraries shipped 2026-08-08 with such a token. A non-200 here is advisory, not fatal — the real publish below is the authority. A genuinely expired/unauthorized token fails at the first actual upload with a specific error (and a new crate additionally needs the \`publish-new\` scope; see the new-crate preflight)."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "crates.io token accepted (whoami → 200). Proceeding to publish."
 
       # --- New-crate preflight (publish-new scope) --------------------------
       # The token /me check above proves the token AUTHENTICATES, not that it is

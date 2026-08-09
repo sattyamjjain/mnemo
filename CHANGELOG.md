@@ -335,6 +335,13 @@ authenticates but not that it can create a crate.
   publish loop, so they cannot disagree about what the walk contains.
 - The mid-walk auth-failure message now distinguishes a missing `publish-new` scope (new crate)
   from an expired/revoked token.
+- **Softened the token preflight.** It previously HARD-failed when `/api/v1/me` returned non-200,
+  which false-blocks a valid **granular/scoped** crates.io token — such a token has no
+  account-read scope and 403s on `/me` yet publishes fine (the 0.5.22 libraries shipped
+  2026-08-08 with exactly such a token, via `cargo-publish.yml`, which has no `/me` check). The
+  preflight now hard-fails only on a **missing** secret; a `/me` non-200 is a warning and the real
+  publish is the authority (a genuinely dead token fails at the first upload with a specific error).
+  This is what stranded the `v0.5.22` walk at the preflight even though the token can publish.
 
 ## [0.5.21] — 2026-07-31
 
