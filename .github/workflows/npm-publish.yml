@@ -74,6 +74,45 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
+      # --- Token preflight (fail fast, fail loud) ---------------------------
+      # 0.4.5–0.4.8 never reached npm even though package.json advanced: every
+      # push built the tarball, ran the tests, type-checked, AND signed a
+      # provenance statement to the public transparency log — then the final
+      # `npm publish` PUT died with a bare `404 Not Found`. For a SCOPED package
+      # that already exists, npm returns 404 (not 401/403) when the token is
+      # missing/expired or lacks write on the scope, to avoid disclosing the
+      # package to unauthorized callers. A bad token is an OPERATOR action, not a
+      # transient error — validate it up front, before building or signing
+      # anything, with an explicit, actionable message.
+      - name: Verify NPM_TOKEN is present and accepted by npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          fail() {
+            echo "::error::$1"
+            {
+              echo "## ❌ npm publish aborted — token problem"
+              echo
+              echo "$1"
+              echo
+              echo "**Operator action required** (no code change fixes this):"
+              echo "1. Create a granular access token at <https://www.npmjs.com/settings/~/tokens> with **write** access to \`@mndfreek/*\` (2FA bypass for automation)."
+              echo "2. Update the repo secret \`NPM_TOKEN\` (Settings → Secrets and variables → Actions)."
+              echo "3. Re-run this workflow (or push to main again)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            fail "NPM_TOKEN is MISSING (the repo secret is empty)."
+          fi
+          # `npm whoami` returns the username for a valid token and errors for a
+          # missing/expired/revoked one — validating WITHOUT publishing.
+          if ! who=$(npm whoami --registry=https://registry.npmjs.org/ 2>&1); then
+            fail "NPM_TOKEN is present but npm rejected it (npm whoami -> ${who}). This is the exact failure that stranded 0.4.5-0.4.8: a 404 on the scoped-package PUT after the tarball was built and provenance signed."
+          fi
+          echo "npm token accepted (whoami -> ${who}). Proceeding to publish."
+
       - name: Install
         working-directory: sdks/typescript
         run: npm ci

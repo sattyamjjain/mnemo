@@ -88,11 +88,35 @@ except Exception:
 "
 done
 
+# npm registry state for the TypeScript SDK (sdks/typescript). crates.io was the
+# only registry this guard watched, so a package.json bumped past what is on npm
+# went unnoticed — exactly today's state: package.json is ahead while npm's
+# @mndfreek/mnemo-sdk has trailed since the npm publish started failing on a bad
+# NPM_TOKEN (operator action; see .github/workflows/npm-publish.yml). npm is
+# guarded the SAME baselined way as crates.io: GREEN on the acknowledged standing
+# gap, RED only on a NEW divergence (package.json bumped past the baseline
+# without an npm publish).
+ts_pkg="${REPO_ROOT}/sdks/typescript/package.json"
+npm_name=""; npm_src=""; npm_reg=""
+if [[ -f "$ts_pkg" ]]; then
+  read -r npm_name npm_src < <(python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+print(d.get("name", ""), d.get("version", ""))' "$ts_pkg" 2>/dev/null || echo " ")
+  if [[ -n "$npm_name" ]]; then
+    npm_reg="$(curl -sSf -A "$UA" "https://registry.npmjs.org/${npm_name}" 2>/dev/null | python3 -c 'import sys,json
+try:
+    print(json.load(sys.stdin).get("dist-tags", {}).get("latest", ""))
+except Exception:
+    print("")' || echo "")"
+  fi
+fi
+
 # All the classification / baseline logic lives in one python pass so the semver
 # comparison and JSON handling are not re-implemented in portable bash. The
-# registry data is passed via an env var (NOT a pipe) because the heredoc below
+# registry data is passed via env vars (NOT a pipe) because the heredoc below
 # already occupies python's stdin as the program source.
-REGISTRY_TSV="$registry_tsv" python3 - "$workspace_version" "$BASELINE" "$UPDATE_BASELINE" <<'PY'
+REGISTRY_TSV="$registry_tsv" NPM_NAME="$npm_name" NPM_SRC="$npm_src" NPM_REG="$npm_reg" \
+  python3 - "$workspace_version" "$BASELINE" "$UPDATE_BASELINE" <<'PY'
 import sys, json, os, datetime
 
 workspace_version = sys.argv[1]
@@ -147,12 +171,23 @@ if update_baseline:
             "falls behind, or the workspace version is advanced past "
             "'workspace_version' below without publishing (widening the gap). The "
             "standing drift is the tag-gated publish being blocked on rotating an "
-            "expired CARGO_REGISTRY_TOKEN (operator action; see CHANGELOG). "
+            "expired CARGO_REGISTRY_TOKEN (operator action; see CHANGELOG). The 'npm' "
+            "block guards the TypeScript SDK (sdks/typescript/package.json vs the npm "
+            "registry) the same baselined way. "
             "Refresh after a real publish: bash scripts/check_version_drift.sh "
             "--update-baseline"
         ),
         "workspace_version": workspace_version,
         "crates": dict(sorted(crates.items())),
+        "npm": (
+            {
+                "package": os.environ.get("NPM_NAME", ""),
+                "source_version": os.environ.get("NPM_SRC", ""),
+                "registry_version": os.environ.get("NPM_REG", ""),
+            }
+            if os.environ.get("NPM_NAME")
+            else {}
+        ),
     }
     with open(baseline_path, "w") as f:
         json.dump(doc, f, indent=2)
@@ -206,6 +241,34 @@ for name, ver, upd in rows:
     else:
         acknowledged.append((name, ver, upd))
 
+# --- npm drift: same baselined semantics as crates.io, for the one TS SDK ------
+npm_name = os.environ.get("NPM_NAME", "")
+npm_src = os.environ.get("NPM_SRC", "")
+npm_reg = os.environ.get("NPM_REG", "")
+npm_new_div = None  # reason string when a NEW npm divergence appears
+npm_status = None   # human-readable status for the table
+base_npm = base.get("npm") if isinstance(base.get("npm"), dict) else {}
+if npm_name and npm_src:
+    if not npm_reg:
+        npm_status = "not on npm yet"
+    elif not behind(npm_src, npm_reg):
+        npm_status = "ok (matches package.json)"
+    else:
+        b_src = base_npm.get("source_version")
+        b_reg = base_npm.get("registry_version")
+        if b_reg is None:
+            # Baseline predates npm tracking — acknowledge the standing gap
+            # rather than fail on day one; refresh the baseline to record it.
+            npm_status = "drift (baseline predates npm tracking)"
+        elif parse(npm_src) > parse(b_src or "0.0.0"):
+            npm_new_div = f"package.json advanced {b_src} -> {npm_src} without publishing to npm"
+            npm_status = f"NEW DIVERGENCE — {npm_new_div}"
+        elif parse(npm_reg) < parse(b_reg):
+            npm_new_div = f"npm registry below baseline {b_reg}"
+            npm_status = f"NEW DIVERGENCE — {npm_new_div}"
+        else:
+            npm_status = "drift (acknowledged in baseline)"
+
 def fmt_age(upd):
     d = age_days(upd)
     return f"{d}d" if d is not None else "-"
@@ -226,7 +289,12 @@ for n, v, u, why in new_div:
 if unpublished:
     print(f"  (unpublished, not on crates.io: {' '.join(unpublished)})")
 
-if new_div or parity_fail:
+if npm_name:
+    print(f"\n  {'npm package':28} {'package.json':12} {'npm latest':11} status")
+    print(f"  {'-' * 28} {'-' * 12} {'-' * 11} ------")
+    print(f"  {npm_name:28} {npm_src:12} {(npm_reg or '-'):11} {npm_status}")
+
+if new_div or parity_fail or npm_new_div:
     print()
     if new_div:
         print(f"::error::version drift: {len(new_div)} NEW divergence(s) since the recorded "
@@ -241,6 +309,11 @@ if new_div or parity_fail:
               f"while mnemo-core is {core_v}. The `mnemo` binary a stranger installs trails "
               f"its own libraries by more than one patch. Publish mnemo-mcp-server so "
               f"`cargo install mnemo-mcp-server` matches the libraries.")
+    if npm_new_div:
+        print(f"::error::npm drift: {npm_name} is {npm_reg or 'absent'} on npm while "
+              f"package.json is {npm_src} — {npm_new_div}. Publish the SDK to npm (fix the "
+              f"NPM_TOKEN first if the publish 404s) or refresh the baseline once the new "
+              f"state is intended.")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
             if new_div:
@@ -256,6 +329,10 @@ if new_div or parity_fail:
                 f.write(f"### binary-vs-libraries drift\n\nmnemo-mcp-server `{mcp_v}` trails "
                         f"mnemo-core `{core_v}` by more than one patch. Publish the server "
                         f"binary so `cargo install mnemo-mcp-server` matches the libraries.\n")
+            if npm_new_div:
+                f.write(f"### npm drift\n\n`{npm_name}` is `{npm_reg or 'absent'}` on npm while "
+                        f"package.json is `{npm_src}` — {npm_new_div}. Publish the SDK "
+                        f"(fix `NPM_TOKEN` first if the publish 404s) or refresh the baseline.\n")
     sys.exit(1)
 
 # GREEN.
@@ -273,5 +350,9 @@ else:
     print(f"OK: every published crate matches workspace {workspace_version}. "
           f"Drift resolved — refresh the baseline: "
           f"bash scripts/check_version_drift.sh --update-baseline")
+if npm_name and npm_status and ("acknowledged" in npm_status or "predates" in npm_status):
+    print()
+    print(f"OK (npm): {npm_name} {npm_reg or 'absent'} on npm trails package.json {npm_src} — "
+          f"acknowledged standing gap, GREEN on purpose. Publish the SDK or refresh the baseline.")
 sys.exit(0)
 PY
