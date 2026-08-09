@@ -317,6 +317,25 @@ router still accepts. No behaviour change: every mnemo tool call and resource re
   version and the internal dep pins moved 0.5.21 -> 0.5.22, and the README `Current release:` line
   with it. (crates.io itself is unchanged: publishing is still blocked on the token, #140.)
 
+### Fixed (2026-08-09) - release-crate.yml flags new crates that need the publish-new token scope (#140)
+
+`#140` blamed `mnemo-mcp-server` being stuck at 0.4.4 on "a rejected
+`CARGO_REGISTRY_TOKEN` (403)". That is wrong: the nine 0.5.22 libraries published on 2026-08-08
+(via `cargo-publish.yml`), so the token authenticates. The real chain is (1) the `v0.5.22` tag was
+never pushed, so the tag-triggered `release-crate.yml` — the only path that publishes
+`mnemo-embeddings-bench` + `mnemo-mcp-server` — never ran; and (2) even when it does run,
+`mnemo-embeddings-bench` is a **new** crate, and creating a crate needs the token's `publish-new`
+scope (not just `publish-update`). The existing `/api/v1/me` preflight proves the token
+authenticates but not that it can create a crate.
+
+- Added a **new-crate preflight** to `release-crate.yml`: it GETs each crate in the walk and
+  surfaces every NEW (404) crate up front with the `publish-new` requirement, so the operator
+  confirms the scope BEFORE the walk burns ~30 minutes and dies creating the first new crate.
+- The walk order is now a single job-level `WALK` env used by both the preflight and the real
+  publish loop, so they cannot disagree about what the walk contains.
+- The mid-walk auth-failure message now distinguishes a missing `publish-new` scope (new crate)
+  from an expired/revoked token.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
