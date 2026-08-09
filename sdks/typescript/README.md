@@ -14,8 +14,14 @@ currently gives you **0.4.4** (latest on npm); the Rust workspace is on the
 engine — so it targets the `mnemo` / `mnemo-mcp-server` binary's MCP **tool
 surface** (the 21 registered tools) rather than a specific `mnemo-core`
 version. For the documented tool set, run a **0.5.x** `mnemo-mcp-server`
-(`cargo install mnemo-mcp-server`). A version-matched npm release is tracked as
-a follow-up.
+(`cargo install mnemo-mcp-server`).
+
+`package.json` is on **0.4.8**, ahead of npm's **0.4.4**: the automated `npm
+publish` (0.4.5–0.4.8) has been failing on an invalid `NPM_TOKEN` — an operator
+action, not a code bug. `npm-publish.yml` now fails fast with the exact fix
+instead of a cryptic 404, and `scripts/check_version_drift.sh` guards the
+`package.json` ↔ npm gap so a further bump-without-publish is caught. Once the
+token is rotated, the accumulated versions publish.
 
 ## Quick start
 

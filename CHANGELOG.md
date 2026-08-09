@@ -317,6 +317,27 @@ router still accepts. No behaviour change: every mnemo tool call and resource re
   version and the internal dep pins moved 0.5.21 -> 0.5.22, and the README `Current release:` line
   with it. (crates.io itself is unchanged: publishing is still blocked on the token, #140.)
 
+### Fixed (2026-08-09) - the version-drift guard was blind to npm, and the npm publish failed silently on a bad token
+
+`scripts/check_version_drift.sh` watched crates.io but not npm, so
+`sdks/typescript/package.json` drifting ahead of the published `@mndfreek/mnemo-sdk` went
+unnoticed — it is on **0.4.8** while npm is stuck at **0.4.4**. Separately, `npm-publish.yml`
+failed on every push to main since the 0.4.4 release: each run built the tarball, passed tests,
+type-checked, and signed a provenance statement to the public transparency log — then the final
+`npm publish` PUT died with a bare `404 Not Found` (npm's response for a scoped package when the
+token is invalid or lacks write access).
+
+- **Drift guard.** Added an npm block to `check_version_drift.sh` with the same baselined semantics
+  as the crates.io check: GREEN on the acknowledged standing gap (`package.json` 0.4.8 vs npm
+  0.4.4), RED only on a NEW divergence — a further `package.json` bump without an npm publish. A
+  positive-control run confirmed both paths. The baseline (`version-drift-baseline.json`) now
+  records the npm state, and its stale crates entries were refreshed 0.5.21 → 0.5.22 to match
+  crates.io.
+- **Publish preflight.** `npm-publish.yml` now validates `NPM_TOKEN` with `npm whoami` BEFORE
+  building or signing anything, failing fast with the operator fix (rotate the token) instead of the
+  cryptic post-provenance 404. The token itself is an operator action; no code change publishes the
+  stranded 0.4.5–0.4.8 versions.
+
 ## [0.5.21] — 2026-07-31
 
 A **release-reconciliation + honesty** pass: no public API, wire, or storage
