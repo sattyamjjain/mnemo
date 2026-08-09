@@ -23,9 +23,13 @@ name: release-crate
 # with "403 Forbidden: authentication failed" — an EXPIRED CARGO_REGISTRY_TOKEN
 # (last rotated 2026-04-25, ~90-day expiry ≈ 2026-07-24; v0.5.16 published
 # 2026-07-24 was the last that beat it). The timeout / 5xx-retry commits treated
-# it as transient; it is not. The token preflight below now fails fast and loud
-# with the operator action, instead of burning ~10 min to rediscover the 403.
-# This ships the moment the operator rotates the token.
+# it as transient; it is not. UPDATE (2026-08-09): the token preflight below no
+# longer HARD-fails on a /api/v1/me non-200 — that false-blocked a working
+# GRANULAR token (the 0.5.22 libraries shipped 2026-08-08 with a token that
+# publishes but 403s on /me, which has no account-read scope). It now hard-fails
+# only on a MISSING secret; a /me non-200 is advisory and the real publish is the
+# authority. This ships the moment the operator uses a token that can publish and
+# carries publish-new (to create the still-new mnemo-embeddings-bench crate).
 #
 # `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
 # (server.rs uses `mnemo_attention_state::AttentionStateStore`); it was
@@ -125,6 +129,12 @@ jobs:
     environment:
       name: crates-io
       url: https://crates.io/crates/mnemo-core
+    env:
+      # Single source of truth for the publish walk (topological order: a
+      # dependent never precedes a crate it needs). Used by BOTH the new-crate
+      # preflight and the real publish loop below, so they can never disagree
+      # about what the walk contains.
+      WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -142,7 +152,7 @@ jobs:
       # failure was transient. It is not: a bad token is an OPERATOR action, not
       # a bug to work around. So validate the token up front, before building
       # anything, and fail with an explicit, actionable message + run summary.
-      - name: Verify CARGO_REGISTRY_TOKEN is present and accepted by crates.io
+      - name: Preflight CARGO_REGISTRY_TOKEN (missing = fail; /api/v1/me = advisory)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -165,15 +175,76 @@ jobs:
           if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
             fail "CARGO_REGISTRY_TOKEN is MISSING (the repo secret is empty)."
           fi
-          # Validate WITHOUT publishing: crates.io GET /api/v1/me returns 200 for
-          # a valid token and 403 for a missing/expired/revoked one.
+          # /api/v1/me returns 200 for a CLASSIC full-access token. A GRANULAR
+          # (scoped) publish token has no account-read scope and returns 403 here
+          # even though it can `cargo publish` perfectly well — the 0.5.22 libraries
+          # were published on 2026-08-08 by exactly such a token (via
+          # cargo-publish.yml, which has no /me check). So a non-200 is NOT a
+          # reliable "token is dead" signal: hard-failing on it false-blocked this
+          # very walk. Hard-fail only on a MISSING secret (above); treat /me as
+          # ADVISORY otherwise and let the real publish be the authority — a
+          # genuinely expired/unauthorized token fails at the first actual upload
+          # with a specific auth error (and a new crate additionally needs
+          # publish-new), which the walk already reports.
           code=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
             -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
             https://crates.io/api/v1/me || echo 000)
-          if [ "$code" != "200" ]; then
-            fail "CARGO_REGISTRY_TOKEN is present but crates.io rejected it (HTTP ${code} from /api/v1/me; 403 = expired or revoked). This is the exact failure that stranded v0.5.17 / v0.5.18 / v0.5.20 mid-upload."
+          if [ "$code" = "200" ]; then
+            echo "crates.io token accepted (whoami -> 200; full-access). Proceeding to publish."
+          else
+            echo "::warning::CARGO_REGISTRY_TOKEN did not pass /api/v1/me (HTTP ${code}). This is EXPECTED for a granular/scoped publish token (no account-read scope) and does NOT mean it cannot publish — the 0.5.22 libraries shipped 2026-08-08 with such a token. Proceeding; the real publish below is the authority."
+            {
+              echo "## ⚠️ Token did not pass /api/v1/me (HTTP ${code}) — proceeding anyway"
+              echo
+              echo "A granular/scoped crates.io token returns 403 on \`/api/v1/me\` (no account-read scope) yet still publishes; the 0.5.22 libraries shipped 2026-08-08 with such a token. A non-200 here is advisory, not fatal — the real publish below is the authority. A genuinely expired/unauthorized token fails at the first actual upload with a specific error (and a new crate additionally needs the \`publish-new\` scope; see the new-crate preflight)."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "crates.io token accepted (whoami → 200). Proceeding to publish."
+
+      # --- New-crate preflight (publish-new scope) --------------------------
+      # The token /me check above proves the token AUTHENTICATES, not that it is
+      # authorized to CREATE a crate. crates.io tokens are scoped: publish-update
+      # updates an existing crate, but publish-new is ALSO required to publish a
+      # crate that does not exist yet. That distinction is exactly what stranded
+      # this line — the 0.5.22 libraries (all pre-existing) updated fine via
+      # cargo-publish.yml, but `mnemo-embeddings-bench` is a NEW crate: if the
+      # token lacks publish-new, the walk builds for ~30 min and then dies
+      # creating it, and mnemo-mcp-server (which depends on it) never publishes
+      # either. crates.io exposes no API to introspect a token's scopes, so this
+      # cannot hard-verify; it surfaces every new crate UP FRONT so the operator
+      # confirms the token has publish-new before the walk burns half an hour.
+      - name: Flag new crates that require the publish-new token scope
+        run: |
+          set -euo pipefail
+          UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
+          ver=$(grep -E '^version\s*=' Cargo.toml | head -1 | cut -d'"' -f2)
+          new_crates=""
+          for crate in $WALK; do
+            # NEW = crates.io has no record of the crate at all (404 on the crate
+            # root, not the version). Retry transient non-200/404 answers.
+            code=""
+            for a in 1 2 3; do
+              code=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
+                "https://crates.io/api/v1/crates/${crate}" || echo 000)
+              case "$code" in 200|404) break ;; esac
+              sleep $((a * 3))
+            done
+            [ "$code" = "404" ] && new_crates="${new_crates} ${crate}"
+          done
+          new_crates="${new_crates# }"
+          if [ -n "$new_crates" ]; then
+            echo "::warning::This walk will CREATE new crate(s) [${new_crates}] at ${ver}. Creating a crate needs CARGO_REGISTRY_TOKEN to carry the publish-new scope (not just publish-update). Without it the walk builds ~30 min and then fails creating the first new crate; every crate after it (including mnemo-mcp-server) stays unpublished."
+            {
+              echo "## ⚠️ New crates in this walk — publish-new scope required"
+              echo
+              echo "Will CREATE (not update): \`${new_crates}\`"
+              echo
+              echo "crates.io tokens are scoped: \`publish-update\` updates an existing crate; **\`publish-new\` is required to create a new one.** If \`CARGO_REGISTRY_TOKEN\` lacks it, the walk dies creating the first new crate after a ~30-min build, stranding everything after it (including \`mnemo-mcp-server\`)."
+              echo
+              echo "Before relying on this run, confirm the token at <https://crates.io/settings/tokens> has **both** publish-new and publish-update."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No new crates in this walk — every crate already exists on crates.io, so publish-update suffices."
+          fi
 
       # --- Dry-run first (task step 4) --------------------------------------
       # A PER-CRATE dry-run cannot resolve the not-yet-published internal deps
@@ -228,7 +299,7 @@ jobs:
           # unchanged, crates already on crates.io 404-gate as present and only
           # new ones publish, so re-running the tag after this change publishes
           # only the two crates added here.
-          crates="mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
+          crates="$WALK"  # single source of truth: the WALK job env above
 
           # Outcome ledger (WI1.3). A partial publish that reports success is the
           # failure mode that produced today's stranded state, so record every
@@ -292,7 +363,7 @@ jobs:
               # token was revoked/expired mid-run. Do not burn 4 more attempts.
               if echo "$out" | grep -qiE 'authentication failed|403 Forbidden|401 Unauthorized'; then
                 echo "::endgroup::"
-                echo "::error::${crate}@${ver} — crates.io rejected the token mid-walk (auth failure). Rotate CARGO_REGISTRY_TOKEN and re-run; crates already published are skipped on resume."
+                echo "::error::${crate}@${ver} — crates.io rejected the token mid-walk on ${crate} (auth/permission failure). If ${crate} is a NEW crate (see the new-crate preflight above) this is usually a missing publish-new scope, NOT an expired token; otherwise the token is expired/revoked. Fix CARGO_REGISTRY_TOKEN so it carries BOTH publish-new and publish-update, then re-run; crates already published are skipped on resume."
                 exit 1
               fi
               if [ "$attempt" -lt 5 ]; then
