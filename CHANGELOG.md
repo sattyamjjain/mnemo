@@ -317,6 +317,23 @@ router still accepts. No behaviour change: every mnemo tool call and resource re
   version and the internal dep pins moved 0.5.21 -> 0.5.22, and the README `Current release:` line
   with it. (crates.io itself is unchanged: publishing is still blocked on the token, #140.)
 
+### Fixed (2026-08-09) - a crates.io publish can no longer happen without a matching tag
+
+The 0.5.22 library line published to crates.io from the **push-to-main** path (`cargo-publish.yml`)
+with **no `v0.5.22` git tag** — so a crate on crates.io could not be bisected back to a commit, and
+the tag-triggered `release-crate.yml` (the ONLY path that publishes `mnemo-embeddings-bench` +
+`mnemo-mcp-server`) never ran, leaving those two stranded. `cargo-publish.yml` now refuses to
+publish a version with no `v<ver>` tag on the remote:
+
+- The gate fires **only when the publish queue is non-empty** — a doc-only push has nothing to
+  publish and stays a clean no-op.
+- It checks the remote directly with `git ls-remote --tags`, so it works with the default shallow
+  checkout (no full-history fetch).
+- Verified against the live remote: `v0.5.21` (present) → allowed, `v0.5.22` (absent) → blocked.
+
+The `v0.5.21` and `v0.5.22` tags + GitHub Releases are reconciled as a release step (the 0.5.21
+changelog already apologised for this exact untagged-publish defect class; this closes it).
+
 ### Docs (2026-08-09) - stated exactly what the Python SDK 0.5.12 is wire-compatible with
 
 The README's Python "Version line" note called the 0.5.12-vs-0.5.22 gap "expected, not skew" but
