@@ -1,5 +1,17 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-08-10 for the **v0.5.23** cut — a **release-engineering + docs**
+> change with **no public API, wire, or storage change**. It retroactively cuts the
+> `## [0.5.22]` CHANGELOG section, adds a CHANGELOG-heading release gate + npm
+> tag-gating (a version can no longer ship undocumented or off a tag), ships
+> `docs/security/read-time-provenance.md`, and softens the crates.io token preflight
+> so a granular (scoped) token is not false-blocked. The two stranded packages
+> (`mnemo-mcp-server`, `mnemo-embeddings-bench`) are wired to publish at 0.5.23 with
+> the rest of the line. crates.io is **unchanged** — the libraries remain at the
+> `v0.5.22` line and the server at `0.4.4` until an operator publishes with a
+> `publish-new`-scoped `CARGO_REGISTRY_TOKEN` (#140). Version pins move
+> 0.5.22 → 0.5.23 in lockstep. **Not breaking for any consumer.**
+>
 > Updated 2026-08-08 for the **v0.5.22** cut — the **`rmcp` 2.2 → 3.0** MCP-transport
 > major. mnemo's own public API, wire format, and storage are **unchanged**: the break
 > was internal, three `ServerHandler` methods in `mnemo-mcp` adapting to rmcp 3.0's new

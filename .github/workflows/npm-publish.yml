@@ -1,12 +1,17 @@
 name: npm-publish
 
-# Auto-deploy @mndfreek/mnemo-sdk to npm on push to main, gated by
+# Deploy @mndfreek/mnemo-sdk to npm on a release tag, gated by
 # version-changed.
 #
 # Trigger model
-#   - push to main: runs, but only publishes if
-#     `sdks/typescript/package.json`'s version doesn't already exist on
-#     npm. Doc-only commits no-op.
+#   - push of a release tag (v*.*.*): the SAME tag event that drives the
+#     crates.io release (release-crate.yml). Publishes the SDK's
+#     `sdks/typescript/package.json` version only if it isn't already on npm.
+#     This gates npm publish behind a tagged release instead of firing on every
+#     push to main — the old behaviour reddened on every doc commit because a
+#     scoped NPM_TOKEN 404s the PUT, and coupled the SDK to unrelated pushes.
+#     The TS SDK versions independently of the Rust workspace, so a v0.5.x tag
+#     simply ships whatever TS version is pending (e.g. 0.4.8).
 #   - workflow_dispatch: manual trigger.
 #
 # Why this design
@@ -24,7 +29,7 @@ name: npm-publish
 
 on:
   push:
-    branches: [main]
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 jobs:
