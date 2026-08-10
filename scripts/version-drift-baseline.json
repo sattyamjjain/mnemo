@@ -1,6 +1,6 @@
 {
   "note": "Acknowledged crates.io drift baseline for the version-drift guard. The guard is GREEN when the registry matches this baseline (or the workspace) and RED only when a NEW divergence appears: a new crate falls behind, or the workspace version is advanced past 'workspace_version' below without publishing (widening the gap). The standing drift is the tag-gated publish being blocked on rotating an expired CARGO_REGISTRY_TOKEN (operator action; see CHANGELOG). The 'npm' block guards the TypeScript SDK (sdks/typescript/package.json vs the npm registry) the same baselined way. Refresh after a real publish: bash scripts/check_version_drift.sh --update-baseline",
-  "workspace_version": "0.5.22",
+  "workspace_version": "0.5.23",
   "crates": {
     "mnemo-admin": "0.5.22",
     "mnemo-attention-state": "0.5.22",

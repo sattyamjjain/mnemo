@@ -134,6 +134,26 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
+
+            # Sibling gate: CHANGELOG.md must carry a `## [${ver}]` heading, so
+            # every published version is documented. 0.5.22 shipped with no
+            # changelog section; this makes that impossible to skip again. The
+            # heading is created by promoting the released `[Unreleased]` entries
+            # into `## [${ver}] - <date>` before tagging.
+            if grep -qE "^## \[${ver}\]" CHANGELOG.md; then
+              echo "release gate: CHANGELOG.md has a '## [${ver}]' heading — publish allowed"
+            else
+              echo "::error::release gate: [${to_publish}] would publish ${ver}, but CHANGELOG.md has no '## [${ver}]' heading. Promote the released [Unreleased] entries into a '## [${ver}] - <date>' section and commit before releasing."
+              {
+                echo "## ❌ Release gate — missing CHANGELOG heading for ${ver}"
+                echo
+                echo "Queued to publish: \`${to_publish}\` at \`${ver}\`, but CHANGELOG.md has no \`## [${ver}]\` heading."
+                echo "Every published version must have a changelog section."
+                echo
+                echo "**Fix:** promote the shipped \`[Unreleased]\` entries into \`## [${ver}] - <date>\`, commit, then re-run."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
           fi
           echo "to_publish=${to_publish}" >> "$GITHUB_OUTPUT"
 
