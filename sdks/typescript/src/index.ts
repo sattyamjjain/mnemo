@@ -24,6 +24,8 @@ import type {
   VerifyResponse,
   DelegateInput,
   DelegateResponse,
+  WriteProvenanceRecord,
+  ForgetByProvenanceInput,
 } from "./types.js";
 
 import {
@@ -264,6 +266,71 @@ export class MnemoClient {
    */
   async delegate(input: DelegateInput): Promise<DelegateResponse> {
     return this.callTool<DelegateResponse>("mnemo.delegate", input);
+  }
+
+  // -------------------------------------------------------------------------
+  // Write provenance + FORGET BY PROVENANCE
+  // -------------------------------------------------------------------------
+
+  /**
+   * Read the write-provenance of one memory: who wrote it, under what
+   * capability, in what session.
+   *
+   * @param memoryId - The memory to look up.
+   * @returns The provenance record, or `null` if none was recorded.
+   */
+  async getMemoryProvenance(
+    memoryId: string,
+  ): Promise<WriteProvenanceRecord | null> {
+    return this.callTool<WriteProvenanceRecord | null>("mnemo.provenance", {
+      memory_id: memoryId,
+    });
+  }
+
+  /**
+   * List everything a principal wrote, newest first.
+   *
+   * @param principal - The writing agent/user.
+   * @param limit - Max rows (default 1000, capped 10000).
+   */
+  async writesByPrincipal(
+    principal: string,
+    limit?: number,
+  ): Promise<WriteProvenanceRecord[]> {
+    return this.callTool<WriteProvenanceRecord[]>("mnemo.provenance", {
+      principal,
+      limit,
+    });
+  }
+
+  /**
+   * List everything written under a session / trace id, newest first.
+   *
+   * @param sessionId - The session / trace id.
+   * @param limit - Max rows (default 1000, capped 10000).
+   */
+  async writesBySession(
+    sessionId: string,
+    limit?: number,
+  ): Promise<WriteProvenanceRecord[]> {
+    return this.callTool<WriteProvenanceRecord[]>("mnemo.provenance", {
+      session_id: sessionId,
+      limit,
+    });
+  }
+
+  /**
+   * FORGET BY PROVENANCE: revoke every memory a principal (or session)
+   * authored, in one call. Targeted remediation, not a wipe — the provenance
+   * audit trail survives.
+   *
+   * @param input - Exactly one of `principal` or `session_id`, plus strategy.
+   * @returns The IDs forgotten and any errors.
+   */
+  async forgetByProvenance(
+    input: ForgetByProvenanceInput,
+  ): Promise<ForgetResponse> {
+    return this.callTool<ForgetResponse>("mnemo.forget_by_provenance", input);
   }
 
   // -------------------------------------------------------------------------

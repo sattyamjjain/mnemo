@@ -184,6 +184,42 @@ export interface ForgetResponse {
 }
 
 // ---------------------------------------------------------------------------
+// mnemo.provenance / mnemo.forget_by_provenance
+// ---------------------------------------------------------------------------
+
+/** A single write-provenance record: who wrote a memory, under what authority. */
+export interface WriteProvenanceRecord {
+  /** Provenance record ID (UUID v7). */
+  id: string;
+  /** The memory this provenance is for. */
+  memory_id: string;
+  /** The writing principal (agent or user). */
+  principal: string;
+  /** The capability ID this write was authorised under, if any. */
+  capability_id: string | null;
+  /** The session / trace ID this write happened in, if any. */
+  session_id: string | null;
+  /** The write operation: "remember" or "share". */
+  op: string;
+  /** RFC 3339 timestamp of the write. */
+  authored_at: string;
+  /** Hex-encoded content hash (tamper-evidence). */
+  content_hash: string;
+  /** Hex-encoded previous-record hash, forming the chain (null for the first). */
+  prev_hash: string | null;
+}
+
+/** FORGET BY PROVENANCE input. Provide exactly one of `principal` or `session_id`. */
+export interface ForgetByProvenanceInput {
+  /** Revoke everything this principal wrote. */
+  principal?: string;
+  /** Revoke everything written under this session / trace id. */
+  session_id?: string;
+  /** "soft_delete" (default), "hard_delete", or "redact". */
+  strategy?: ForgetStrategy;
+}
+
+// ---------------------------------------------------------------------------
 // mnemo.share
 // ---------------------------------------------------------------------------
 
