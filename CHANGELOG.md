@@ -11,6 +11,41 @@ The 0.5.23 window opens on the **v0.5.22** release — `main` at
 merge the `v0.5.22` tag points at). The entries below accumulate on top of it toward the
 0.5.23 cut.
 
+### Added (2026-08-11) - memory-write provenance, revocation by principal, and a minimal capability primitive
+
+Every memory write now records **who wrote it, under what authority, in what session, when** —
+queryable, tamper-evident, and revocable by the responsible principal. mnemo stays standalone (no
+external audit dependency).
+
+- **Write-provenance record per memory** (`model::write_provenance::WriteProvenance`): writing
+  `principal`, optional `capability_id`, optional `session_id`, `op` (remember/share), timestamp,
+  and a SHA-256 `content_hash` + `prev_hash` forming an append chain (tamper-evidence via
+  `verify_provenance_chain`). Recorded on both the REMEMBER and SHARE write paths.
+- **Queryable**: memory ID → provenance; principal/session → everything it wrote. New
+  `StorageBackend` methods with graceful no-op defaults, implemented on **both DuckDB and
+  PostgreSQL** (schema migration added to each; DuckDB persistence version bumped to 5).
+- **FORGET BY PROVENANCE** (`forget_by_principal` / `forget_by_session`): revoke everything a
+  principal or session authored in one call (soft/hard/redact). Targeted remediation, not a wipe —
+  the provenance audit trail survives the erasure.
+- **Minimal capability primitive** (`model::capability`, part of #126): HMAC-signed
+  `Capability { principal, scope, expiry }` + `CapabilityIssuer::issue/verify`, so the provenance
+  `authority` field references a real, verifiable token rather than a recorded string.
+  `remember_with_capability` verifies before writing.
+- **Surfaced everywhere**: REST (`/v1/memories/{id}/provenance`, `/v1/provenance/{principal,session,verify,forget}`),
+  MCP tools (`mnemo.provenance`, `mnemo.forget_by_provenance` — registered tool count 21 → 23), and
+  all three SDKs (Python native, TypeScript + Go MCP clients) expose provenance read **and** FORGET
+  BY PROVENANCE.
+
+### Added (2026-08-11) - compositional ("Salami") poisoning fixture advances #37 (arXiv:2608.01637)
+
+- **`bench/salami_poisoning`** — the compositional case of issue #37: N individually-benign
+  memories that are collectively harmful (the "Salami" shape, arXiv:2608.01637), plus a benign
+  control that shares the surface topic but must NOT complete the harm. Reports a write-path
+  **save rate** and a **retrieval-influence (assembly) rate**, each with a Wilson 95% interval — a
+  measurement, not a pass/fail gate. Deterministic + offline (lexical co-retrieval). Covers the
+  compositional subset of #37 only; semantic-paraphrase, adaptive, and cross-session-drip variants
+  remain open (see the #37 comment).
+
 ### Fixed (2026-08-11) - the publish stranding is now caught loudly; the "tag never pushed" note below is superseded
 
 The 2026-08-09 note below says the `v0.5.22` tag "was never pushed." True when written, but the tag
