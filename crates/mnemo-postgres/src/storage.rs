@@ -7,6 +7,7 @@ use mnemo_core::model::embedding_baseline::EmbeddingBaseline;
 use mnemo_core::model::event::AgentEvent;
 use mnemo_core::model::memory::MemoryRecord;
 use mnemo_core::model::relation::Relation;
+use mnemo_core::model::write_provenance::{WriteOp, WriteProvenance};
 use mnemo_core::storage::{MemoryFilter, StorageBackend};
 use pgvector::Vector;
 use sqlx::Row;
@@ -248,6 +249,36 @@ fn row_to_checkpoint(row: &sqlx::postgres::PgRow) -> std::result::Result<Checkpo
     })
 }
 
+fn row_to_write_provenance(
+    row: &sqlx::postgres::PgRow,
+) -> std::result::Result<WriteProvenance, sqlx::Error> {
+    let op_str: String = row.get("op");
+    let op = match op_str.as_str() {
+        "remember" => WriteOp::Remember,
+        "share" => WriteOp::Share,
+        other => {
+            return Err(sqlx::Error::Decode(
+                format!("unknown write op `{other}`").into(),
+            ));
+        }
+    };
+    let authored_at_str: String = row.get("authored_at");
+    let authored_at = chrono::DateTime::parse_from_rfc3339(&authored_at_str)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    Ok(WriteProvenance {
+        id: row.get("id"),
+        memory_id: row.get("memory_id"),
+        principal: row.get("principal"),
+        capability_id: row.try_get("capability_id").unwrap_or(None),
+        session_id: row.try_get("session_id").unwrap_or(None),
+        op,
+        authored_at,
+        prev_hash: row.try_get("prev_hash").unwrap_or(None),
+        content_hash: row.get("content_hash"),
+    })
+}
+
 fn row_to_delegation(row: &sqlx::postgres::PgRow) -> std::result::Result<Delegation, sqlx::Error> {
     let scope_type: String = row.get("scope_type");
     let scope_value: Option<serde_json::Value> = row.try_get("scope_value").unwrap_or(None);
@@ -298,6 +329,145 @@ fn row_to_delegation(row: &sqlx::postgres::PgRow) -> std::result::Result<Delegat
 impl StorageBackend for PgStorage {
     fn backend_name(&self) -> &'static str {
         "postgres"
+    }
+
+    fn records_write_provenance(&self) -> bool {
+        true
+    }
+
+    async fn insert_write_provenance(&self, prov: &WriteProvenance) -> Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO write_provenance
+    (id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+"#,
+        )
+        .bind(prov.id)
+        .bind(prov.memory_id)
+        .bind(&prov.principal)
+        .bind(prov.capability_id)
+        .bind(&prov.session_id)
+        .bind(prov.op.as_str())
+        .bind(prov.authored_at.to_rfc3339())
+        .bind(&prov.prev_hash)
+        .bind(&prov.content_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    async fn get_write_provenance(&self, memory_id: Uuid) -> Result<Option<WriteProvenance>> {
+        let row = sqlx::query(
+            r#"
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+FROM write_provenance WHERE memory_id = $1 ORDER BY id DESC LIMIT 1
+"#,
+        )
+        .bind(memory_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        row.as_ref()
+            .map(row_to_write_provenance)
+            .transpose()
+            .map_err(map_sqlx)
+    }
+
+    async fn get_latest_provenance_hash(&self) -> Result<Option<Vec<u8>>> {
+        // UUID v7 ids are time-ordered, so `id DESC` is the append order.
+        let row = sqlx::query("SELECT content_hash FROM write_provenance ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(row.map(|r| r.get::<Vec<u8>, _>("content_hash")))
+    }
+
+    async fn list_provenance_by_principal(
+        &self,
+        principal: &str,
+        limit: usize,
+    ) -> Result<Vec<WriteProvenance>> {
+        let rows = sqlx::query(
+            r#"
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+FROM write_provenance WHERE principal = $1 ORDER BY id DESC LIMIT $2
+"#,
+        )
+        .bind(principal)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        let mut out = Vec::with_capacity(rows.len());
+        for r in &rows {
+            out.push(row_to_write_provenance(r).map_err(map_sqlx)?);
+        }
+        Ok(out)
+    }
+
+    async fn list_provenance_by_session(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<WriteProvenance>> {
+        let rows = sqlx::query(
+            r#"
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+FROM write_provenance WHERE session_id = $1 ORDER BY id DESC LIMIT $2
+"#,
+        )
+        .bind(session_id)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        let mut out = Vec::with_capacity(rows.len());
+        for r in &rows {
+            out.push(row_to_write_provenance(r).map_err(map_sqlx)?);
+        }
+        Ok(out)
+    }
+
+    async fn list_memory_ids_by_principal(&self, principal: &str) -> Result<Vec<Uuid>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT memory_id FROM write_provenance WHERE principal = $1 AND op = 'remember'",
+        )
+        .bind(principal)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(rows.iter().map(|r| r.get::<Uuid, _>("memory_id")).collect())
+    }
+
+    async fn list_memory_ids_by_session(&self, session_id: &str) -> Result<Vec<Uuid>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT memory_id FROM write_provenance WHERE session_id = $1 AND op = 'remember'",
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(rows.iter().map(|r| r.get::<Uuid, _>("memory_id")).collect())
+    }
+
+    async fn list_all_provenance(&self, limit: usize) -> Result<Vec<WriteProvenance>> {
+        let rows = sqlx::query(
+            r#"
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+FROM write_provenance ORDER BY id ASC LIMIT $1
+"#,
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
+        let mut out = Vec::with_capacity(rows.len());
+        for r in &rows {
+            out.push(row_to_write_provenance(r).map_err(map_sqlx)?);
+        }
+        Ok(out)
     }
 
     // -----------------------------------------------------------------------

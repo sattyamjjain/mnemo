@@ -29,6 +29,7 @@ members = [
     "bench/retention_conformance",
     "bench/poisoning",
     "bench/asi06_poisoning",
+    "bench/salami_poisoning",
     "bench/forged_reasoning",
     "python",
 ]

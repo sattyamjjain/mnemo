@@ -103,6 +103,21 @@ numbers, and the LoCoMo ground-truth-quality caveat:
 [`docs/benchmarks/asi06-poisoning.md`](docs/benchmarks/asi06-poisoning.md)
 (`cargo run --release -p mnemo-asi06-poisoning-bench --bin asi06_poisoning`).
 
+That ASI06-recommended control — **provenance on every write** — is now the
+default path: every `remember`/`share` records who wrote it, under what
+capability, in what session, hash-chained and revocable by principal (see
+[Write provenance & FORGET BY PROVENANCE](#write-provenance--forget-by-provenance)).
+The **compositional ("Salami") case** — the harder shape where each of `N` writes
+is individually benign but their union is harmful ([arXiv:2608.01637](https://arxiv.org/abs/2608.01637))
+— is measured, not defended, at [`bench/salami_poisoning/`](bench/salami_poisoning/):
+individually-benign slices sail through the write path (high **save rate**) and a
+single trigger recall reliably reconstructs the harmful composition (high
+**retrieval-influence rate**), while a topic-matched **benign control** co-retrieves
+yet never completes the harm (~0). Both rates carry a Wilson-95 interval;
+deterministic + offline. This is the compositional subset of
+[#37](https://github.com/sattyamjjain/mnemo/issues/37) — a quantified gap, not a
+claimed defense (`cargo run --release -p mnemo-salami-poisoning-bench`).
+
 Regulatory mappings (honest, hedged, *not legal advice*):
 [EU AI Act Art.12](docs/compliance/eu-ai-act-art12.md) ·
 [India DPDP (Rules 2025)](docs/compliance/dpdp-2027.md) ·
@@ -637,6 +652,7 @@ path calls it.
 | At-rest AES-256-GCM content encryption | ✅ when `MNEMO_ENCRYPTION_KEY` set | engine `remember`/`recall` |
 | Hash-chain integrity + `verify` | ✅ | events + memories |
 | Read-provenance HMAC receipt | ✅ opt-in per call (`with_provenance=true`) | `recall` |
+| **Write-provenance + FORGET BY PROVENANCE** | ✅ — every REMEMBER/SHARE records who wrote it, under what capability, in what session; hash-chained (tamper-evident) and queryable by memory/principal/session; revocable in one call by principal or session | engine `remember`/`share` write path (DuckDB + PostgreSQL); REST `/v1/provenance/*`, MCP `mnemo.provenance` + `mnemo.forget_by_provenance`; see below |
 | Memory-poisoning anomaly + quarantine | ✅ — provenance-aware recall + a published **ASI06 resistance micro-bench** (100.0% vs canonical query-only MINJA, Wilson 95% [98.1%, 100.0%], n=200; 0% vs marker-free paraphrase — honest limitation) | `remember` + `recall` quarantine filter; [`docs/security/ASI06.md`](docs/security/ASI06.md) |
 | **Forged-reasoning defense** (reasoning-provenance trust filter) | ✅ opt-in — a real-embedder bench drives planted fabricated-chain-of-thought ASR **100% → 0%** (`nomic-embed-text`, Wilson 95% ASR_on [0.0%, 3.1%], n=120) at **0/180 = 0%** benign false-quarantine [0.0%, 2.1%] | `RecallRequest.reasoning_trust` (`retrieval::ReasoningTrustPolicy`) enforced in `recall`'s `passes_filters`; [`bench/forged_reasoning/`](bench/forged_reasoning/) |
 | Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |
@@ -662,6 +678,64 @@ every startup — they never silently serve an unauthenticated memory database.
 This is a single operator-held secret (the floor for "don't run an open memory
 server"), distinct from the per-record ACL/RBAC layer above; it is not user
 accounts, scopes, or rotation.
+
+#### Write provenance & FORGET BY PROVENANCE
+
+Every `remember` and `share` records a **write-provenance** entry: the writing
+principal, the capability it was authorised under (if any), the session/trace id,
+the operation, a timestamp, and a SHA-256 `content_hash` chained to the previous
+entry's hash. The chain is **tamper-evident** (`verify_provenance_chain`), the
+records are **queryable** (memory ID → provenance; principal/session → everything
+it wrote), and a principal or session can be **revoked in one call**. Revocation
+removes the memories but not their provenance — the audit trail survives, because
+wiping is not remediation.
+
+The authority field references a real **capability** (`model::capability`, a
+minimal HMAC-signed `{principal, scope, expiry}` token — part of [#126](https://github.com/sattyamjjain/mnemo/issues/126)),
+not a recorded string. mnemo stays standalone: no external audit dependency.
+
+**REST**
+
+```bash
+# Who wrote this memory?
+curl -s localhost:8080/v1/memories/$ID/provenance
+# Everything a principal / session wrote
+curl -s localhost:8080/v1/provenance/principal/alice
+curl -s localhost:8080/v1/provenance/session/sess-42
+# Tamper-evidence over the chain
+curl -s localhost:8080/v1/provenance/verify
+# FORGET BY PROVENANCE — revoke everything alice wrote
+curl -s -XPOST localhost:8080/v1/provenance/forget \
+  -H 'content-type: application/json' \
+  -d '{"principal":"alice","strategy":"hard_delete"}'
+```
+
+**MCP** — tools `mnemo.provenance` (read by `memory_id` | `principal` | `session_id`)
+and `mnemo.forget_by_provenance` (revoke by `principal` | `session_id`).
+
+**SDKs** — all three expose read **and** cleanup (an SDK that cannot clean up is
+not shipping the feature):
+
+```python
+# Python
+prov = client.write_provenance(memory_id)          # who wrote it
+client.writes_by_principal("alice")                # everything alice wrote
+client.forget_by_principal("alice", "hard_delete") # FORGET BY PROVENANCE
+```
+
+```typescript
+// TypeScript
+const prov = await client.getMemoryProvenance(id);
+await client.writesByPrincipal("alice");
+await client.forgetByProvenance({ principal: "alice", strategy: "hard_delete" });
+```
+
+```go
+// Go
+prov, _ := client.MemoryProvenance(id)
+_, _ = client.WritesByPrincipal("alice", 0)
+_, _ = client.ForgetByProvenance(mnemo.ForgetByProvenanceInput{Principal: ptr("alice")})
+```
 
 ### Memory curation interop (Dreams, Routines, and substrate primitives)
 

@@ -11,6 +11,7 @@ use crate::model::embedding_baseline::EmbeddingBaseline;
 use crate::model::event::AgentEvent;
 use crate::model::memory::MemoryRecord;
 use crate::model::relation::Relation;
+use crate::model::write_provenance::{WriteOp, WriteProvenance};
 use crate::storage::{MemoryFilter, StorageBackend};
 use uuid::Uuid;
 
@@ -124,6 +125,135 @@ fn row_to_memory(row: &duckdb::Row<'_>) -> duckdb::Result<MemoryRecord> {
 impl StorageBackend for DuckDbStorage {
     fn backend_name(&self) -> &'static str {
         "duckdb"
+    }
+
+    fn records_write_provenance(&self) -> bool {
+        true
+    }
+
+    async fn insert_write_provenance(&self, prov: &WriteProvenance) -> Result<()> {
+        let conn = self.conn.lock().await;
+        conn.execute(
+            "INSERT INTO write_provenance (id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            duckdb::params![
+                prov.id.to_string(),
+                prov.memory_id.to_string(),
+                prov.principal,
+                prov.capability_id.map(|id| id.to_string()),
+                prov.session_id,
+                prov.op.as_str(),
+                prov.authored_at.to_rfc3339(),
+                prov.prev_hash,
+                prov.content_hash,
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn get_write_provenance(&self, memory_id: Uuid) -> Result<Option<WriteProvenance>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+             FROM write_provenance WHERE memory_id = ? ORDER BY id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(
+            duckdb::params![memory_id.to_string()],
+            row_to_write_provenance,
+        )?;
+        match rows.next() {
+            Some(r) => Ok(Some(r.map_err(|e| Error::Storage(e.to_string()))?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn get_latest_provenance_hash(&self) -> Result<Option<Vec<u8>>> {
+        let conn = self.conn.lock().await;
+        // UUID v7 ids are time-ordered, so `id DESC` is the append order — the
+        // chain head is the most recently inserted record.
+        let mut stmt =
+            conn.prepare("SELECT content_hash FROM write_provenance ORDER BY id DESC LIMIT 1")?;
+        let mut rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
+        match rows.next() {
+            Some(r) => Ok(Some(r.map_err(|e| Error::Storage(e.to_string()))?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn list_provenance_by_principal(
+        &self,
+        principal: &str,
+        limit: usize,
+    ) -> Result<Vec<WriteProvenance>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+             FROM write_provenance WHERE principal = ? ORDER BY id DESC LIMIT ?",
+        )?;
+        let rows = stmt.query_map(
+            duckdb::params![principal, limit as i64],
+            row_to_write_provenance,
+        )?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| Error::Storage(e.to_string()))?);
+        }
+        Ok(out)
+    }
+
+    async fn list_provenance_by_session(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<WriteProvenance>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+             FROM write_provenance WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+        )?;
+        let rows = stmt.query_map(
+            duckdb::params![session_id, limit as i64],
+            row_to_write_provenance,
+        )?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| Error::Storage(e.to_string()))?);
+        }
+        Ok(out)
+    }
+
+    async fn list_memory_ids_by_principal(&self, principal: &str) -> Result<Vec<Uuid>> {
+        let conn = self.conn.lock().await;
+        // Only `remember` writes create a memory; `share` grants access to an
+        // existing one. FORGET BY PROVENANCE by principal revokes what the
+        // principal actually authored.
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT memory_id FROM write_provenance WHERE principal = ? AND op = 'remember'",
+        )?;
+        let rows = stmt.query_map(duckdb::params![principal], |row| row.get::<_, String>(0))?;
+        collect_memory_ids(rows)
+    }
+
+    async fn list_memory_ids_by_session(&self, session_id: &str) -> Result<Vec<Uuid>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT memory_id FROM write_provenance WHERE session_id = ? AND op = 'remember'",
+        )?;
+        let rows = stmt.query_map(duckdb::params![session_id], |row| row.get::<_, String>(0))?;
+        collect_memory_ids(rows)
+    }
+
+    async fn list_all_provenance(&self, limit: usize) -> Result<Vec<WriteProvenance>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+             FROM write_provenance ORDER BY id ASC LIMIT ?",
+        )?;
+        let rows = stmt.query_map(duckdb::params![limit as i64], row_to_write_provenance)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| Error::Storage(e.to_string()))?);
+        }
+        Ok(out)
     }
 
     async fn insert_memory(&self, record: &MemoryRecord) -> Result<()> {
@@ -1135,6 +1265,62 @@ fn row_to_checkpoint(row: &duckdb::Row<'_>) -> duckdb::Result<Checkpoint> {
         metadata: metadata_json
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+    })
+}
+
+fn collect_memory_ids(rows: impl Iterator<Item = duckdb::Result<String>>) -> Result<Vec<Uuid>> {
+    let mut out = Vec::new();
+    for r in rows {
+        let s = r.map_err(|e| Error::Storage(e.to_string()))?;
+        out.push(Uuid::parse_str(&s).map_err(|e| Error::Storage(e.to_string()))?);
+    }
+    Ok(out)
+}
+
+fn row_to_write_provenance(row: &duckdb::Row<'_>) -> duckdb::Result<WriteProvenance> {
+    let id_str: String = row.get(0)?;
+    let memory_id_str: String = row.get(1)?;
+    let principal: String = row.get(2)?;
+    let capability_id_str: Option<String> = row.get(3)?;
+    let session_id: Option<String> = row.get(4)?;
+    let op_str: String = row.get(5)?;
+    let authored_at_str: String = row.get(6)?;
+    let prev_hash: Option<Vec<u8>> = row.get(7)?;
+    let content_hash: Vec<u8> = row.get(8)?;
+
+    let uuid_err = |col: usize, e: uuid::Error| {
+        duckdb::Error::FromSqlConversionFailure(col, duckdb::types::Type::Text, Box::new(e))
+    };
+    let op = match op_str.as_str() {
+        "remember" => WriteOp::Remember,
+        "share" => WriteOp::Share,
+        other => {
+            return Err(duckdb::Error::FromSqlConversionFailure(
+                5,
+                duckdb::types::Type::Text,
+                format!("unknown write op `{other}`").into(),
+            ));
+        }
+    };
+    let authored_at = chrono::DateTime::parse_from_rfc3339(&authored_at_str)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .map_err(|e| {
+            duckdb::Error::FromSqlConversionFailure(6, duckdb::types::Type::Text, Box::new(e))
+        })?;
+    let capability_id = match capability_id_str {
+        Some(s) => Some(Uuid::parse_str(&s).map_err(|e| uuid_err(3, e))?),
+        None => None,
+    };
+    Ok(WriteProvenance {
+        id: Uuid::parse_str(&id_str).map_err(|e| uuid_err(0, e))?,
+        memory_id: Uuid::parse_str(&memory_id_str).map_err(|e| uuid_err(1, e))?,
+        principal,
+        capability_id,
+        session_id,
+        op,
+        authored_at,
+        prev_hash,
+        content_hash,
     })
 }
 

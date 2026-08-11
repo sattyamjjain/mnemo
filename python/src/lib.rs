@@ -9,10 +9,11 @@ use mnemo_core::embedding::{EmbeddingProvider, NoopEmbedding};
 use mnemo_core::index::VectorIndex;
 use mnemo_core::index::usearch::UsearchIndex;
 use mnemo_core::model::memory::{MemoryType, Scope};
+use mnemo_core::model::write_provenance::WriteProvenance;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
 use mnemo_core::query::checkpoint::CheckpointRequest;
-use mnemo_core::query::forget::{ForgetRequest, ForgetStrategy};
+use mnemo_core::query::forget::{ForgetRequest, ForgetResponse, ForgetStrategy};
 use mnemo_core::query::merge::MergeRequest;
 use mnemo_core::query::recall::RecallRequest;
 use mnemo_core::query::remember::RememberRequest;
@@ -23,6 +24,61 @@ use mnemo_core::storage::duckdb::DuckDbStorage;
 
 fn to_py_err(e: impl std::fmt::Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+fn forget_strategy(strategy: Option<String>) -> ForgetStrategy {
+    match strategy.as_deref() {
+        Some("hard_delete") => ForgetStrategy::HardDelete,
+        Some("decay") => ForgetStrategy::Decay,
+        Some("consolidate") => ForgetStrategy::Consolidate,
+        Some("archive") => ForgetStrategy::Archive,
+        Some("redact") => ForgetStrategy::Redact,
+        _ => ForgetStrategy::SoftDelete,
+    }
+}
+
+fn forget_response_to_dict(response: ForgetResponse) -> PyResult<Py<PyAny>> {
+    Python::attach(|py| {
+        let dict = PyDict::new(py);
+        let forgotten: Vec<String> = response.forgotten.iter().map(|id| id.to_string()).collect();
+        dict.set_item("forgotten", forgotten)?;
+        dict.set_item(
+            "errors",
+            response
+                .errors
+                .iter()
+                .map(|e| format!("{}: {}", e.id, e.error))
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(dict.into_any().unbind())
+    })
+}
+
+/// Convert a `WriteProvenance` record to a Python dict. Hashes are hex strings
+/// so they cross the language boundary as plain text (not byte arrays).
+fn write_prov_to_dict<'py>(
+    py: Python<'py>,
+    p: &WriteProvenance,
+) -> PyResult<pyo3::Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("id", p.id.to_string())?;
+    dict.set_item("memory_id", p.memory_id.to_string())?;
+    dict.set_item("principal", &p.principal)?;
+    dict.set_item("capability_id", p.capability_id.map(|c| c.to_string()))?;
+    dict.set_item("session_id", p.session_id.clone())?;
+    dict.set_item("op", p.op.as_str())?;
+    dict.set_item("authored_at", p.authored_at.to_rfc3339())?;
+    dict.set_item("content_hash", hex_encode(&p.content_hash))?;
+    dict.set_item("prev_hash", p.prev_hash.as_deref().map(hex_encode))?;
+    Ok(dict)
 }
 
 #[pyclass]
@@ -328,6 +384,115 @@ impl MnemoClient {
     #[pyo3(signature = (memory_ids, strategy=None))]
     fn delete(&self, memory_ids: Vec<String>, strategy: Option<String>) -> PyResult<Py<PyAny>> {
         self.forget(memory_ids, strategy)
+    }
+
+    // ---- Write provenance + FORGET BY PROVENANCE -----------------------
+
+    /// Provenance for one memory: who wrote it, under what capability/session.
+    /// Returns ``None`` if no provenance was recorded for that id.
+    fn write_provenance(&self, memory_id: String) -> PyResult<Py<PyAny>> {
+        let id = uuid::Uuid::parse_str(&memory_id).map_err(to_py_err)?;
+        let prov = self
+            .runtime
+            .block_on(self.engine.write_provenance_for(id))
+            .map_err(to_py_err)?;
+        Python::attach(|py| match prov {
+            Some(p) => Ok(write_prov_to_dict(py, &p)?.into_any().unbind()),
+            None => Ok(py.None()),
+        })
+    }
+
+    /// Everything a principal wrote, newest first (up to ``limit``).
+    #[pyo3(signature = (principal, limit=None))]
+    fn writes_by_principal(&self, principal: String, limit: Option<usize>) -> PyResult<Py<PyAny>> {
+        let writes = self
+            .runtime
+            .block_on(
+                self.engine
+                    .writes_by_principal(&principal, limit.unwrap_or(1000)),
+            )
+            .map_err(to_py_err)?;
+        Python::attach(|py| {
+            let out = pyo3::types::PyList::empty(py);
+            for p in &writes {
+                out.append(write_prov_to_dict(py, p)?)?;
+            }
+            Ok(out.into_any().unbind())
+        })
+    }
+
+    /// Everything written under a session / trace id, newest first.
+    #[pyo3(signature = (session_id, limit=None))]
+    fn writes_by_session(&self, session_id: String, limit: Option<usize>) -> PyResult<Py<PyAny>> {
+        let writes = self
+            .runtime
+            .block_on(
+                self.engine
+                    .writes_by_session(&session_id, limit.unwrap_or(1000)),
+            )
+            .map_err(to_py_err)?;
+        Python::attach(|py| {
+            let out = pyo3::types::PyList::empty(py);
+            for p in &writes {
+                out.append(write_prov_to_dict(py, p)?)?;
+            }
+            Ok(out.into_any().unbind())
+        })
+    }
+
+    /// Verify the write-provenance chain (tamper-evidence over append history).
+    #[pyo3(signature = (limit=None))]
+    fn verify_provenance_chain(&self, limit: Option<usize>) -> PyResult<Py<PyAny>> {
+        let result = self
+            .runtime
+            .block_on(self.engine.verify_provenance_chain(limit.unwrap_or(10_000)))
+            .map_err(to_py_err)?;
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("valid", result.valid)?;
+            dict.set_item("total_records", result.total_records)?;
+            dict.set_item("verified_records", result.verified_records)?;
+            dict.set_item(
+                "first_broken_at",
+                result.first_broken_at.map(|u| u.to_string()),
+            )?;
+            dict.set_item("error_message", result.error_message)?;
+            Ok(dict.into_any().unbind())
+        })
+    }
+
+    /// FORGET BY PROVENANCE — revoke everything a principal wrote, in one call.
+    #[pyo3(signature = (principal, strategy=None))]
+    fn forget_by_principal(
+        &self,
+        principal: String,
+        strategy: Option<String>,
+    ) -> PyResult<Py<PyAny>> {
+        let response = self
+            .runtime
+            .block_on(
+                self.engine
+                    .forget_by_principal(&principal, forget_strategy(strategy)),
+            )
+            .map_err(to_py_err)?;
+        forget_response_to_dict(response)
+    }
+
+    /// FORGET BY PROVENANCE by session / trace id.
+    #[pyo3(signature = (session_id, strategy=None))]
+    fn forget_by_session(
+        &self,
+        session_id: String,
+        strategy: Option<String>,
+    ) -> PyResult<Py<PyAny>> {
+        let response = self
+            .runtime
+            .block_on(
+                self.engine
+                    .forget_by_session(&session_id, forget_strategy(strategy)),
+            )
+            .map_err(to_py_err)?;
+        forget_response_to_dict(response)
     }
 
     #[pyo3(signature = (memory_id, target_agent_id, permission=None))]

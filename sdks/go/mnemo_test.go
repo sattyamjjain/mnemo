@@ -999,3 +999,80 @@ func TestVerifyBrokenChainJSON(t *testing.T) {
 		t.Errorf("Status = %q, want %q", resp.Status, "integrity_violation")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TestWriteProvenanceRecordJSON — verifies provenance record unmarshaling,
+// including hex hashes and the nullable capability_id/session_id/prev_hash.
+// ---------------------------------------------------------------------------
+
+func TestWriteProvenanceRecordJSON(t *testing.T) {
+	raw := `{
+		"id": "prov-1",
+		"memory_id": "mem-1",
+		"principal": "alice",
+		"capability_id": null,
+		"session_id": "sess-1",
+		"op": "remember",
+		"authored_at": "2026-01-01T00:00:00+00:00",
+		"content_hash": "abcd1234",
+		"prev_hash": null
+	}`
+
+	var rec WriteProvenanceRecord
+	if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+		t.Fatalf("Unmarshal WriteProvenanceRecord: %v", err)
+	}
+	if rec.Principal != "alice" {
+		t.Errorf("Principal = %q, want %q", rec.Principal, "alice")
+	}
+	if rec.Op != "remember" {
+		t.Errorf("Op = %q, want %q", rec.Op, "remember")
+	}
+	if rec.CapabilityID != nil {
+		t.Errorf("CapabilityID = %v, want nil", rec.CapabilityID)
+	}
+	if rec.SessionID == nil || *rec.SessionID != "sess-1" {
+		t.Errorf("SessionID = %v, want sess-1", rec.SessionID)
+	}
+	if rec.ContentHash != "abcd1234" {
+		t.Errorf("ContentHash = %q, want %q", rec.ContentHash, "abcd1234")
+	}
+}
+
+// TestWriteProvenanceArrayJSON — a principal/session listing unmarshals to a slice.
+func TestWriteProvenanceArrayJSON(t *testing.T) {
+	raw := `[
+		{"id":"p2","memory_id":"m2","principal":"alice","capability_id":null,"session_id":null,"op":"remember","authored_at":"2026-01-01T00:00:01+00:00","content_hash":"ff","prev_hash":"ee"},
+		{"id":"p1","memory_id":"m1","principal":"alice","capability_id":null,"session_id":null,"op":"remember","authored_at":"2026-01-01T00:00:00+00:00","content_hash":"ee","prev_hash":null}
+	]`
+
+	var recs []WriteProvenanceRecord
+	if err := json.Unmarshal([]byte(raw), &recs); err != nil {
+		t.Fatalf("Unmarshal []WriteProvenanceRecord: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("len = %d, want 2", len(recs))
+	}
+	// Newest-first: the second record's content_hash is the first's prev_hash.
+	if recs[1].ContentHash != *recs[0].PrevHash {
+		t.Errorf("chain link broken: %q != %q", recs[1].ContentHash, *recs[0].PrevHash)
+	}
+}
+
+// TestForgetByProvenanceInputJSON — verifies the selector marshals with omitempty
+// so exactly one selector is sent.
+func TestForgetByProvenanceInputJSON(t *testing.T) {
+	principal := "alice"
+	strategy := "hard_delete"
+	in := ForgetByProvenanceInput{Principal: &principal, Strategy: &strategy}
+
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal ForgetByProvenanceInput: %v", err)
+	}
+	got := string(data)
+	want := `{"principal":"alice","strategy":"hard_delete"}`
+	if got != want {
+		t.Errorf("JSON = %s, want %s", got, want)
+	}
+}

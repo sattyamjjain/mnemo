@@ -194,6 +194,63 @@ type ForgetResponse struct {
 }
 
 // ---------------------------------------------------------------------------
+// Write provenance + FORGET BY PROVENANCE
+// ---------------------------------------------------------------------------
+
+// WriteProvenanceRecord is one entry in the write-provenance chain: who wrote a
+// memory, under what authority, when. Tamper-evident via ContentHash/PrevHash.
+type WriteProvenanceRecord struct {
+	// ID is the provenance record's own UUID (v7).
+	ID string `json:"id"`
+
+	// MemoryID is the memory this provenance is for.
+	MemoryID string `json:"memory_id"`
+
+	// Principal is the writing agent or user.
+	Principal string `json:"principal"`
+
+	// CapabilityID is the capability the write was authorised under, if any.
+	CapabilityID *string `json:"capability_id"`
+
+	// SessionID is the session / trace id the write happened in, if any.
+	SessionID *string `json:"session_id"`
+
+	// Op is the write operation: "remember" or "share".
+	Op string `json:"op"`
+
+	// AuthoredAt is the RFC 3339 write timestamp.
+	AuthoredAt string `json:"authored_at"`
+
+	// ContentHash is the hex-encoded content hash (tamper-evidence).
+	ContentHash string `json:"content_hash"`
+
+	// PrevHash is the hex-encoded previous-record hash, forming the chain
+	// (nil for the first record).
+	PrevHash *string `json:"prev_hash"`
+}
+
+// ForgetByProvenanceInput selects what to revoke by provenance. Provide exactly
+// one of Principal or SessionID.
+type ForgetByProvenanceInput struct {
+	// Principal revokes everything this writer authored.
+	Principal *string `json:"principal,omitempty"`
+
+	// SessionID revokes everything written under this session / trace id.
+	SessionID *string `json:"session_id,omitempty"`
+
+	// Strategy is "soft_delete" (default), "hard_delete", or "redact".
+	Strategy *string `json:"strategy,omitempty"`
+}
+
+// provenanceQuery is the internal wire shape for the mnemo.provenance tool.
+type provenanceQuery struct {
+	MemoryID  *string `json:"memory_id,omitempty"`
+	Principal *string `json:"principal,omitempty"`
+	SessionID *string `json:"session_id,omitempty"`
+	Limit     *int    `json:"limit,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
 // Share
 // ---------------------------------------------------------------------------
 
@@ -316,10 +373,10 @@ type MergeInput struct {
 
 // MergeResponse is returned after merging branches.
 type MergeResponse struct {
-	CheckpointID     string `json:"checkpoint_id"`
-	TargetBranch     string `json:"target_branch"`
-	MergedMemoryCount int   `json:"merged_memory_count"`
-	Status           string `json:"status"`
+	CheckpointID      string `json:"checkpoint_id"`
+	TargetBranch      string `json:"target_branch"`
+	MergedMemoryCount int    `json:"merged_memory_count"`
+	Status            string `json:"status"`
 }
 
 // ---------------------------------------------------------------------------
@@ -440,10 +497,10 @@ type jsonRPCRequest struct {
 
 // jsonRPCResponse is the JSON-RPC 2.0 response envelope.
 type jsonRPCResponse struct {
-	JSONRPC string           `json:"jsonrpc"`
-	Result  *jsonRPCResult   `json:"result,omitempty"`
-	Error   *jsonRPCError    `json:"error,omitempty"`
-	ID      *int             `json:"id,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	Result  *jsonRPCResult `json:"result,omitempty"`
+	Error   *jsonRPCError  `json:"error,omitempty"`
+	ID      *int           `json:"id,omitempty"`
 }
 
 // jsonRPCResult holds the result field of a successful JSON-RPC response.

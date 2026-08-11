@@ -20,6 +20,7 @@ pub mod replay;
 pub mod retained;
 pub mod retrieval;
 pub mod share;
+pub mod write_provenance;
 
 use std::sync::Arc;
 
@@ -122,6 +123,13 @@ pub struct MnemoEngine {
     /// tier is backend-agnostic and RBAC/consent-gated like everything
     /// else. See [`experience`].
     pub experience_memory_enabled: bool,
+    /// When set, a `remember`/`share` presented with a
+    /// [`Capability`](crate::model::capability::Capability) verifies it against
+    /// this issuer and records its id in the write provenance. `None` means
+    /// capability-authorised writes are rejected; plain writes still record
+    /// provenance from the principal. Seed of #126. Attach via
+    /// [`MnemoEngine::with_capability_issuer`].
+    pub capability_issuer: Option<Arc<crate::model::capability::CapabilityIssuer>>,
 }
 
 /// Default TTL (in seconds) applied to Working-tier memories.
@@ -157,7 +165,19 @@ impl MnemoEngine {
             consolidation_policy: maturity::ConsolidationPolicy::default(),
             evidence_scorer: None,
             experience_memory_enabled: false,
+            capability_issuer: None,
         }
+    }
+
+    /// Attach a [`CapabilityIssuer`](crate::model::capability::CapabilityIssuer)
+    /// so `remember`/`share` can be authorised by a verifiable capability, whose
+    /// id is then recorded in the write provenance. Seed of #126.
+    pub fn with_capability_issuer(
+        mut self,
+        issuer: Arc<crate::model::capability::CapabilityIssuer>,
+    ) -> Self {
+        self.capability_issuer = Some(issuer);
+        self
     }
 
     /// Attach a [`provenance::ProvenanceSigner`](crate::provenance::ProvenanceSigner)
@@ -270,6 +290,17 @@ impl MnemoEngine {
         request: remember::RememberRequest,
     ) -> Result<remember::RememberResponse> {
         remember::execute(self, request).await
+    }
+
+    /// REMEMBER authorised by a verifiable [`Capability`](crate::model::capability::Capability):
+    /// the capability is verified against the engine's issuer and its id is
+    /// recorded in the write provenance.
+    pub async fn remember_with_capability(
+        &self,
+        request: remember::RememberRequest,
+        capability: &crate::model::capability::Capability,
+    ) -> Result<remember::RememberResponse> {
+        remember::execute_with_capability(self, request, capability).await
     }
 
     pub async fn recall(&self, request: recall::RecallRequest) -> Result<recall::RecallResponse> {

@@ -1,0 +1,20 @@
+[package]
+name = "mnemo-salami-poisoning-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Compositional ('Salami') memory-poisoning fixture for issue #37 (arXiv:2608.01637): N individually-benign memories that are collectively harmful, plus a benign control that must NOT trip the measure. Reports a write-path SAVE rate and a RETRIEVAL-INFLUENCE (assembly) rate, each with a Wilson 95% interval. Deterministic and offline."
+
+[[bin]]
+name = "salami_poisoning"
+path = "src/main.rs"
+
+[dependencies]
+# Builds on mnemo-core's shipped remember()/recall() path + full-text index.
+mnemo-core = { workspace = true }
+# Reuse the shared Wilson-95 helper the other benches use.
+mnemo-locomo-bench = { path = "../locomo" }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid = { workspace = true }

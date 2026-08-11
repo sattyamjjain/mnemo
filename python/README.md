@@ -26,6 +26,11 @@ client.forget([result["id"]])
 
 # Mem0-compatible aliases also work:
 # client.add(...), client.search(...), client.delete(...)
+
+# Write provenance + FORGET BY PROVENANCE — audit who wrote what, then clean up.
+prov = client.write_provenance(result["id"])        # who wrote it, under what authority
+client.writes_by_principal("agent-1")                # everything a principal wrote
+client.forget_by_principal("agent-1", "hard_delete") # revoke it all (audit trail survives)
 ```
 
 ## What's in the box

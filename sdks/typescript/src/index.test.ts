@@ -28,6 +28,8 @@ import type {
   VerifyResponse,
   DelegateResponse,
   RecalledMemory,
+  WriteProvenanceRecord,
+  ForgetByProvenanceInput,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +71,23 @@ describe("MnemoClient", () => {
     const client = new MnemoClient();
     await expect(
       client.recall({ query: "test" }),
+    ).rejects.toThrow(MnemoConnectionError);
+  });
+
+  it("exposes the provenance surface (read + FORGET BY PROVENANCE)", async () => {
+    const client = new MnemoClient();
+    // All four provenance methods exist and require a live connection.
+    await expect(client.getMemoryProvenance("id")).rejects.toThrow(
+      MnemoConnectionError,
+    );
+    await expect(client.writesByPrincipal("alice")).rejects.toThrow(
+      MnemoConnectionError,
+    );
+    await expect(client.writesBySession("sess-1")).rejects.toThrow(
+      MnemoConnectionError,
+    );
+    await expect(
+      client.forgetByProvenance({ principal: "alice", strategy: "hard_delete" }),
     ).rejects.toThrow(MnemoConnectionError);
   });
 
@@ -205,6 +224,30 @@ describe("Type shape checks", () => {
       expires_in_hours: 72,
     };
     expect(full.max_depth).toBe(2);
+  });
+
+  it("WriteProvenanceRecord and ForgetByProvenanceInput have the expected shapes", () => {
+    const record: WriteProvenanceRecord = {
+      id: "prov-uuid",
+      memory_id: "mem-uuid",
+      principal: "alice",
+      capability_id: null,
+      session_id: "sess-1",
+      op: "remember",
+      authored_at: "2026-01-01T00:00:00+00:00",
+      content_hash: "abcd1234",
+      prev_hash: null,
+    };
+    expect(record.principal).toBe("alice");
+    expect(record.op).toBe("remember");
+
+    const byPrincipal: ForgetByProvenanceInput = {
+      principal: "alice",
+      strategy: "hard_delete",
+    };
+    const bySession: ForgetByProvenanceInput = { session_id: "sess-1" };
+    expect(byPrincipal.principal).toBe("alice");
+    expect(bySession.session_id).toBe("sess-1");
   });
 
   it("Response types have the expected shapes", () => {

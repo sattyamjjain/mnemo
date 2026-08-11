@@ -211,6 +211,27 @@ CREATE TABLE IF NOT EXISTS embedding_baseline (
     .await
     .map_err(|e| Error::Storage(format!("create embedding_baseline: {e}")))?;
 
+    // Write-provenance chain: who wrote each memory, under what authority,
+    // tamper-evident. Mirrors the DuckDB `write_provenance` table.
+    sqlx::query(
+        r#"
+CREATE TABLE IF NOT EXISTS write_provenance (
+    id UUID PRIMARY KEY,
+    memory_id UUID NOT NULL,
+    principal VARCHAR NOT NULL,
+    capability_id UUID,
+    session_id VARCHAR,
+    op VARCHAR NOT NULL,
+    authored_at VARCHAR NOT NULL,
+    prev_hash BYTEA,
+    content_hash BYTEA NOT NULL
+)
+"#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| Error::Storage(format!("create write_provenance: {e}")))?;
+
     // ---- Indexes ----
     // sqlx 0.9 gates dynamic SQL behind `SqlSafeStr`; these statements are
     // compile-time literals (no user data), so `AssertSqlSafe` is audited-safe.
@@ -227,6 +248,9 @@ CREATE TABLE IF NOT EXISTS embedding_baseline (
         "CREATE INDEX IF NOT EXISTS idx_checkpoints_thread ON checkpoints(thread_id, branch_name)",
         "CREATE INDEX IF NOT EXISTS idx_delegations_delegator ON delegations(delegator_id)",
         "CREATE INDEX IF NOT EXISTS idx_delegations_delegate ON delegations(delegate_id)",
+        "CREATE INDEX IF NOT EXISTS idx_write_provenance_memory ON write_provenance(memory_id)",
+        "CREATE INDEX IF NOT EXISTS idx_write_provenance_principal ON write_provenance(principal)",
+        "CREATE INDEX IF NOT EXISTS idx_write_provenance_session ON write_provenance(session_id)",
     ];
 
     for stmt in index_stmts {

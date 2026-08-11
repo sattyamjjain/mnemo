@@ -8,6 +8,7 @@ pub mod experience;
 pub mod forget;
 pub mod forget_subject;
 pub mod merge;
+pub mod provenance;
 pub mod recall;
 pub mod remember;
 pub mod replay;

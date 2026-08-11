@@ -367,3 +367,121 @@ async fn no_token_runs_open() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+// --- Write provenance + FORGET BY PROVENANCE -----------------------------
+
+/// Remember a memory over REST, read its provenance back, list the principal's
+/// writes, then FORGET BY PROVENANCE and confirm the memory is gone.
+#[tokio::test]
+async fn test_rest_provenance_read_and_forget() {
+    let engine = create_test_engine();
+    let app = mnemo_rest::router(engine);
+
+    // Write a memory as principal "alice" in session "sess-rest".
+    let body = serde_json::json!({
+        "content": "provenance over REST",
+        "created_by": "alice",
+        "thread_id": "sess-rest"
+    });
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/memories")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let created: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // GET /v1/memories/:id/provenance -> principal is alice.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/memories/{id}/provenance"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let prov: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(prov["principal"], "alice");
+    assert_eq!(prov["op"], "remember");
+    assert_eq!(prov["memory_id"], id);
+
+    // GET /v1/provenance/principal/alice -> one write.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/provenance/principal/alice")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let writes: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(writes.as_array().unwrap().len(), 1);
+
+    // POST /v1/provenance/forget {principal: alice, hard_delete} -> 1 forgotten.
+    let forget_body = serde_json::json!({"principal": "alice", "strategy": "hard_delete"});
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/provenance/forget")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&forget_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let forgotten: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(forgotten["forgotten"].as_array().unwrap().len(), 1);
+
+    // The memory is now gone.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/memories/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// FORGET BY PROVENANCE with neither principal nor session is a 400.
+#[tokio::test]
+async fn test_rest_forget_by_provenance_requires_selector() {
+    let app = mnemo_rest::router(create_test_engine());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/provenance/forget")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"strategy": "soft_delete"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}

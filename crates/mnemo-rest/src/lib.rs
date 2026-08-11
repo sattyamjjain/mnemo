@@ -58,6 +58,26 @@ pub fn router_with_auth(engine: Arc<MnemoEngine>, auth_token: Option<String>) ->
         )
         .route("/v1/delegate", post(handlers::delegate_handler))
         .route("/v1/forget_subject", post(handlers::forget_subject_handler))
+        .route(
+            "/v1/memories/{id}/provenance",
+            get(handlers::get_provenance_handler),
+        )
+        .route(
+            "/v1/provenance/principal/{principal}",
+            get(handlers::provenance_by_principal_handler),
+        )
+        .route(
+            "/v1/provenance/session/{session_id}",
+            get(handlers::provenance_by_session_handler),
+        )
+        .route(
+            "/v1/provenance/verify",
+            get(handlers::verify_provenance_handler),
+        )
+        .route(
+            "/v1/provenance/forget",
+            post(handlers::forget_by_provenance_handler),
+        )
         .route("/v1/ingest/otlp", post(handlers::otlp_ingest_handler))
         .route("/v1/health", get(handlers::health_handler))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024)) // 2 MB max request body
