@@ -39,6 +39,7 @@ use crate::tools::experience::{RecallPlanInput, RememberPlanInput};
 use crate::tools::forget::ForgetInput;
 use crate::tools::forget_subject::ForgetSubjectInput;
 use crate::tools::merge::MergeInput;
+use crate::tools::provenance::{ForgetByProvenanceInput, ProvenanceInput};
 use crate::tools::recall::RecallInput;
 use crate::tools::remember::RememberInput;
 use crate::tools::replay::ReplayInput;
@@ -151,6 +152,32 @@ impl MnemoServer {
             })
             .collect()
     }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// JSON view of a write-provenance record, with hashes as hex strings so the
+/// shape is stable across the REST / MCP / SDK surfaces.
+fn provenance_to_json(
+    p: &mnemo_core::model::write_provenance::WriteProvenance,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": p.id.to_string(),
+        "memory_id": p.memory_id.to_string(),
+        "principal": p.principal,
+        "capability_id": p.capability_id.map(|c| c.to_string()),
+        "session_id": p.session_id,
+        "op": p.op.as_str(),
+        "authored_at": p.authored_at.to_rfc3339(),
+        "content_hash": hex_encode(&p.content_hash),
+        "prev_hash": p.prev_hash.as_deref().map(hex_encode),
+    })
 }
 
 #[tool_router]
@@ -477,6 +504,118 @@ impl MnemoServer {
         request.criteria = criteria;
 
         match self.engine.forget(request).await {
+            Ok(response) => {
+                let result = serde_json::json!({
+                    "forgotten": response.forgotten.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    "errors": response.errors,
+                    "status": "forgotten"
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+                )]))
+            }
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+        }
+    }
+
+    #[tool(
+        name = "mnemo.provenance",
+        description = "Read the write-provenance of memories: who wrote each one, under what capability, in what session, when. Provide exactly one selector: `memory_id` (one record), `principal` (everything a writer authored), or `session_id` (everything written under a session/trace). Provenance is queryable audit history and survives forgetting."
+    )]
+    async fn provenance(
+        &self,
+        Parameters(input): Parameters<ProvenanceInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let limit = input.limit.unwrap_or(1000).min(10_000);
+        let selectors = [
+            input.memory_id.is_some(),
+            input.principal.is_some(),
+            input.session_id.is_some(),
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count();
+        if selectors != 1 {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "provide exactly one of: memory_id, principal, session_id",
+            )]));
+        }
+
+        let result = if let Some(mid) = input.memory_id {
+            let id = match uuid::Uuid::parse_str(&mid) {
+                Ok(id) => id,
+                Err(e) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "invalid memory_id UUID: {e}"
+                    ))]));
+                }
+            };
+            match self.engine.write_provenance_for(id).await {
+                Ok(Some(p)) => provenance_to_json(&p),
+                Ok(None) => serde_json::Value::Null,
+                Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+            }
+        } else if let Some(principal) = input.principal {
+            match self.engine.writes_by_principal(&principal, limit).await {
+                Ok(writes) => {
+                    serde_json::Value::Array(writes.iter().map(provenance_to_json).collect())
+                }
+                Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+            }
+        } else {
+            let session_id = input.session_id.unwrap_or_default();
+            match self.engine.writes_by_session(&session_id, limit).await {
+                Ok(writes) => {
+                    serde_json::Value::Array(writes.iter().map(provenance_to_json).collect())
+                }
+                Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+            }
+        };
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result)
+                .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
+        )]))
+    }
+
+    #[tool(
+        name = "mnemo.forget_by_provenance",
+        description = "FORGET BY PROVENANCE: revoke every memory a principal (or session/trace) authored, in one call. Remediation targeted at the responsible writer, not an indiscriminate wipe. Provide exactly one of `principal` or `session_id`; strategy is soft_delete (default), hard_delete, or redact. The provenance audit trail survives — wiping is not remediation."
+    )]
+    async fn forget_by_provenance(
+        &self,
+        Parameters(input): Parameters<ForgetByProvenanceInput>,
+    ) -> Result<CallToolResult, McpError> {
+        self.touch_activity();
+        let strategy = match input.strategy.as_deref().unwrap_or("soft_delete") {
+            "soft_delete" => ForgetStrategy::SoftDelete,
+            "hard_delete" => ForgetStrategy::HardDelete,
+            "redact" => ForgetStrategy::Redact,
+            unknown => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "invalid strategy '{unknown}': expected one of: soft_delete, hard_delete, redact"
+                ))]));
+            }
+        };
+
+        let response = match (input.principal, input.session_id) {
+            (Some(p), None) => self.engine.forget_by_principal(&p, strategy).await,
+            (None, Some(s)) => self.engine.forget_by_session(&s, strategy).await,
+            (Some(_), Some(_)) => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "provide exactly one of principal or session_id, not both",
+                )]));
+            }
+            (None, None) => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "provide one of principal or session_id",
+                )]));
+            }
+        };
+
+        match response {
             Ok(response) => {
                 let result = serde_json::json!({
                     "forgotten": response.forgotten.iter().map(|id| id.to_string()).collect::<Vec<_>>(),

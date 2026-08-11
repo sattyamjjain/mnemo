@@ -391,7 +391,7 @@ async fn docs_document_exactly_the_registered_tools() {
     // Registered set: every tool the router exposes when no role filter is set.
     let (server, _engine) = create_server();
     let registered: BTreeSet<String> = server.visible_tool_names().into_iter().collect();
-    assert_eq!(registered.len(), 21, "expected 21 registered tools");
+    assert_eq!(registered.len(), 23, "expected 23 registered tools");
 
     // Documented set: the first cell of every markdown table row that names a
     // tool. Prose mentions (e.g. the `mnemo.export_audit_log` note, which is a
