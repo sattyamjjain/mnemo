@@ -13,6 +13,7 @@ use mnemo_core::model::acl::Permission;
 use mnemo_core::model::delegation::{Delegation, DelegationScope};
 use mnemo_core::model::event::{AgentEvent, EventType};
 use mnemo_core::model::memory::{MemoryType, Scope};
+use mnemo_core::model::write_provenance::WriteProvenance;
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::{BranchRequest, BranchResponse};
 use mnemo_core::query::checkpoint::{CheckpointRequest, CheckpointResponse};
@@ -615,6 +616,117 @@ pub async fn delegate_handler(
 /// GET /v1/health
 pub async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
+}
+
+// ---------------------------------------------------------------------------
+// Write provenance + FORGET BY PROVENANCE
+// ---------------------------------------------------------------------------
+
+fn provenance_limit(limit: Option<usize>) -> usize {
+    // Default generous, hard-capped so a single call cannot fetch unboundedly.
+    limit.unwrap_or(1000).min(10_000)
+}
+
+/// GET /v1/memories/:id/provenance — who wrote this memory, under what authority.
+/// 404 if the memory has no recorded provenance (e.g. written before provenance
+/// existed, or by a backend that does not record it).
+pub async fn get_provenance_handler(
+    State(engine): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<WriteProvenance>, AppError> {
+    let prov = engine
+        .write_provenance_for(id)
+        .await?
+        .ok_or_else(|| CoreError::NotFound(format!("no write provenance for memory {id}")))?;
+    Ok(Json(prov))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProvenanceListParams {
+    pub limit: Option<usize>,
+}
+
+/// GET /v1/provenance/principal/:principal — everything a principal wrote.
+pub async fn provenance_by_principal_handler(
+    State(engine): State<AppState>,
+    Path(principal): Path<String>,
+    Query(params): Query<ProvenanceListParams>,
+) -> Result<Json<Vec<WriteProvenance>>, AppError> {
+    let writes = engine
+        .writes_by_principal(&principal, provenance_limit(params.limit))
+        .await?;
+    Ok(Json(writes))
+}
+
+/// GET /v1/provenance/session/:session_id — everything written under a session/trace.
+pub async fn provenance_by_session_handler(
+    State(engine): State<AppState>,
+    Path(session_id): Path<String>,
+    Query(params): Query<ProvenanceListParams>,
+) -> Result<Json<Vec<WriteProvenance>>, AppError> {
+    let writes = engine
+        .writes_by_session(&session_id, provenance_limit(params.limit))
+        .await?;
+    Ok(Json(writes))
+}
+
+/// GET /v1/provenance/verify?limit=N — tamper-evidence over the write-provenance
+/// chain (append history). Returns the chain verification result.
+pub async fn verify_provenance_handler(
+    State(engine): State<AppState>,
+    Query(params): Query<ProvenanceListParams>,
+) -> Result<Json<mnemo_core::hash::ChainVerificationResult>, AppError> {
+    let result = engine
+        .verify_provenance_chain(provenance_limit(params.limit))
+        .await?;
+    Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForgetByProvenanceBody {
+    /// Revoke everything this principal wrote. Exactly one of `principal` or
+    /// `session_id` must be set.
+    pub principal: Option<String>,
+    /// Revoke everything written under this session / trace id.
+    pub session_id: Option<String>,
+    /// soft_delete (default) | hard_delete | redact.
+    pub strategy: Option<String>,
+}
+
+/// POST /v1/provenance/forget — FORGET BY PROVENANCE.
+///
+/// Revoke every memory a principal (or session) authored, in one call. This is
+/// remediation targeted at the responsible writer — not an indiscriminate wipe.
+pub async fn forget_by_provenance_handler(
+    State(engine): State<AppState>,
+    Json(body): Json<ForgetByProvenanceBody>,
+) -> Result<Json<ForgetResponse>, AppError> {
+    let strategy = match body.strategy.as_deref().unwrap_or("soft_delete") {
+        "soft_delete" => ForgetStrategy::SoftDelete,
+        "hard_delete" => ForgetStrategy::HardDelete,
+        "redact" => ForgetStrategy::Redact,
+        other => {
+            return Err(AppError(CoreError::Validation(format!(
+                "invalid forget strategy '{other}': expected one of: soft_delete, hard_delete, redact"
+            ))));
+        }
+    };
+
+    let response = match (body.principal, body.session_id) {
+        (Some(p), None) => engine.forget_by_principal(&p, strategy).await?,
+        (None, Some(s)) => engine.forget_by_session(&s, strategy).await?,
+        (Some(_), Some(_)) => {
+            return Err(AppError(CoreError::Validation(
+                "provide exactly one of 'principal' or 'session_id', not both".to_string(),
+            )));
+        }
+        (None, None) => {
+            return Err(AppError(CoreError::Validation(
+                "provide one of 'principal' or 'session_id'".to_string(),
+            )));
+        }
+    };
+    Ok(Json(response))
 }
 
 // ---------------------------------------------------------------------------
