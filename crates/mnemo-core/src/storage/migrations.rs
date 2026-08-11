@@ -207,9 +207,31 @@ CREATE TABLE IF NOT EXISTS embedding_baseline (
 );
 ";
 
+/// Write-provenance chain: who wrote each memory, under what authority, tamper-
+/// evident. Additive — an existing DB gains the table on the next
+/// `run_migrations`; a fresh DB gets it at create time. `content_hash` /
+/// `prev_hash` carry the chain (see `model::write_provenance`).
+pub const CREATE_WRITE_PROVENANCE_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS write_provenance (
+    id VARCHAR PRIMARY KEY,
+    memory_id VARCHAR NOT NULL,
+    principal VARCHAR NOT NULL,
+    capability_id VARCHAR,
+    session_id VARCHAR,
+    op VARCHAR NOT NULL,
+    authored_at VARCHAR NOT NULL,
+    prev_hash BLOB,
+    content_hash BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_write_provenance_memory_id ON write_provenance(memory_id);
+CREATE INDEX IF NOT EXISTS idx_write_provenance_principal ON write_provenance(principal);
+CREATE INDEX IF NOT EXISTS idx_write_provenance_session_id ON write_provenance(session_id);
+CREATE INDEX IF NOT EXISTS idx_write_provenance_authored_at ON write_provenance(authored_at);
+";
+
 /// Persistence format version this release writes. Bump when the on-disk
 /// schema changes in a way that requires a migrator pass.
-pub const CURRENT_PERSISTENCE_VERSION: u32 = 4;
+pub const CURRENT_PERSISTENCE_VERSION: u32 = 5;
 
 pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_MEMORIES_TABLE)?;
@@ -240,6 +262,8 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_MNEMO_META_TABLE)?;
     // v0.3.3: embedding baseline table (z-score outlier detector).
     conn.execute_batch(CREATE_EMBEDDING_BASELINE_TABLE)?;
+    // Write-provenance chain (who wrote each memory, under what authority).
+    conn.execute_batch(CREATE_WRITE_PROVENANCE_TABLE)?;
     stamp_persistence_version(conn)?;
     Ok(())
 }
@@ -436,5 +460,59 @@ mod tests {
         let mut stmt = conn.prepare("SELECT COUNT(*) FROM checkpoints").unwrap();
         let count: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
         assert_eq!(count, 0);
+    }
+
+    // --- write_provenance migration, both directions ------------------------
+
+    fn insert_one_provenance(conn: &duckdb::Connection) {
+        conn.execute(
+            "INSERT INTO write_provenance (id, memory_id, principal, op, authored_at, content_hash) \
+             VALUES ('id-1', 'mem-1', 'alice', 'remember', '2026-08-11T00:00:00Z', ?)",
+            duckdb::params![vec![1u8, 2, 3]],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fresh_db_creates_write_provenance_table() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        insert_one_provenance(&conn);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM write_provenance", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn migrations_are_idempotent_for_write_provenance() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        insert_one_provenance(&conn);
+        // Re-running must not error and must not drop data (CREATE IF NOT EXISTS).
+        run_migrations(&conn).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM write_provenance", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "re-running migrations must preserve existing rows");
+    }
+
+    #[test]
+    fn upgrade_direction_existing_db_gains_write_provenance() {
+        // Simulate a pre-provenance database: only the memories table exists.
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        conn.execute_batch(CREATE_MEMORIES_TABLE).unwrap();
+        assert!(
+            conn.prepare("SELECT 1 FROM write_provenance LIMIT 1")
+                .is_err(),
+            "the provenance table must not exist before the upgrade"
+        );
+        // The upgrade direction: running migrations adds it additively.
+        run_migrations(&conn).unwrap();
+        insert_one_provenance(&conn);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM write_provenance", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
     }
 }

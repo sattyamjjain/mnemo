@@ -3,9 +3,11 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::hash::{compute_chain_hash, compute_content_hash};
+use crate::model::capability::Capability;
 use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType};
 use crate::model::relation::Relation;
+use crate::model::write_provenance::WriteOp;
 use crate::query::MnemoEngine;
 #[allow(unused_imports)]
 use base64::Engine as _;
@@ -65,6 +67,26 @@ impl RememberResponse {
 }
 
 pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<RememberResponse> {
+    remember_inner(engine, request, None).await
+}
+
+/// REMEMBER authorised by a verifiable [`Capability`]. The capability is verified
+/// against the engine's issuer before the write, and its id is recorded in the
+/// write provenance (the principal comes from the capability, not `created_by`).
+pub async fn execute_with_capability(
+    engine: &MnemoEngine,
+    request: RememberRequest,
+    capability: &Capability,
+) -> Result<RememberResponse> {
+    engine.verify_capability(capability)?;
+    remember_inner(engine, request, Some(capability)).await
+}
+
+async fn remember_inner(
+    engine: &MnemoEngine,
+    request: RememberRequest,
+    capability: Option<&Capability>,
+) -> Result<RememberResponse> {
     // Validate
     if request.content.trim().is_empty() {
         return Err(Error::Validation("content cannot be empty".to_string()));
@@ -166,6 +188,24 @@ pub async fn execute(engine: &MnemoEngine, request: RememberRequest) -> Result<R
 
     // Store in database
     engine.storage.insert_memory(&record).await?;
+
+    // Write provenance: who wrote this, under what authority. The principal is
+    // the capability holder if the write was capability-authorised, else the
+    // record's `created_by`, else its `agent_id`. Session/trace is the
+    // `thread_id`. Chained + tamper-evident (see model::write_provenance).
+    let principal = capability
+        .map(|c| c.principal.clone())
+        .or_else(|| record.created_by.clone())
+        .unwrap_or_else(|| record.agent_id.clone());
+    engine
+        .record_write_provenance(
+            record.id,
+            principal,
+            capability.map(|c| c.id),
+            record.thread_id.clone(),
+            WriteOp::Remember,
+        )
+        .await?;
 
     // Add to vector index
     engine.index.add(id, &embedding)?;

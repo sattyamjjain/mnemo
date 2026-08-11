@@ -159,7 +159,8 @@ mod tests {
         let cap = iss.issue("alice", "remember", Some(Duration::hours(1)));
         assert_eq!(cap.principal, "alice");
         assert_eq!(cap.scope, "remember");
-        iss.verify(&cap).expect("freshly issued capability must verify");
+        iss.verify(&cap)
+            .expect("freshly issued capability must verify");
     }
 
     #[test]

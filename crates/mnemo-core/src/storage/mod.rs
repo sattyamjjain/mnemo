@@ -11,6 +11,7 @@ use crate::model::embedding_baseline::EmbeddingBaseline;
 use crate::model::event::AgentEvent;
 use crate::model::memory::MemoryRecord;
 use crate::model::relation::Relation;
+use crate::model::write_provenance::WriteProvenance;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
@@ -144,6 +145,63 @@ pub trait StorageBackend: Send + Sync {
         thread_id: &str,
         branch: &str,
     ) -> Result<Option<Checkpoint>>;
+
+    // --- Write provenance (who wrote each memory, under what authority) -------
+    // A tamper-evident, hash-chained record per memory write. Default impls are
+    // graceful (no-op / empty) so a backend opts in by overriding them —
+    // provenance is recorded only where a backend implements it. DuckDB
+    // implements the full set; PostgreSQL support is tracked alongside.
+
+    /// Append a tamper-evident write-provenance record. Default: no-op.
+    async fn insert_write_provenance(&self, _prov: &WriteProvenance) -> Result<()> {
+        Ok(())
+    }
+    /// The provenance for one memory id, if recorded. Default: `None`.
+    async fn get_write_provenance(&self, _memory_id: Uuid) -> Result<Option<WriteProvenance>> {
+        Ok(None)
+    }
+    /// `content_hash` of the most recent provenance record (the chain head), or
+    /// `None` when the chain is empty. Used to link the next record. Default: `None`.
+    async fn get_latest_provenance_hash(&self) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
+    /// All provenance written by `principal`, newest first. Default: empty.
+    async fn list_provenance_by_principal(
+        &self,
+        _principal: &str,
+        _limit: usize,
+    ) -> Result<Vec<WriteProvenance>> {
+        Ok(Vec::new())
+    }
+    /// All provenance written under `session_id`, newest first. Default: empty.
+    async fn list_provenance_by_session(
+        &self,
+        _session_id: &str,
+        _limit: usize,
+    ) -> Result<Vec<WriteProvenance>> {
+        Ok(Vec::new())
+    }
+    /// Memory ids written by `principal` — the target set for FORGET BY
+    /// PROVENANCE. Default: empty.
+    async fn list_memory_ids_by_principal(&self, _principal: &str) -> Result<Vec<Uuid>> {
+        Ok(Vec::new())
+    }
+    /// Memory ids written under `session_id`. Default: empty.
+    async fn list_memory_ids_by_session(&self, _session_id: &str) -> Result<Vec<Uuid>> {
+        Ok(Vec::new())
+    }
+    /// The whole provenance chain, oldest-first (append order), for
+    /// tamper-evidence verification. Default: empty.
+    async fn list_all_provenance(&self, _limit: usize) -> Result<Vec<WriteProvenance>> {
+        Ok(Vec::new())
+    }
+
+    /// Whether this backend records write provenance (overridden to `true` by
+    /// backends that implement the methods above). Lets the write path skip the
+    /// provenance write on a backend that would no-op it.
+    fn records_write_provenance(&self) -> bool {
+        false
+    }
 
     /// Short, stable label for the backend implementation (e.g. `"duckdb"`,
     /// `"postgres"`). Used in diagnostics such as

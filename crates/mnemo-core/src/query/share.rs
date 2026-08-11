@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 use crate::model::acl::{Acl, Permission, PrincipalType};
 use crate::model::event::EventType;
 use crate::model::memory::Scope;
+use crate::model::write_provenance::WriteOp;
 use crate::query::MnemoEngine;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +91,18 @@ pub async fn execute(engine: &MnemoEngine, request: ShareRequest) -> Result<Shar
         engine.storage.insert_acl(&acl).await?;
         acl_ids.push(acl_id);
     }
+
+    // Write provenance for the SHARE: who granted access to this memory. The
+    // principal is the sharing agent; recorded once per share operation.
+    engine
+        .record_write_provenance(
+            request.memory_id,
+            agent_id.clone(),
+            None,
+            None,
+            WriteOp::Share,
+        )
+        .await?;
 
     // Optionally update scope to Shared if it was Private
     if let Some(mut record) = engine.storage.get_memory(request.memory_id).await?
