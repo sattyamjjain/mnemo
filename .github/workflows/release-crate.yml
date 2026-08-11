@@ -388,3 +388,15 @@ jobs:
               sleep 60
             fi
           done
+
+      # --- Post-publish release-parity gate --------------------------------
+      # A publish that REPORTS success but leaves a member behind is the exact
+      # silent failure that stranded mnemo-mcp-server at 0.4.4 for multiple
+      # releases while the libraries moved on. After the walk, assert every
+      # closure crate actually reached the workspace version on crates.io and
+      # fail the release loudly if any lags. `always()` so a partial publish is
+      # reported even when an earlier crate errored; skipped on a dry-run, where
+      # nothing is uploaded so a lag is expected.
+      - name: Assert release parity (every closure crate at the workspace version)
+        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        run: bash scripts/assert_release_parity.sh $WALK

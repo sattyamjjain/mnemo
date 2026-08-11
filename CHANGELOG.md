@@ -11,6 +11,22 @@ The 0.5.23 window opens on the **v0.5.22** release — `main` at
 merge the `v0.5.22` tag points at). The entries below accumulate on top of it toward the
 0.5.23 cut.
 
+### Fixed (2026-08-11) - the publish stranding is now caught loudly; the "tag never pushed" note below is superseded
+
+The 2026-08-09 note below says the `v0.5.22` tag "was never pushed." True when written, but the tag
+was pushed right after: `release-crate.yml` ran three times and failed at the token preflight (`403`
+from `/api/v1/me` — the signature of a granular/scoped token, since the libraries publish fine). The
+real remaining blocker is that `mnemo-embeddings-bench` is a new crate needing the token's
+`publish-new` scope; `mnemo-mcp-server` (0.4.4) depends on it, so it cannot publish until the bench
+does. See #140.
+
+- **New-crate preflight verified**, not just trusted: its exact logic, run against live crates.io,
+  flags `mnemo-embeddings-bench` as the new crate that needs `publish-new`.
+- **`scripts/assert_release_parity.sh`** — a hard, un-baselined post-publish gate wired into
+  `release-crate.yml`: after the walk it asserts every closure crate reached the workspace version
+  and fails the release if any lags. The stranding was invisible for multiple releases because
+  nothing asserted the publish fully landed; this makes a partial publish loud. Skipped on dry-runs.
+
 ### Fixed (2026-08-09) - release-crate.yml flags new crates that need the publish-new token scope (#140)
 
 `#140` blamed `mnemo-mcp-server` being stuck at 0.4.4 on "a rejected
