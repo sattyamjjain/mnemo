@@ -202,6 +202,60 @@ func (c *Client) Delegate(input DelegateInput) (*DelegateResponse, error) {
 }
 
 // ---------------------------------------------------------------------------
+// Write provenance + FORGET BY PROVENANCE
+// ---------------------------------------------------------------------------
+
+// MemoryProvenance returns the write-provenance of one memory: who wrote it,
+// under what capability, in what session. Returns (nil, nil) when no provenance
+// was recorded for that id.
+func (c *Client) MemoryProvenance(memoryID string) (*WriteProvenanceRecord, error) {
+	var resp *WriteProvenanceRecord
+	if err := c.callTool("mnemo.provenance", provenanceQuery{MemoryID: &memoryID}, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// WritesByPrincipal lists everything a principal wrote, newest first. A limit of
+// 0 or less uses the server default (1000, capped 10000).
+func (c *Client) WritesByPrincipal(principal string, limit int) ([]WriteProvenanceRecord, error) {
+	q := provenanceQuery{Principal: &principal}
+	if limit > 0 {
+		q.Limit = &limit
+	}
+	var resp []WriteProvenanceRecord
+	if err := c.callTool("mnemo.provenance", q, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// WritesBySession lists everything written under a session / trace id, newest
+// first. A limit of 0 or less uses the server default.
+func (c *Client) WritesBySession(sessionID string, limit int) ([]WriteProvenanceRecord, error) {
+	q := provenanceQuery{SessionID: &sessionID}
+	if limit > 0 {
+		q.Limit = &limit
+	}
+	var resp []WriteProvenanceRecord
+	if err := c.callTool("mnemo.provenance", q, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// ForgetByProvenance revokes every memory a principal (or session/trace)
+// authored, in one call. Targeted remediation, not a wipe — the provenance
+// audit trail survives. Provide exactly one of Principal or SessionID.
+func (c *Client) ForgetByProvenance(input ForgetByProvenanceInput) (*ForgetResponse, error) {
+	var resp ForgetResponse
+	if err := c.callTool("mnemo.forget_by_provenance", input, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
