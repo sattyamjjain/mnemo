@@ -52,7 +52,7 @@ await client.close();
 
 ## Surface
 
-The SDK exposes typed bindings for all 10 MCP tools:
+The SDK exposes typed bindings for the MCP tools:
 
 | Method | Tool |
 |---|---|
@@ -66,8 +66,23 @@ The SDK exposes typed bindings for all 10 MCP tools:
 | `client.replay(...)` | `replay` |
 | `client.verify(...)` | `verify` |
 | `client.delegate(...)` | `delegate` |
+| `client.getMemoryProvenance(id)` | `provenance` |
+| `client.writesByPrincipal(p)` / `client.writesBySession(s)` | `provenance` |
+| `client.forgetByProvenance(...)` | `forget_by_provenance` |
 
 Every input and response is typed (`RememberInput`, `RecallResponse`, etc.). Errors land as `MnemoToolError`, `MnemoRpcError`, or `MnemoConnectionError`.
+
+### Write provenance & FORGET BY PROVENANCE
+
+```typescript
+// Who wrote this memory, under what authority?
+const prov = await client.getMemoryProvenance(id);
+// Everything a principal / session wrote (newest first)
+await client.writesByPrincipal("alice");
+await client.writesBySession("sess-42");
+// FORGET BY PROVENANCE — revoke everything alice wrote (audit trail survives)
+await client.forgetByProvenance({ principal: "alice", strategy: "hard_delete" });
+```
 
 ## Configuration
 
