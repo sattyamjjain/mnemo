@@ -175,22 +175,21 @@ pub async fn run_trial(seed: u64, slices: &[String], background_n: usize, k: usi
     let mut ids = Vec::new();
     let mut slices_saved = 0usize;
     for s in slices {
-        match engine.remember(RememberRequest::new(s.clone())).await {
-            Ok(resp) => {
-                let quarantined = engine
-                    .storage
-                    .get_memory(resp.id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|r| r.quarantined)
-                    .unwrap_or(false);
-                if !quarantined {
-                    slices_saved += 1;
-                }
-                ids.push((resp.id, s.clone()));
+        // A write may legitimately fail (e.g. a quarantine reject); such a slice
+        // simply did not survive the write path, so it is not counted as saved.
+        if let Ok(resp) = engine.remember(RememberRequest::new(s.clone())).await {
+            let quarantined = engine
+                .storage
+                .get_memory(resp.id)
+                .await
+                .ok()
+                .flatten()
+                .map(|r| r.quarantined)
+                .unwrap_or(false);
+            if !quarantined {
+                slices_saved += 1;
             }
-            Err(_) => {}
+            ids.push((resp.id, s.clone()));
         }
     }
 
