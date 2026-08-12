@@ -221,6 +221,12 @@ type WriteProvenanceRecord struct {
 	// AuthoredAt is the RFC 3339 write timestamp.
 	AuthoredAt string `json:"authored_at"`
 
+	// Flags are write-time flags, e.g. "opaque_reasoning_payload" when the
+	// content had the SHAPE of a provider opaque reasoning payload
+	// (arXiv:2608.09867). A flag is a shape match recorded for revocation — NOT
+	// proof a secret is present. Hashed into ContentHash, so it is tamper-evident.
+	Flags []string `json:"flags"`
+
 	// ContentHash is the hex-encoded content hash (tamper-evidence).
 	ContentHash string `json:"content_hash"`
 

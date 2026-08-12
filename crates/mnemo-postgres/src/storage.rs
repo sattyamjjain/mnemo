@@ -7,7 +7,9 @@ use mnemo_core::model::embedding_baseline::EmbeddingBaseline;
 use mnemo_core::model::event::AgentEvent;
 use mnemo_core::model::memory::MemoryRecord;
 use mnemo_core::model::relation::Relation;
-use mnemo_core::model::write_provenance::{WriteOp, WriteProvenance};
+use mnemo_core::model::write_provenance::{
+    WriteOp, WriteProvenance, flags_from_storage, flags_to_storage,
+};
 use mnemo_core::storage::{MemoryFilter, StorageBackend};
 use pgvector::Vector;
 use sqlx::Row;
@@ -274,6 +276,12 @@ fn row_to_write_provenance(
         session_id: row.try_get("session_id").unwrap_or(None),
         op,
         authored_at,
+        // `flags` (v6) may be absent on an older row → None → empty flag set.
+        flags: flags_from_storage(
+            &row.try_get::<Option<String>, _>("flags")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        ),
         prev_hash: row.try_get("prev_hash").unwrap_or(None),
         content_hash: row.get("content_hash"),
     })
@@ -339,8 +347,8 @@ impl StorageBackend for PgStorage {
         sqlx::query(
             r#"
 INSERT INTO write_provenance
-    (id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    (id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 "#,
         )
         .bind(prov.id)
@@ -350,6 +358,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         .bind(&prov.session_id)
         .bind(prov.op.as_str())
         .bind(prov.authored_at.to_rfc3339())
+        .bind(flags_to_storage(&prov.flags))
         .bind(&prov.prev_hash)
         .bind(&prov.content_hash)
         .execute(&self.pool)
@@ -361,7 +370,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     async fn get_write_provenance(&self, memory_id: Uuid) -> Result<Option<WriteProvenance>> {
         let row = sqlx::query(
             r#"
-SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash
 FROM write_provenance WHERE memory_id = $1 ORDER BY id DESC LIMIT 1
 "#,
         )
@@ -391,7 +400,7 @@ FROM write_provenance WHERE memory_id = $1 ORDER BY id DESC LIMIT 1
     ) -> Result<Vec<WriteProvenance>> {
         let rows = sqlx::query(
             r#"
-SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash
 FROM write_provenance WHERE principal = $1 ORDER BY id DESC LIMIT $2
 "#,
         )
@@ -414,7 +423,7 @@ FROM write_provenance WHERE principal = $1 ORDER BY id DESC LIMIT $2
     ) -> Result<Vec<WriteProvenance>> {
         let rows = sqlx::query(
             r#"
-SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash
 FROM write_provenance WHERE session_id = $1 ORDER BY id DESC LIMIT $2
 "#,
         )
@@ -455,7 +464,7 @@ FROM write_provenance WHERE session_id = $1 ORDER BY id DESC LIMIT $2
     async fn list_all_provenance(&self, limit: usize) -> Result<Vec<WriteProvenance>> {
         let rows = sqlx::query(
             r#"
-SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash
+SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash
 FROM write_provenance ORDER BY id ASC LIMIT $1
 "#,
         )

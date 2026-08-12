@@ -235,11 +235,13 @@ describe("Type shape checks", () => {
       session_id: "sess-1",
       op: "remember",
       authored_at: "2026-01-01T00:00:00+00:00",
+      flags: ["opaque_reasoning_payload"],
       content_hash: "abcd1234",
       prev_hash: null,
     };
     expect(record.principal).toBe("alice");
     expect(record.op).toBe("remember");
+    expect(record.flags).toContain("opaque_reasoning_payload");
 
     const byPrincipal: ForgetByProvenanceInput = {
       principal: "alice",

@@ -76,6 +76,10 @@ fn write_prov_to_dict<'py>(
     dict.set_item("session_id", p.session_id.clone())?;
     dict.set_item("op", p.op.as_str())?;
     dict.set_item("authored_at", p.authored_at.to_rfc3339())?;
+    dict.set_item(
+        "flags",
+        p.flags.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
+    )?;
     dict.set_item("content_hash", hex_encode(&p.content_hash))?;
     dict.set_item("prev_hash", p.prev_hash.as_deref().map(hex_encode))?;
     Ok(dict)

@@ -101,6 +101,9 @@ pub async fn execute(engine: &MnemoEngine, request: ShareRequest) -> Result<Shar
             None,
             None,
             WriteOp::Share,
+            // A SHARE grants access to an existing memory; it writes no content,
+            // so there is nothing to shape-check for an opaque payload.
+            Vec::new(),
         )
         .await?;
 

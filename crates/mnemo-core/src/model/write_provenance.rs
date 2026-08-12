@@ -54,6 +54,60 @@ impl WriteOp {
     }
 }
 
+/// A write-time flag recorded on a provenance record. Flags are **hashed into**
+/// the record's `content_hash`, so a flag cannot be stripped without breaking the
+/// chain — the security signal is tamper-evident, not advisory metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WriteFlag {
+    /// The written content has the SHAPE of a provider-returned opaque reasoning
+    /// payload (arXiv:2608.09867) — see [`crate::opaque_reasoning`]. Shape only:
+    /// this is NOT a proof the payload contains a secret. Recorded so such a write
+    /// can be found and revoked (by principal or session) later.
+    OpaqueReasoningPayload,
+}
+
+impl WriteFlag {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WriteFlag::OpaqueReasoningPayload => "opaque_reasoning_payload",
+        }
+    }
+
+    /// Parse from the stored string form. Unknown values are ignored (`None`) so
+    /// a forward-compatible reader never fails on a flag it does not know.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "opaque_reasoning_payload" => Some(WriteFlag::OpaqueReasoningPayload),
+            _ => None,
+        }
+    }
+}
+
+/// Serialize a flag set to the single-column storage form: a comma-joined list
+/// of stable string names, sorted+deduped for a deterministic representation.
+/// Empty set → empty string.
+pub fn flags_to_storage(flags: &[WriteFlag]) -> String {
+    let mut names: Vec<&'static str> = flags.iter().map(|f| f.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    names.join(",")
+}
+
+/// Parse the storage form back to a flag set (sorted+deduped; unknown names
+/// skipped). Empty/whitespace → empty.
+pub fn flags_from_storage(s: &str) -> Vec<WriteFlag> {
+    let mut out: Vec<WriteFlag> = s
+        .split(',')
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .filter_map(WriteFlag::from_str)
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// One tamper-evident provenance record for a single memory write.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WriteProvenance {
@@ -66,12 +120,20 @@ pub struct WriteProvenance {
     pub session_id: Option<String>,
     pub op: WriteOp,
     pub authored_at: DateTime<Utc>,
+    /// Write-time flags (e.g. an opaque-reasoning-payload shape match). Hashed
+    /// into `content_hash`, so a flag is tamper-evident.
+    #[serde(default)]
+    pub flags: Vec<WriteFlag>,
     /// Previous record's `content_hash`; `None` for the first record.
     pub prev_hash: Option<Vec<u8>>,
     pub content_hash: Vec<u8>,
 }
 
-/// Deterministic content hash over the provenance fields + `prev_hash`.
+/// Deterministic content hash over the provenance fields + `flags` + `prev_hash`.
+///
+/// `flags` is folded in via its canonical storage form (sorted+deduped), so an
+/// empty flag set contributes nothing — a pre-flags record and a no-flags record
+/// hash identically, which keeps older records verifiable.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_provenance_hash(
     memory_id: &Uuid,
@@ -80,6 +142,7 @@ pub fn compute_provenance_hash(
     session_id: &Option<String>,
     op: WriteOp,
     authored_at: &DateTime<Utc>,
+    flags: &[WriteFlag],
     prev_hash: Option<&[u8]>,
 ) -> Vec<u8> {
     let mut h = Sha256::new();
@@ -93,6 +156,12 @@ pub fn compute_provenance_hash(
     }
     h.update(op.as_bytes());
     h.update(authored_at.to_rfc3339().as_bytes());
+    // Empty flag set → empty string → no bytes added (older records still hash
+    // the same). Non-empty is order-independent via the sorted storage form.
+    let flag_repr = flags_to_storage(flags);
+    if !flag_repr.is_empty() {
+        h.update(flag_repr.as_bytes());
+    }
     if let Some(p) = prev_hash {
         h.update(p);
     }
@@ -103,16 +172,21 @@ impl WriteProvenance {
     /// Build a provenance record chained onto `prev_hash`, computing its
     /// `content_hash`. `prev_hash` is the previous record's `content_hash`
     /// (`None` for the first record in the store's chain).
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         memory_id: Uuid,
         principal: impl Into<String>,
         capability_id: Option<Uuid>,
         session_id: Option<String>,
         op: WriteOp,
+        flags: Vec<WriteFlag>,
         prev_hash: Option<Vec<u8>>,
     ) -> Self {
         let principal = principal.into();
         let authored_at = Utc::now();
+        let mut flags = flags;
+        flags.sort_unstable();
+        flags.dedup();
         let content_hash = compute_provenance_hash(
             &memory_id,
             &principal,
@@ -120,6 +194,7 @@ impl WriteProvenance {
             &session_id,
             op,
             &authored_at,
+            &flags,
             prev_hash.as_deref(),
         );
         Self {
@@ -130,6 +205,7 @@ impl WriteProvenance {
             session_id,
             op,
             authored_at,
+            flags,
             prev_hash,
             content_hash,
         }
@@ -145,6 +221,7 @@ impl WriteProvenance {
             &self.session_id,
             self.op,
             &self.authored_at,
+            &self.flags,
             self.prev_hash.as_deref(),
         );
         bool::from(expected.ct_eq(&self.content_hash))
@@ -205,6 +282,7 @@ mod tests {
                 None,
                 Some("sess-1".to_string()),
                 WriteOp::Remember,
+                Vec::new(),
                 prev,
             ));
         }
@@ -253,11 +331,57 @@ mod tests {
             Some(cid),
             Some("s".to_string()),
             WriteOp::Share,
+            Vec::new(),
             None,
         );
         // Same memory/principal but different capability => different hash.
         let mut b = a.clone();
         b.capability_id = Some(Uuid::now_v7());
         assert!(!b.content_hash_valid());
+    }
+
+    #[test]
+    fn flags_are_hashed_and_tamper_evident() {
+        // An empty flag set hashes identically to a record built before flags
+        // existed (empty repr contributes no bytes).
+        let mid = Uuid::now_v7();
+        let no_flags = WriteProvenance::new(mid, "p", None, None, WriteOp::Remember, vec![], None);
+        assert!(no_flags.content_hash_valid());
+
+        // A flagged record verifies...
+        let flagged = WriteProvenance::new(
+            mid,
+            "p",
+            None,
+            None,
+            WriteOp::Remember,
+            vec![WriteFlag::OpaqueReasoningPayload],
+            None,
+        );
+        assert!(flagged.content_hash_valid());
+
+        // ...but stripping the flag off a flagged record breaks the hash.
+        let mut stripped = flagged.clone();
+        stripped.flags.clear();
+        assert!(
+            !stripped.content_hash_valid(),
+            "removing a recorded flag must break the content hash"
+        );
+    }
+
+    #[test]
+    fn flags_storage_roundtrips_sorted_deduped() {
+        let f = vec![
+            WriteFlag::OpaqueReasoningPayload,
+            WriteFlag::OpaqueReasoningPayload,
+        ];
+        let s = flags_to_storage(&f);
+        assert_eq!(s, "opaque_reasoning_payload");
+        assert_eq!(
+            flags_from_storage(&s),
+            vec![WriteFlag::OpaqueReasoningPayload]
+        );
+        assert!(flags_from_storage("").is_empty());
+        assert!(flags_from_storage("unknown_future_flag").is_empty());
     }
 }

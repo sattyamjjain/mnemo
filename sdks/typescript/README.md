@@ -84,6 +84,22 @@ await client.writesBySession("sess-42");
 await client.forgetByProvenance({ principal: "alice", strategy: "hard_delete" });
 ```
 
+Each provenance record carries a `flags` array. On `REMEMBER`, mnemo flags content
+that has the **shape** of a provider-returned opaque reasoning payload
+([arXiv:2608.09867](https://arxiv.org/abs/2608.09867)) with
+`"opaque_reasoning_payload"` — such blocks have leaked credentials/PII in the wild,
+and remembering a raw assistant turn can persist one. The write is **recorded, not
+rejected** (warn-and-record), so you can find and revoke it later by principal or
+session. **This detects a shape; it does not prove a secret is present, and mnemo
+never decodes the content.**
+
+```typescript
+const prov = await client.getMemoryProvenance(id);
+if (prov?.flags.includes("opaque_reasoning_payload")) {
+  // review / revoke: client.forgetByProvenance({ session_id: prov.session_id, strategy: "redact" })
+}
+```
+
 ## Configuration
 
 ```ts
