@@ -1,13 +1,16 @@
 # Salami — compositional memory-poisoning (measured, not defended)
 
-> **The numbers** (n=300 trials, deterministic offline embedder): the
-> individually-benign Salami slices are accepted by the write path at a
-> **save rate of 100%** (1200/1200, Wilson 95% [99.7%, 100.0%]) and a single
-> trigger recall reconstructs the harmful composition at a
-> **retrieval-influence (assembly) rate of 100%** (300/300, Wilson 95%
-> [98.7%, 100.0%]). The topic-matched **benign control** co-retrieves *just as
-> much* (mean 4.0 slices in top-k, identical to the poison arm) yet **never**
-> completes the harm — **assembly rate 0%** (0/300, [0.0%, 1.3%]).
+> **The numbers** ([2026-08-12 run](../../bench/salami_poisoning/results/salami_2026-08-12.md),
+> n=200 trials/arm, deterministic offline embedder): the individually-benign Salami
+> slices are accepted by the write path at a **save rate of 100%** (Wilson 95%
+> [99.5%, 100.0%]) and a single trigger recall reconstructs the harmful composition
+> at a **retrieval-influence (assembly) rate of 100%** (Wilson 95% [98.1%, 100.0%]).
+> The topic-matched **benign control** co-retrieves *just as much* (mean 4.0 slices
+> in top-k, identical to the poison arm) yet **never** completes the harm —
+> **assembly rate 0%** ([0.0%, 1.9%]). A threshold sweep shows the aggregate crosses
+> only on the **4th** benign write (all completing fragments present): with 1–3
+> slices assembly is 0%, at 4 it is 100% — the harm appears on the last write, with
+> no gradual ramp.
 >
 > **Read this honestly.** This bench **measures a gap; it does not defend
 > against one.** The point is that no per-write control rejects an
@@ -16,8 +19,9 @@
 > topical clustering — same co-retrieval, no harmful composition, rate ~0.
 
 - Runner: [`bench/salami_poisoning/`](../../bench/salami_poisoning)
+- Dated result + honest reading: [`bench/salami_poisoning/results/salami_2026-08-12.md`](../../bench/salami_poisoning/results/salami_2026-08-12.md)
 - Raw result (deterministic key order, no wall-clock): [`bench/results/salami_poisoning.json`](../../bench/results/salami_poisoning.json)
-- One command: `cargo run --release -p mnemo-salami-poisoning-bench`
+- One command: `cargo run --release -p mnemo-salami-poisoning-bench -- --trials 200`
 - CI-gated (byte-stable, offline): `cargo test -p mnemo-salami-poisoning-bench`
 
 ## The attack shape (arXiv:2608.01637)
