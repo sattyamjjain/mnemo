@@ -74,9 +74,11 @@ impl WriteFlag {
         }
     }
 
-    /// Parse from the stored string form. Unknown values are ignored (`None`) so
-    /// a forward-compatible reader never fails on a flag it does not know.
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse from the stored string name. Unknown values are ignored (`None`) so
+    /// a forward-compatible reader never fails on a flag it does not know. (Named
+    /// `from_name`, not `from_str`, since it returns `Option` and does not follow
+    /// the `std::str::FromStr` `Result` contract.)
+    pub fn from_name(s: &str) -> Option<Self> {
         match s {
             "opaque_reasoning_payload" => Some(WriteFlag::OpaqueReasoningPayload),
             _ => None,
@@ -101,7 +103,7 @@ pub fn flags_from_storage(s: &str) -> Vec<WriteFlag> {
         .split(',')
         .map(|t| t.trim())
         .filter(|t| !t.is_empty())
-        .filter_map(WriteFlag::from_str)
+        .filter_map(WriteFlag::from_name)
         .collect();
     out.sort_unstable();
     out.dedup();
