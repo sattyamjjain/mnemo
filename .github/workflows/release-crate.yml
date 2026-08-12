@@ -68,6 +68,10 @@ on:
         description: "Dry-run only (package + verify, no upload)"
         type: boolean
         default: false
+      confirm_publish_new:
+        description: "I confirm CARGO_REGISTRY_TOKEN carries the publish-new scope (required to CREATE a new crate). Leave unchecked and the run fails early if the walk contains a new crate."
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -212,7 +216,20 @@ jobs:
       # either. crates.io exposes no API to introspect a token's scopes, so this
       # cannot hard-verify; it surfaces every new crate UP FRONT so the operator
       # confirms the token has publish-new before the walk burns half an hour.
-      - name: Flag new crates that require the publish-new token scope
+      # This is a HARD, EARLY gate (WI1). crates.io exposes no API to introspect a
+      # token's scopes, so we cannot machine-verify publish-new. What we CAN do is
+      # refuse to burn a ~30-min build and then die creating the first new crate:
+      # if the walk contains a new crate, this step FAILS NOW unless the operator
+      # has explicitly confirmed the token carries publish-new — either by checking
+      # the `confirm_publish_new` box on a manual run, or by setting the repo
+      # variable `RELEASE_TOKEN_HAS_PUBLISH_NEW=true` (Settings → Secrets and
+      # variables → Actions → Variables) for tag-triggered runs. That confirmation
+      # is a deliberate human ack that the exact stranding of mnemo-mcp-server
+      # (blocked behind the never-created mnemo-embeddings-bench) cannot recur
+      # silently. No new crates -> publish-update suffices and this step passes.
+      - name: Gate — new crates require confirmed publish-new scope (fail early)
+        env:
+          CONFIRM: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_publish_new) && 'true' || vars.RELEASE_TOKEN_HAS_PUBLISH_NEW }}
         run: |
           set -euo pipefail
           UA="mnemo-release-crate-workflow (https://github.com/sattyamjjain/mnemo)"
@@ -231,20 +248,36 @@ jobs:
             [ "$code" = "404" ] && new_crates="${new_crates} ${crate}"
           done
           new_crates="${new_crates# }"
-          if [ -n "$new_crates" ]; then
-            echo "::warning::This walk will CREATE new crate(s) [${new_crates}] at ${ver}. Creating a crate needs CARGO_REGISTRY_TOKEN to carry the publish-new scope (not just publish-update). Without it the walk builds ~30 min and then fails creating the first new crate; every crate after it (including mnemo-mcp-server) stays unpublished."
-            {
-              echo "## ⚠️ New crates in this walk — publish-new scope required"
-              echo
-              echo "Will CREATE (not update): \`${new_crates}\`"
-              echo
-              echo "crates.io tokens are scoped: \`publish-update\` updates an existing crate; **\`publish-new\` is required to create a new one.** If \`CARGO_REGISTRY_TOKEN\` lacks it, the walk dies creating the first new crate after a ~30-min build, stranding everything after it (including \`mnemo-mcp-server\`)."
-              echo
-              echo "Before relying on this run, confirm the token at <https://crates.io/settings/tokens> has **both** publish-new and publish-update."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No new crates in this walk — every crate already exists on crates.io, so publish-update suffices."
+
+          if [ -z "$new_crates" ]; then
+            echo "No new crates in this walk — every crate already exists on crates.io, so publish-update suffices. Gate passes."
+            exit 0
           fi
+
+          if [ "${CONFIRM:-}" = "true" ]; then
+            echo "::warning::This walk will CREATE new crate(s) [${new_crates}] at ${ver}; publish-new confirmed by the operator. Proceeding."
+            {
+              echo "## ⚠️ New crates in this walk — publish-new confirmed"
+              echo
+              echo "Will CREATE (not update): \`${new_crates}\` — the operator has confirmed \`CARGO_REGISTRY_TOKEN\` carries \`publish-new\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Not confirmed + new crate in the walk => stop NOW, before the build.
+          echo "::error::Release aborted BEFORE building: this walk must CREATE new crate(s) [${new_crates}] at ${ver}, which requires CARGO_REGISTRY_TOKEN to carry the publish-new scope, and that has not been confirmed. Confirm it to proceed (details below). This gate exists so mnemo-mcp-server can never again strand at 0.4.4 behind an uncreatable dependency."
+          {
+            echo "## ❌ Release aborted early — unconfirmed publish-new for new crate(s)"
+            echo
+            echo "This walk will **CREATE** (not update): \`${new_crates}\`."
+            echo
+            echo "Creating a crate on crates.io requires the token's **publish-new** scope (not just publish-update), and there is no API to verify a token's scopes ahead of time. So this release stops **before** the ~30-min build rather than dying mid-walk and stranding every crate after the new one (which is exactly how \`mnemo-mcp-server\` stuck at 0.4.4 behind the never-created \`mnemo-embeddings-bench\`)."
+            echo
+            echo "**To proceed:**"
+            echo "1. Confirm the token at <https://crates.io/settings/tokens> has **both** \`publish-new\` and \`publish-update\` (regenerate + update the \`CARGO_REGISTRY_TOKEN\` secret if not)."
+            echo "2. Then EITHER re-run via **Run workflow** with **confirm_publish_new** checked, OR set repo variable **\`RELEASE_TOKEN_HAS_PUBLISH_NEW=true\`** (Settings → Secrets and variables → Actions → Variables) and push the tag again."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       # --- Dry-run first (task step 4) --------------------------------------
       # A PER-CRATE dry-run cannot resolve the not-yet-published internal deps
