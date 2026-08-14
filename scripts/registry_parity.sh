@@ -25,9 +25,8 @@
 # ---------------------------------------------------------------------------
 #   --mode preflight   Run BEFORE the publish walk. Prints, for every publishable
 #                      crate, the triple (workspace version, newest git tag,
-#                      crates.io version). FAILS when a crate lags the workspace
-#                      by more than one patch release AND is not in the walk that
-#                      is about to run (--walk). See "the deadlock" below.
+#                      crates.io version), and reports every lag by name. It is
+#                      deliberately hard to fail — see "where the teeth are".
 #
 #   --mode assert      Run AFTER the publish walk. Every crate named must now be
 #                      AT the workspace version on crates.io. A crate still
@@ -35,19 +34,31 @@
 #                      failure this file exists to make loud. Hard, no baseline.
 #
 # ---------------------------------------------------------------------------
-# The deadlock, and why preflight is walk-aware
+# Where the teeth are, and two deadlocks that had to be avoided
 # ---------------------------------------------------------------------------
-# A naive "fail if any crate lags" preflight is unshippable: mnemo-mcp-server
-# lags at 0.4.4 RIGHT NOW, so such a gate would block the very publish that
-# repairs it, forever. The gate is therefore walk-aware:
+# A naive "preflight fails if any crate lags" is unshippable twice over:
 #
-#   crate lags AND is in the walk      -> loud REPAIRING line, allowed to proceed
-#   crate lags AND is NOT in the walk  -> FAIL, named, with both versions
+#   1. mnemo-mcp-server lags RIGHT NOW, so such a gate blocks the very publish
+#      that would repair it — forever.
+#   2. cargo-publish.yml (push-to-main, the LIBRARY path) deliberately excludes
+#      mnemo-mcp-server; only release-crate.yml (the tag path) can publish it.
+#      Failing the library path over that crate blocks the 0.5.23 libraries on a
+#      crate they are not responsible for, which makes the registry WORSE and
+#      couples two release paths that are independent by design. This is not
+#      hypothetical: it happened on the first real 0.5.23 run.
 #
-# That keeps the property the issue actually wants ("a lag can never be silent")
-# without making the repair impossible. With no --walk (a bare local run) every
-# lag is reported and the run fails — which is the right answer for a human
-# asking "is the registry in sync?".
+# So preflight classifies rather than vetoes:
+#
+#   lags AND in the walk      -> loud REPAIRING line, proceed (it is being fixed)
+#   lags AND not in the walk  -> loud ::warning:: by name, proceed (not ours)
+#   absent AND in no walk     -> loud ::warning:: by name (nothing will ship it)
+#   registry AHEAD of repo    -> FAIL (a publish main never recorded)
+#   registry unreachable      -> FAIL (never treat an unknown state as agreement)
+#
+# The teeth live in `--mode assert`, which runs AFTER the walk and hard-fails if
+# a crate the walk WAS responsible for did not land. That is the check that
+# actually catches #140's silent skip. A pre-publish veto on an out-of-scope
+# crate only blocks good releases; a post-publish assertion catches the bad ones.
 #
 # ---------------------------------------------------------------------------
 # Division of labour with the other version guards (do not merge these)
@@ -237,6 +248,7 @@ printf '  %-30s %-11s %-11s %-11s %s\n' "------------------------------" "------
 fail=()      # hard failures
 repairing=() # lagging crates that this walk is about to fix
 orphans=()   # publishable, never published, and in no walk -> can never ship
+stranded=()  # lagging, but not this walk's responsibility -> warn, never fail
 unreachable=0
 
 for c in "${crates[@]}"; do
@@ -275,8 +287,22 @@ for c in "${crates[@]}"; do
           status="LAGS ${rv} -> this walk repairs it"
           repairing+=("${c}: ${rv} -> ${ws}")
         else
-          status="LAGS ${rv} — NOT in this walk"
-          fail+=("${c}: crates.io=${rv} is more than one patch behind workspace=${ws}, and this walk does not publish it")
+          # Lagging, and this walk is not responsible for it.
+          #
+          # This WARNS, it does not fail. Failing here was a real bug: it made
+          # the push-to-main library path (cargo-publish.yml, which deliberately
+          # excludes mnemo-mcp-server — see its own comment) responsible for a
+          # crate only the tag path can publish. The result was that the 0.5.23
+          # libraries could not ship because a DIFFERENT crate was stranded,
+          # which makes the registry worse, not better, and couples two release
+          # paths that are independent by design.
+          #
+          # The teeth live in `--mode assert`, which runs after the walk and
+          # hard-fails if a crate the walk WAS responsible for did not land.
+          # That is the check that actually catches #140's silent skip; a
+          # pre-publish veto on an out-of-scope crate only blocks good releases.
+          status="LAGS ${rv} — not this walk's responsibility"
+          stranded+=("${c}: crates.io=${rv} vs workspace=${ws}")
         fi
       else
         status="behind by <=1 patch (pending publish)"
@@ -344,6 +370,17 @@ if [[ ${#repairing[@]} -gt 0 ]]; then
     echo "### Registry parity — ${#repairing[@]} lagging artifact(s) queued for repair"
     echo
     for r in "${repairing[@]}"; do echo "- \`${r}\`"; done
+  } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+fi
+
+if [[ ${#stranded[@]} -gt 0 && "$MODE" == "preflight" ]]; then
+  echo "::warning::${#stranded[@]} crate(s) lag the workspace but are NOT in this walk, so this run cannot repair them: ${stranded[*]}. Not a failure — this walk is not responsible for them (e.g. cargo-publish.yml deliberately excludes mnemo-mcp-server; only the tag path in release-crate.yml publishes it). Tracked by issue #140."
+  {
+    echo "### ⚠️ Lagging, but out of this walk's scope"
+    echo
+    for s in "${stranded[@]}"; do echo "- \`${s}\`"; done
+    echo
+    echo "This run is not responsible for these. The tag path (\`release-crate.yml\`) publishes them; see [issue #140](https://github.com/sattyamjjain/mnemo/issues/140)."
   } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 fi
 

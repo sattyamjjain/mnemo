@@ -140,7 +140,11 @@ jobs:
       # about what the walk contains.
       WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
     steps:
+      # fetch-depth: 0 so the registry-parity preflight can report a real
+      # "newest git tag" column (the default shallow checkout fetches no tags).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # mnemo-grpc's prost build script needs protoc during its verify-build.

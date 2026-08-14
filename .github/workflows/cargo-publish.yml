@@ -171,7 +171,12 @@ jobs:
       name: crates-io
       url: https://crates.io/crates/mnemo-core
     steps:
+      # fetch-depth: 0 so the registry-parity preflight can report a real
+      # "newest git tag" column. The default shallow checkout fetches no tags
+      # and the triple printed `none`, which defeats the point of printing it.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by mnemo-grpc build script)

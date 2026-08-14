@@ -10,7 +10,35 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 [#155](https://github.com/sattyamjjain/mnemo/pull/155) merge — `main` at
 [`7599fbc`](https://github.com/sattyamjjain/mnemo/commit/7599fbc) — and the `v0.5.23` tag
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
-publish gate requires first exists. Nothing has accumulated on top of it yet.
+publish gate requires first exists.
+
+### Fixed (2026-08-14) - the new preflight blocked the library publish it was meant to protect
+
+The `v0.5.23` release exposed a real bug in the registry-parity preflight shipped hours earlier
+in [#155](https://github.com/sattyamjjain/mnemo/pull/155). It failed `cargo-publish.yml` with:
+
+```
+publish preflight FAILED — mnemo-mcp-server: crates.io=0.4.4 is more than one patch
+behind workspace=0.5.23, and this walk does not publish it
+```
+
+That veto was wrong. `cargo-publish.yml` is the **library** path and *deliberately excludes*
+`mnemo-mcp-server` (its own comment says so — the server has a path-only dep on
+`mnemo-embeddings-bench`); only the tag path in `release-crate.yml` can publish it. So the gate
+made one release path responsible for a crate it structurally cannot ship, blocking the 0.5.23
+libraries over an unrelated crate — coupling two independent paths and leaving the registry
+*further* behind, the opposite of the intent.
+
+- **Preflight now classifies instead of vetoing**: lagging + in the walk → `REPAIRING`, proceed;
+  lagging + not in the walk → loud `::warning::` by name, proceed; absent + in no walk → warning.
+  It still hard-fails on the two states where proceeding would be dishonest: a registry **ahead**
+  of the repo, and a registry that is **unreachable** (never treat an unknown state as agreement).
+- **The teeth moved to where they belong**: `--mode assert`, which runs *after* the walk and
+  hard-fails if a crate the walk **was** responsible for did not land. That is the check that
+  actually catches #140's silent skip. A pre-publish veto on an out-of-scope crate only blocks
+  good releases; a post-publish assertion catches the bad ones.
+- Both publish jobs now check out with `fetch-depth: 0`, so the triple's **newest git tag** column
+  reports a real tag instead of `none` on the default shallow checkout.
 
 ## [0.5.23] - 2026-08-14
 
