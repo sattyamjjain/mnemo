@@ -164,3 +164,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: bash scripts/check_version_drift.sh
+
+  # OFFLINE workspace version fence — every crate's Cargo.toml, every internal
+  # dependency pin, the newest git tag and the CHANGELOG must agree on ONE
+  # version. Three numbers coexisted before this existed (workspace 0.5.23,
+  # mnemo-golem-wit 0.5.21, newest tag v0.5.22).
+  #
+  # This runs as its own job ONLY because it needs `fetch-depth: 0`: the default
+  # shallow checkout fetches no tags, and the fence's tag legs skip themselves
+  # rather than fail when no tags are reachable (a fence that fails because the
+  # checkout has no tags is testing the checkout, not the repo). The plain `test`
+  # job also runs these tests — it just cannot exercise the tag legs.
+  version-fence:
+    name: Workspace version fence (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p mnemo-mcp-server --test workspace_version_fence
