@@ -50,7 +50,7 @@ UA = "mnemo-gen-published-versions (https://github.com/sattyamjjain/mnemo)"
 CRATES = [
     ("mnemo-core", "engine + hash-chain verify"),
     ("mnemo-mcp-server", "the `mnemo` server binary"),
-    ("mnemo-embeddings-bench", "new crate (blocks the server publish)"),
+    ("mnemo-embeddings-bench", "bench crate the server binary depends on"),
 ]
 
 
@@ -122,8 +122,16 @@ def vcell(ver: str) -> str:
 def render() -> str:
     ws = workspace_version()
     rows = []
+    # Track whether the Rust line has actually shipped the workspace version, so
+    # the header says "released" or "unreleased target" from live registry truth
+    # rather than a hand-maintained word that goes stale the moment a release
+    # lands (which is exactly what happened to the 0.4.4 heads-up this block
+    # replaced).
+    shipped = True
     for name, note in CRATES:
         ver, date = crates_io(name)
+        if ver != ws:
+            shipped = False
         rows.append((f"crates.io", f"`{name}` — {note}", vcell(ver), date))
     pv, pd = pypi("mnemo-db")
     rows.append(("PyPI", "`mnemo-db` — Python SDK (independent)", vcell(pv), pd))
@@ -133,7 +141,8 @@ def render() -> str:
     out = [BEGIN]
     out.append(f"<!-- Regenerate with: python3 scripts/gen_published_versions.py -->")
     out.append("")
-    out.append(f"Workspace `[workspace.package].version` (unreleased target): **`v{ws}`**. "
+    state = "released" if shipped else "unreleased target"
+    out.append(f"Workspace `[workspace.package].version` ({state}): **`v{ws}`**. "
                "The Rust library line tracks the workspace; the Python and TypeScript SDKs "
                "version independently. Published, per registry:")
     out.append("")

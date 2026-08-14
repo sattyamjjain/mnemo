@@ -13,8 +13,8 @@ currently gives you **0.4.4** (latest on npm); the Rust workspace is on the
 0.5.x line. The SDK is a thin **MCP-over-STDIO client** — it does not embed the
 engine — so it targets the `mnemo` / `mnemo-mcp-server` binary's MCP **tool
 surface** (the 23 registered tools) rather than a specific `mnemo-core`
-version. For the documented tool set you need a **0.5.x** `mnemo-mcp-server`,
-which `cargo install` cannot give you yet — see the warning below.
+version. For the documented tool set you need a **0.5.x** `mnemo-mcp-server`;
+`cargo install mnemo-mcp-server` now resolves **0.5.23**.
 
 `package.json` is on **0.4.8**, ahead of npm's **0.4.4**: the automated `npm
 publish` (0.4.5–0.4.8) has been failing on an invalid `NPM_TOKEN` — an operator
@@ -30,17 +30,6 @@ The SDK speaks MCP over STDIO to a `mnemo` binary running on the same machine. I
 ```bash
 cargo install mnemo-mcp-server   # Rust toolchain required
 ```
-
-<!-- STALE-PUBLISH-NOTE(#140): remove in the PR that publishes mnemo-mcp-server >= 0.5.23 -->
-> ⚠️ **That command currently resolves `0.4.4`, published 2026-05-18 — a binary
-> old enough to predate most of the tool surface this SDK documents.** The
-> publish walk is blocked on
-> [#140](https://github.com/sattyamjjain/mnemo/issues/140). Build the current
-> server from source instead:
->
-> ```bash
-> cargo build --release -p mnemo-mcp-server   # runs as `mnemo`
-> ```
 
 Then from your TypeScript app:
 

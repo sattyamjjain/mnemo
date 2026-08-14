@@ -131,20 +131,15 @@ on-prem, hash-chain-audited memory in your own Rust service:
 ```bash
 cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
-cargo install mnemo-mcp-server          # ⚠ resolves 0.4.4 (published 2026-05-18) — NOT current; see below
+cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.23`.** The workspace is at 0.5.23; the importable
-> libraries are on crates.io at the `v0.5.22` line — `cargo add mnemo-core` /
-> `mnemo-compliance` / `mnemo-mcp` resolve `v0.5.22` today, and the 0.5.23 publish
-> (which also finally ships the two stranded packages below) is pending a registry
-> token. **`mnemo-mcp-server` is further behind at `0.4.4`** because the publish
-> walk cannot finish: the server depends on `mnemo-embeddings-bench`, a new crate
-> not on crates.io yet
-> ([#140](https://github.com/sattyamjjain/mnemo/issues/140)), so `cargo install
-> mnemo-mcp-server` gives the 2026-05-18 binary. Until the line publishes,
-> build the current server from source —
-> `cargo build --release -p mnemo-mcp-server` (runs as `mnemo`). Two guards keep
+> **Current release: `0.5.23`.** The whole line is on crates.io at `0.5.23` —
+> libraries *and* the `mnemo-mcp-server` binary. `cargo install mnemo-mcp-server`
+> resolves `0.5.23`. This closes
+> [#140](https://github.com/sattyamjjain/mnemo/issues/140): the server had been
+> stranded at `0.4.4` (2026-05-18) for 87 days behind the never-created
+> `mnemo-embeddings-bench`, which now publishes as part of the release walk. Two guards keep
 > this honest instead of stale: the test
 > [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
 > fails if the stated release — or any bare current-band `0.5.2x` release literal
@@ -157,13 +152,13 @@ cargo install mnemo-mcp-server          # ⚠ resolves 0.4.4 (published 2026-05-
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (unreleased target): **`v0.5.23`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
+Workspace `[workspace.package].version` (released): **`v0.5.23`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
-| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.22` | 2026-08-08 |
-| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.4.4` | 2026-05-18 |
-| crates.io | `mnemo-embeddings-bench` — new crate (blocks the server publish) | _absent_ | — |
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.23` | 2026-08-14 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.23` | 2026-08-14 |
+| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.23` | 2026-08-14 |
 | PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.12` | 2026-07-13 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 

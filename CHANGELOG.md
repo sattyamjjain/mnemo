@@ -12,6 +12,35 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-14) - #140 is closed: the whole 0.5.23 line is on crates.io, binary included
+
+`mnemo-mcp-server` had been stranded at **0.4.4 since 2026-05-18 — 87 days** while the libraries
+moved to 0.5.22. It is now published at **0.5.23**, along with `mnemo-embeddings-bench`, the new
+crate it depends on that had never been created. **20 of 21 publishable crates are at 0.5.23.**
+
+Acceptance test, run against the live registry in a scratch project:
+
+```
+$ cargo add mnemo-mcp-server
+      Adding mnemo-mcp-server v0.5.23 to dependencies
+```
+
+- **The token was never the whole story.** It turned out to carry both `publish-update` (the
+  libraries published on the first attempt) *and* `publish-new` (it created
+  `mnemo-embeddings-bench`). What actually blocked the release was the walk structure plus the
+  unconfirmed `publish-new` gate — precisely the "a skip is indistinguishable from a no-op"
+  failure this window's work was written to expose.
+- **The stale-install notes are removed** from `README.md`, `crates/mnemo-mcp/README.md` and
+  `sdks/typescript/README.md`, as their `STALE-PUBLISH-NOTE(#140)` markers specified.
+- **`scripts/gen_published_versions.py`** now derives "released" vs "unreleased target" from the
+  live registries instead of a hand-maintained word, and no longer describes
+  `mnemo-embeddings-bench` as blocking the server publish. The drift baseline is refreshed to the
+  resolved state (19 crates at 0.5.23), so `check_version_drift.sh` is green on a true state
+  rather than an acknowledged gap.
+- **Still open, and now visible by name:** `mnemo-amp` is publishable, absent from crates.io, and
+  in **no** publish walk — the orphan warning added this window flags it on every release. Either
+  add it to the `release-crate.yml` walk or set `publish = false` to make the intent explicit.
+
 ### Fixed (2026-08-14) - the new preflight blocked the library publish it was meant to protect
 
 The `v0.5.23` release exposed a real bug in the registry-parity preflight shipped hours earlier
