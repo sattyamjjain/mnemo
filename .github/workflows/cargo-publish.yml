@@ -186,6 +186,17 @@ jobs:
         # while the rest of the workspace moved to 0.5.x. `cargo publish -p <crate>`
         # below only builds each crate's own closure, never the golem crates.
         run: cargo build --workspace --exclude mnemo-python --exclude mnemo-golem-wit --exclude mnemo-golem-host
+      # --- Registry-parity PREFLIGHT (issue #140) ---------------------------
+      # Same gate as release-crate.yml: print the triple (workspace version,
+      # newest git tag, crates.io version) for every publishable crate BEFORE
+      # uploading, and refuse to proceed on a lag this run does not repair.
+      # `--walk` is the plan job's queue, so a crate that lags and is not queued
+      # fails the run instead of being silently left behind.
+      - name: Registry parity preflight (print the triple, fail on an unrepaired lag)
+        env:
+          QUEUED: ${{ needs.plan.outputs.to_publish }}
+        run: bash scripts/registry_parity.sh --mode preflight --walk "$QUEUED"
+
       - name: Publish queued crates in dependency order
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -196,10 +207,62 @@ jobs:
           # Reorder QUEUED to honour dependency order — mnemo-core first,
           # then second-tier, then mnemo-mcp-server last. The plan job
           # already lists in this order so we trust QUEUED's order.
+          #
+          # Outcome ledger (issue #140). The failure this pipeline actually had
+          # was not a crash — it was a walk that skipped a crate and still
+          # reported green. Record every crate as published / NOT published and
+          # print the ledger on EVERY exit, success or failure, so a partial
+          # walk can never look like a complete one.
+          published=(); notdone=()
+          summarize() {
+            local done_set=" ${published[*]:-} "
+            notdone=()
+            for c in $QUEUED; do
+              case "$done_set" in *" $c "*) ;; *) notdone+=("$c") ;; esac
+            done
+            echo "──────── publish ledger ────────"
+            echo "  published    : ${published[*]:-none}"
+            echo "  NOT published: ${notdone[*]:-none}"
+            {
+              echo "### Publish ledger"
+              echo "- **published:** ${published[*]:-none}"
+              echo "- **NOT published:** ${notdone[*]:-none}"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          }
+          trap summarize EXIT
+
           for crate in $QUEUED; do
             echo "::group::Publish ${crate}"
-            cargo publish -p "${crate}" $DRY_RUN
+            # Capture output so an auth failure can be identified specifically.
+            # An expired/unscoped token is an OPERATOR action, not a transient
+            # error, and must never be swallowed or retried into a green run —
+            # that is precisely how the mnemo-mcp-server stranding went
+            # unnoticed for 87 days.
+            if ! out=$(cargo publish -p "${crate}" $DRY_RUN 2>&1); then
+              echo "$out"
+              echo "::endgroup::"
+              if echo "$out" | grep -qiE 'authentication failed|403 Forbidden|401 Unauthorized|not authorized|token.*(expired|invalid)'; then
+                echo "::error::${crate} — crates.io REJECTED THE TOKEN (auth/permission failure). This is an operator action, not a transient error: rotate CARGO_REGISTRY_TOKEN so it carries BOTH publish-new and publish-update, then re-run. See issue #140. Failing the job — an auth failure is never swallowed."
+                {
+                  echo "## ❌ Publish aborted — crates.io rejected the token"
+                  echo
+                  echo "Failed on \`${crate}\`. crates.io returned an authentication/permission error."
+                  echo
+                  echo "**Operator action required** (no code change fixes this):"
+                  echo "1. Generate a token at <https://crates.io/settings/tokens> with **publish-new** + **publish-update**."
+                  echo "2. Update the \`CARGO_REGISTRY_TOKEN\` repo secret."
+                  echo "3. Re-run. Crates already published are skipped."
+                  echo
+                  echo "Tracking: [issue #140](https://github.com/sattyamjjain/mnemo/issues/140)."
+                } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+              else
+                echo "::error::${crate} — cargo publish failed (non-auth). See the log above; later crates were NOT published."
+              fi
+              exit 1
+            fi
+            echo "$out"
             echo "::endgroup::"
+            published+=("$crate")
             # crates.io has a free-account rate limit of ~5 new crates
             # per hour. After mnemo-core lands, sleep briefly to let
             # the index propagate before the next publish that depends
@@ -212,3 +275,13 @@ jobs:
             # NEW-crate publishes after the burst.
             if [ -z "$DRY_RUN" ]; then sleep 720; fi
           done
+
+      # --- Post-publish parity assertion (issue #140) -----------------------
+      # The walk above can still end "successfully" having published a subset.
+      # Assert the queued crates actually reached the workspace version.
+      # `always()` so a partial publish is reported even when a crate errored.
+      - name: Assert registry parity (queued crates reached the workspace version)
+        if: ${{ always() && !inputs.dry_run }}
+        env:
+          QUEUED: ${{ needs.plan.outputs.to_publish }}
+        run: bash scripts/registry_parity.sh --mode assert $QUEUED

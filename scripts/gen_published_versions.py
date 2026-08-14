@@ -144,7 +144,7 @@ def render() -> str:
     out.append("")
     out.append("_Table generated from the live registries by "
                "[`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); "
-               "`scripts/assert_release_parity.sh` fails a release if these drift from what "
+               "`scripts/registry_parity.sh` fails a release if these drift from what "
                "the release actually published._")
     out.append(END)
     return "\n".join(out)

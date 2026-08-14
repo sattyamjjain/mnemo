@@ -279,6 +279,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
+      # --- Registry-parity PREFLIGHT (issue #140) ---------------------------
+      # Before building or uploading anything, print the full triple
+      # (workspace version, newest git tag, crates.io version) for EVERY
+      # publishable crate, and refuse to proceed on a lag this walk does not
+      # repair. The bug being fixed is not "the token is bad" — it is that the
+      # walk could skip a crate and still report success, which is how
+      # mnemo-mcp-server sat at 0.4.4 for 87 days while the libraries moved to
+      # 0.5.22. Silence was the failure mode; this makes the state explicit
+      # before the walk, and the `--mode assert` step below re-checks it after.
+      - name: Registry parity preflight (print the triple, fail on an unrepaired lag)
+        run: bash scripts/registry_parity.sh --mode preflight --walk "$WALK"
+
       # --- Dry-run first (task step 4) --------------------------------------
       # A PER-CRATE dry-run cannot resolve the not-yet-published internal deps
       # (mnemo-core@<ver> is not on the registry until the real publish below), so
@@ -432,4 +444,4 @@ jobs:
       # nothing is uploaded so a lag is expected.
       - name: Assert release parity (every closure crate at the workspace version)
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
-        run: bash scripts/assert_release_parity.sh $WALK
+        run: bash scripts/registry_parity.sh --mode assert $WALK
