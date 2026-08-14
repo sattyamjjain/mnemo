@@ -131,7 +131,7 @@ on-prem, hash-chain-audited memory in your own Rust service:
 ```bash
 cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
-cargo install mnemo-mcp-server          # server binary → `mnemo` (NOTE: crates.io still 0.4.4 — see below)
+cargo install mnemo-mcp-server          # ⚠ resolves 0.4.4 (published 2026-05-18) — NOT current; see below
 ```
 
 > **Current release: `0.5.23`.** The workspace is at 0.5.23; the importable
@@ -167,7 +167,7 @@ Workspace `[workspace.package].version` (unreleased target): **`v0.5.23`**. The 
 | PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.12` | 2026-07-13 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
-_Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/assert_release_parity.sh` fails a release if these drift from what the release actually published._
+_Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
 <!-- END generated: published-versions -->
 
 > **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
@@ -422,7 +422,7 @@ pip install mnemo-db
 > **Version line & wire compatibility.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**. That gap is expected, not skew — and here is exactly what `0.5.12` is compatible with, stated rather than left implicit:
 >
 > - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.23 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
-> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 21 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — build the current one from source (`cargo build --release -p mnemo-mcp-server`) since crates.io is stuck at 0.4.4 ([#140](https://github.com/sattyamjjain/mnemo/issues/140)). The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
+> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — build the current one from source (`cargo build --release -p mnemo-mcp-server`) since crates.io is stuck at 0.4.4 ([#140](https://github.com/sattyamjjain/mnemo/issues/140)). The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
 
 ```python
 from mnemo import MnemoClient

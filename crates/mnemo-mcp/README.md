@@ -26,6 +26,18 @@ the CLI instead:
 cargo install mnemo-mcp-server
 ```
 
+<!-- STALE-PUBLISH-NOTE(#140): remove in the PR that publishes mnemo-mcp-server >= 0.5.23 -->
+> ⚠️ **`cargo install mnemo-mcp-server` currently gives you `0.4.4`, published
+> 2026-05-18 — not the current server.** The publish walk is blocked on
+> [#140](https://github.com/sattyamjjain/mnemo/issues/140) (the server depends on
+> `mnemo-embeddings-bench`, a new crate that has never been created on crates.io).
+> The `mnemo-mcp` library above is current; only the *binary* is stale. Until the
+> line publishes, build the current server from source:
+>
+> ```bash
+> cargo build --release -p mnemo-mcp-server   # runs as `mnemo`
+> ```
+
 ## Use as a library
 
 ```rust
