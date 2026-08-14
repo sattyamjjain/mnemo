@@ -13,7 +13,9 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::hash::ChainVerificationResult;
 use crate::model::capability::Capability;
-use crate::model::write_provenance::{WriteOp, WriteProvenance, verify_provenance_chain};
+use crate::model::write_provenance::{
+    WriteFlag, WriteOp, WriteProvenance, verify_provenance_chain,
+};
 use crate::query::MnemoEngine;
 use crate::query::forget::{self, ForgetRequest, ForgetResponse, ForgetStrategy};
 
@@ -28,6 +30,7 @@ impl MnemoEngine {
         capability_id: Option<Uuid>,
         session_id: Option<String>,
         op: WriteOp,
+        flags: Vec<WriteFlag>,
     ) -> Result<()> {
         if !self.storage.records_write_provenance() {
             return Ok(());
@@ -39,6 +42,7 @@ impl MnemoEngine {
             capability_id,
             session_id,
             op,
+            flags,
             prev_hash,
         );
         self.storage.insert_write_provenance(&prov).await

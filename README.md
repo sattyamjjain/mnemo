@@ -131,7 +131,7 @@ on-prem, hash-chain-audited memory in your own Rust service:
 ```bash
 cargo add mnemo-core mnemo-compliance   # engine + audit-log/consent primitives
 cargo add mnemo-mcp                      # (optional) expose it as MCP tools
-cargo install mnemo-mcp-server          # server binary → `mnemo` (NOTE: crates.io still 0.4.4 — see below)
+cargo install mnemo-mcp-server          # ⚠ resolves 0.4.4 (published 2026-05-18) — NOT current; see below
 ```
 
 > **Current release: `0.5.23`.** The workspace is at 0.5.23; the importable
@@ -153,6 +153,22 @@ cargo install mnemo-mcp-server          # server binary → `mnemo` (NOTE: crate
 > [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) fails if
 > crates.io drifts from the workspace — including the `mnemo-mcp-server` parity gap
 > above, which it flags today.
+
+<!-- BEGIN generated: published-versions -->
+<!-- Regenerate with: python3 scripts/gen_published_versions.py -->
+
+Workspace `[workspace.package].version` (unreleased target): **`v0.5.23`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
+
+| Registry | Artifact | Published version | Published |
+|---|---|---|---|
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.22` | 2026-08-08 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.4.4` | 2026-05-18 |
+| crates.io | `mnemo-embeddings-bench` — new crate (blocks the server publish) | _absent_ | — |
+| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.12` | 2026-07-13 |
+| npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
+
+_Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
+<!-- END generated: published-versions -->
 
 > **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
 > name on crates.io is an unrelated project. Install `mnemo-core` +
@@ -406,7 +422,7 @@ pip install mnemo-db
 > **Version line & wire compatibility.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**. That gap is expected, not skew — and here is exactly what `0.5.12` is compatible with, stated rather than left implicit:
 >
 > - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.23 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
-> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 21 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — build the current one from source (`cargo build --release -p mnemo-mcp-server`) since crates.io is stuck at 0.4.4 ([#140](https://github.com/sattyamjjain/mnemo/issues/140)). The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
+> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — build the current one from source (`cargo build --release -p mnemo-mcp-server`) since crates.io is stuck at 0.4.4 ([#140](https://github.com/sattyamjjain/mnemo/issues/140)). The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
 
 ```python
 from mnemo import MnemoClient
@@ -653,6 +669,7 @@ path calls it.
 | Hash-chain integrity + `verify` | ✅ | events + memories |
 | Read-provenance HMAC receipt | ✅ opt-in per call (`with_provenance=true`) | `recall` |
 | **Write-provenance + FORGET BY PROVENANCE** | ✅ — every REMEMBER/SHARE records who wrote it, under what capability, in what session; hash-chained (tamper-evident) and queryable by memory/principal/session; revocable in one call by principal or session | engine `remember`/`share` write path (DuckDB + PostgreSQL); REST `/v1/provenance/*`, MCP `mnemo.provenance` + `mnemo.forget_by_provenance`; see below |
+| **Opaque-reasoning-payload write flag** | ✅ warn-and-record — on REMEMBER, content with the SHAPE of a provider opaque reasoning payload (arXiv:2608.09867) is flagged `opaque_reasoning_payload` on its provenance (hashed in, tamper-evident) and stored, not rejected; sweeps via FORGET BY PROVENANCE. Shape only — **not** proof of a secret; never decodes | `remember` write path → `WriteProvenance.flags`; [`docs/security/opaque-reasoning-payloads.md`](docs/security/opaque-reasoning-payloads.md) |
 | Memory-poisoning anomaly + quarantine | ✅ — provenance-aware recall + a published **ASI06 resistance micro-bench** (100.0% vs canonical query-only MINJA, Wilson 95% [98.1%, 100.0%], n=200; 0% vs marker-free paraphrase — honest limitation) | `remember` + `recall` quarantine filter; [`docs/security/ASI06.md`](docs/security/ASI06.md) |
 | **Forged-reasoning defense** (reasoning-provenance trust filter) | ✅ opt-in — a real-embedder bench drives planted fabricated-chain-of-thought ASR **100% → 0%** (`nomic-embed-text`, Wilson 95% ASR_on [0.0%, 3.1%], n=120) at **0/180 = 0%** benign false-quarantine [0.0%, 2.1%] | `RecallRequest.reasoning_trust` (`retrieval::ReasoningTrustPolicy`) enforced in `recall`'s `passes_filters`; [`bench/forged_reasoning/`](bench/forged_reasoning/) |
 | Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |

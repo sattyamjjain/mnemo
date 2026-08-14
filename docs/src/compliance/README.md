@@ -63,7 +63,7 @@ Throughout the compliance documents, the following status labels are used:
 ## Versioning
 
 This compliance documentation reflects the current compliance posture of Mnemo
-(21 registered MCP tools; see the [tools reference](../tools/README.md)).
+(23 registered MCP tools; see the [tools reference](../tools/README.md)).
 It should be updated whenever security-relevant features are added or modified.
 
 | Version | Date | Changes |

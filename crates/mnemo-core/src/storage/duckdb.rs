@@ -11,7 +11,9 @@ use crate::model::embedding_baseline::EmbeddingBaseline;
 use crate::model::event::AgentEvent;
 use crate::model::memory::MemoryRecord;
 use crate::model::relation::Relation;
-use crate::model::write_provenance::{WriteOp, WriteProvenance};
+use crate::model::write_provenance::{
+    WriteOp, WriteProvenance, flags_from_storage, flags_to_storage,
+};
 use crate::storage::{MemoryFilter, StorageBackend};
 use uuid::Uuid;
 
@@ -134,7 +136,7 @@ impl StorageBackend for DuckDbStorage {
     async fn insert_write_provenance(&self, prov: &WriteProvenance) -> Result<()> {
         let conn = self.conn.lock().await;
         conn.execute(
-            "INSERT INTO write_provenance (id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO write_provenance (id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             duckdb::params![
                 prov.id.to_string(),
                 prov.memory_id.to_string(),
@@ -143,6 +145,7 @@ impl StorageBackend for DuckDbStorage {
                 prov.session_id,
                 prov.op.as_str(),
                 prov.authored_at.to_rfc3339(),
+                flags_to_storage(&prov.flags),
                 prov.prev_hash,
                 prov.content_hash,
             ],
@@ -153,7 +156,7 @@ impl StorageBackend for DuckDbStorage {
     async fn get_write_provenance(&self, memory_id: Uuid) -> Result<Option<WriteProvenance>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash \
              FROM write_provenance WHERE memory_id = ? ORDER BY id DESC LIMIT 1",
         )?;
         let mut rows = stmt.query_map(
@@ -186,7 +189,7 @@ impl StorageBackend for DuckDbStorage {
     ) -> Result<Vec<WriteProvenance>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash \
              FROM write_provenance WHERE principal = ? ORDER BY id DESC LIMIT ?",
         )?;
         let rows = stmt.query_map(
@@ -207,7 +210,7 @@ impl StorageBackend for DuckDbStorage {
     ) -> Result<Vec<WriteProvenance>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash \
              FROM write_provenance WHERE session_id = ? ORDER BY id DESC LIMIT ?",
         )?;
         let rows = stmt.query_map(
@@ -245,7 +248,7 @@ impl StorageBackend for DuckDbStorage {
     async fn list_all_provenance(&self, limit: usize) -> Result<Vec<WriteProvenance>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, prev_hash, content_hash \
+            "SELECT id, memory_id, principal, capability_id, session_id, op, authored_at, flags, prev_hash, content_hash \
              FROM write_provenance ORDER BY id ASC LIMIT ?",
         )?;
         let rows = stmt.query_map(duckdb::params![limit as i64], row_to_write_provenance)?;
@@ -1285,8 +1288,13 @@ fn row_to_write_provenance(row: &duckdb::Row<'_>) -> duckdb::Result<WriteProvena
     let session_id: Option<String> = row.get(4)?;
     let op_str: String = row.get(5)?;
     let authored_at_str: String = row.get(6)?;
-    let prev_hash: Option<Vec<u8>> = row.get(7)?;
-    let content_hash: Vec<u8> = row.get(8)?;
+    // `flags` was added after the table's first release; an older row stores NULL
+    // (read as None → empty flag set). Column order: ..., authored_at(6),
+    // flags(7), prev_hash(8), content_hash(9).
+    let flags_str: Option<String> = row.get(7)?;
+    let prev_hash: Option<Vec<u8>> = row.get(8)?;
+    let content_hash: Vec<u8> = row.get(9)?;
+    let flags = flags_from_storage(flags_str.as_deref().unwrap_or(""));
 
     let uuid_err = |col: usize, e: uuid::Error| {
         duckdb::Error::FromSqlConversionFailure(col, duckdb::types::Type::Text, Box::new(e))
@@ -1319,6 +1327,7 @@ fn row_to_write_provenance(row: &duckdb::Row<'_>) -> duckdb::Result<WriteProvena
         session_id,
         op,
         authored_at,
+        flags,
         prev_hash,
         content_hash,
     })

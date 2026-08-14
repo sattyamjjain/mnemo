@@ -12,9 +12,9 @@ This SDK is versioned **independently** of the Rust workspace. `npm install`
 currently gives you **0.4.4** (latest on npm); the Rust workspace is on the
 0.5.x line. The SDK is a thin **MCP-over-STDIO client** — it does not embed the
 engine — so it targets the `mnemo` / `mnemo-mcp-server` binary's MCP **tool
-surface** (the 21 registered tools) rather than a specific `mnemo-core`
-version. For the documented tool set, run a **0.5.x** `mnemo-mcp-server`
-(`cargo install mnemo-mcp-server`).
+surface** (the 23 registered tools) rather than a specific `mnemo-core`
+version. For the documented tool set you need a **0.5.x** `mnemo-mcp-server`,
+which `cargo install` cannot give you yet — see the warning below.
 
 `package.json` is on **0.4.8**, ahead of npm's **0.4.4**: the automated `npm
 publish` (0.4.5–0.4.8) has been failing on an invalid `NPM_TOKEN` — an operator
@@ -30,6 +30,17 @@ The SDK speaks MCP over STDIO to a `mnemo` binary running on the same machine. I
 ```bash
 cargo install mnemo-mcp-server   # Rust toolchain required
 ```
+
+<!-- STALE-PUBLISH-NOTE(#140): remove in the PR that publishes mnemo-mcp-server >= 0.5.23 -->
+> ⚠️ **That command currently resolves `0.4.4`, published 2026-05-18 — a binary
+> old enough to predate most of the tool surface this SDK documents.** The
+> publish walk is blocked on
+> [#140](https://github.com/sattyamjjain/mnemo/issues/140). Build the current
+> server from source instead:
+>
+> ```bash
+> cargo build --release -p mnemo-mcp-server   # runs as `mnemo`
+> ```
 
 Then from your TypeScript app:
 
@@ -82,6 +93,22 @@ await client.writesByPrincipal("alice");
 await client.writesBySession("sess-42");
 // FORGET BY PROVENANCE — revoke everything alice wrote (audit trail survives)
 await client.forgetByProvenance({ principal: "alice", strategy: "hard_delete" });
+```
+
+Each provenance record carries a `flags` array. On `REMEMBER`, mnemo flags content
+that has the **shape** of a provider-returned opaque reasoning payload
+([arXiv:2608.09867](https://arxiv.org/abs/2608.09867)) with
+`"opaque_reasoning_payload"` — such blocks have leaked credentials/PII in the wild,
+and remembering a raw assistant turn can persist one. The write is **recorded, not
+rejected** (warn-and-record), so you can find and revoke it later by principal or
+session. **This detects a shape; it does not prove a secret is present, and mnemo
+never decodes the content.**
+
+```typescript
+const prov = await client.getMemoryProvenance(id);
+if (prov?.flags.includes("opaque_reasoning_payload")) {
+  // review / revoke: client.forgetByProvenance({ session_id: prov.session_id, strategy: "redact" })
+}
 ```
 
 ## Configuration

@@ -1014,6 +1014,7 @@ func TestWriteProvenanceRecordJSON(t *testing.T) {
 		"session_id": "sess-1",
 		"op": "remember",
 		"authored_at": "2026-01-01T00:00:00+00:00",
+		"flags": ["opaque_reasoning_payload"],
 		"content_hash": "abcd1234",
 		"prev_hash": null
 	}`
@@ -1033,6 +1034,9 @@ func TestWriteProvenanceRecordJSON(t *testing.T) {
 	}
 	if rec.SessionID == nil || *rec.SessionID != "sess-1" {
 		t.Errorf("SessionID = %v, want sess-1", rec.SessionID)
+	}
+	if len(rec.Flags) != 1 || rec.Flags[0] != "opaque_reasoning_payload" {
+		t.Errorf("Flags = %v, want [opaque_reasoning_payload]", rec.Flags)
 	}
 	if rec.ContentHash != "abcd1234" {
 		t.Errorf("ContentHash = %q, want %q", rec.ContentHash, "abcd1234")

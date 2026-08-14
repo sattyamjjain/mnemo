@@ -31,6 +31,14 @@ client.forget([result["id"]])
 prov = client.write_provenance(result["id"])        # who wrote it, under what authority
 client.writes_by_principal("agent-1")                # everything a principal wrote
 client.forget_by_principal("agent-1", "hard_delete") # revoke it all (audit trail survives)
+
+# Each provenance record has a `flags` list. On remember(), content shaped like a
+# provider opaque reasoning payload (arXiv:2608.09867 — these have leaked secrets
+# in the wild) is flagged "opaque_reasoning_payload" and RECORDED, not rejected,
+# so you can revoke it by principal/session later. It detects a SHAPE — not proof
+# a secret is present — and never decodes the content.
+if "opaque_reasoning_payload" in (prov or {}).get("flags", []):
+    client.forget_by_session(prov["session_id"], "redact")
 ```
 
 ## What's in the box

@@ -60,6 +60,20 @@ def test_write_provenance_is_recorded_and_queryable(tmp_path):
     assert len(client.writes_by_principal("alice")) == 2
     assert len(client.writes_by_session("sess-1")) == 2
     assert client.writes_by_principal("nobody") == []
+    # Ordinary prose carries no write flags.
+    assert prov["flags"] == []
+
+
+def test_opaque_reasoning_payload_is_flagged(tmp_path):
+    client = _client(tmp_path)
+    # A long mixed-case+digit base64-ish blob has the SHAPE of a provider opaque
+    # reasoning payload (arXiv:2608.09867). It is stored, not rejected, and its
+    # provenance carries the flag — shape only, not proof of a secret.
+    alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    blob = "".join(alpha[k % len(alpha)] for k in range(320))
+    r = client.remember(blob, thread_id="sess-blob")
+    prov = client.write_provenance(r["id"])
+    assert prov["flags"] == ["opaque_reasoning_payload"]
 
 
 def test_provenance_chain_verifies(tmp_path):

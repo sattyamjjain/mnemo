@@ -7,7 +7,8 @@ use crate::model::capability::Capability;
 use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType};
 use crate::model::relation::Relation;
-use crate::model::write_provenance::WriteOp;
+use crate::model::write_provenance::{WriteFlag, WriteOp};
+use crate::opaque_reasoning;
 use crate::query::MnemoEngine;
 #[allow(unused_imports)]
 use base64::Engine as _;
@@ -179,6 +180,25 @@ async fn remember_inner(
         decay_function: None,
     };
 
+    // Opaque-reasoning-payload SHAPE check (arXiv:2608.09867). Run on the
+    // PLAINTEXT content, BEFORE any encryption below — at-rest encryption
+    // base64-encodes the content and would itself look like an opaque blob. We
+    // flag the shape and record it on provenance; we do NOT reject the write
+    // (warn-and-record) and we NEVER decode the content. A flag is not proof of a
+    // secret — see crate::opaque_reasoning.
+    let mut write_flags: Vec<WriteFlag> = Vec::new();
+    if let Some(reason) = opaque_reasoning::detect(&record.content) {
+        tracing::warn!(
+            memory_id = %record.id,
+            reason = reason,
+            "remembered content has the shape of a provider opaque reasoning payload \
+             (arXiv:2608.09867); recording an opaque_reasoning_payload flag on its \
+             provenance. Shape only — this is NOT proof a secret is present. Revoke via \
+             forget_by_principal / forget_by_session if needed."
+        );
+        write_flags.push(WriteFlag::OpaqueReasoningPayload);
+    }
+
     // Encrypt content if encryption is configured (after embedding, before storage)
     if let Some(ref enc) = engine.encryption {
         let encrypted = enc.encrypt(record.content.as_bytes())?;
@@ -204,6 +224,7 @@ async fn remember_inner(
             capability.map(|c| c.id),
             record.thread_id.clone(),
             WriteOp::Remember,
+            write_flags,
         )
         .await?;
 

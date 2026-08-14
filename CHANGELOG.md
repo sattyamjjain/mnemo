@@ -9,7 +9,157 @@ All notable changes to Mnemo are documented in this file.
 The 0.5.23 window opens on the **v0.5.22** release — `main` at
 [`608d913`](https://github.com/sattyamjjain/mnemo/commit/608d913) (the version-fence
 merge the `v0.5.22` tag points at). The entries below accumulate on top of it toward the
-0.5.23 cut.
+0.5.23 cut. Provenance + FORGET BY PROVENANCE merged in [#154](https://github.com/sattyamjjain/mnemo/pull/154)
+(`main` at [`2c8bf35`](https://github.com/sattyamjjain/mnemo/commit/2c8bf35)); the
+2026-08-12 entries build on it.
+
+### Fixed (2026-08-14) - the publish walk fails loudly instead of skipping silently (#140)
+
+`mnemo-mcp-server` sat at **0.4.4 on crates.io for 87 days** (published 2026-05-18) while the
+libraries advanced to 0.5.22, and **every publish run in that window reported success**. The rejected
+`CARGO_REGISTRY_TOKEN` caused it, but the reason nobody noticed is a CI design bug that outlives any
+token: the walk enumerated crates, *skipped* the ones it could not publish, and a skip was
+indistinguishable from a no-op.
+
+- **[`scripts/registry_parity.sh`](scripts/registry_parity.sh)** — one implementation, two modes.
+  `--mode preflight` runs BEFORE the walk and prints the full triple (workspace version, newest git
+  tag, crates.io version) for **every** publishable crate; `--mode assert` runs after and requires
+  every crate to have actually landed. This **absorbs `assert_release_parity.sh`**, which is deleted:
+  the parity idea now has exactly one implementation, not two.
+- **Preflight is walk-aware, on purpose.** A naive "fail on any lag" gate is unshippable — it would
+  block the very publish that repairs the lag. A lagging crate **in** the walk prints a loud
+  REPAIRING line and proceeds; a lagging crate **not** in the walk fails the job by name with both
+  versions.
+- **A 403 / auth failure is never swallowed.** `cargo-publish.yml` now captures publish output and
+  matches auth/permission failures explicitly, failing with the operator remediation instead of a
+  generic error — plus a **publish ledger** (published / NOT published) printed on *every* exit, so a
+  partial walk can never look like a complete one.
+- **Orphan detection**: a publishable crate that is absent from crates.io *and* in no publish walk is
+  now warned by name (`mnemo-amp` today) — the same shape as #140, caught before it becomes another
+  87-day silence.
+- Wired into both `cargo-publish.yml` and `release-crate.yml`. **Rotating the token remains an
+  operator action** that no code change can perform; #140 stays open until it is done.
+
+### Added (2026-08-14) - workspace version fence: every crate, tag and CHANGELOG must agree
+
+Three version numbers coexisted across the workspace at once — `[workspace.package].version` 0.5.23,
+`crates/mnemo-golem-wit` **0.5.21**, newest tag `v0.5.22` — and no guard could see it: the existing
+checks look at *published* crates or at the README, so a hand-maintained literal on a crate in the
+root `[workspace] exclude` was invisible to all of them.
+
+- **[`crates/mnemo-cli/tests/workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs)**
+  — offline, and a **test** rather than a script so a mismatch is *unmergeable*, not merely reported.
+  Five legs: every crate's literal version (32 manifests), every internal `{ path, version }` pin in
+  the root `[workspace.dependencies]`, the newest git tag not being ahead of the workspace, tag ↔
+  workspace ↔ CHANGELOG agreement, and a positive control proving the parsers are not vacuous.
+- **Caught a real bug on its first run**: `mnemo-golem-wit` pinned 0.5.21 while the root Cargo.toml
+  already pinned that same crate at 0.5.23 — bumped to 0.5.23 here.
+- **Exact three-way equality is enforced at release, not at every commit.** Between a bump and its
+  release the repo is legitimately ahead of the newest tag (the state right now), and a fence that is
+  red on every pre-release commit is a fence everyone learns to ignore. So: `tag == workspace` requires
+  a `## [workspace]` CHANGELOG section (full equality); `tag < workspace` requires an open
+  `[Unreleased]`; `tag > workspace` is always illegal. There is no third number in either state.
+- New `version-fence` CI job with `fetch-depth: 0`, because the default shallow checkout fetches no
+  tags and the tag legs skip rather than false-fail when none are reachable.
+
+### Docs (2026-08-14) - MCP 2026-07-28 readiness audit, written before any code moves
+
+- **[`docs/mcp-2026-07-28-migration.md`](docs/mcp-2026-07-28-migration.md)** — per-item audit with a
+  status of not-affected / needs-change / needs-design, every claim traced to a named module and every
+  "not-affected" verified as an absence rather than assumed.
+- **Session IDs — needs-design.** `rmcp` is compiled `["server", "transport-io"]`: stdio only, so there
+  is no `Mcp-Session-Id` to remove. The role a session would play is played by the **OS process**:
+  `engine.default_agent_id` (boot-time, and the scoping key in `server.rs::list_resources`) and
+  `role_filter.rs` (a boot-time, server-wide denylist, not per-caller RBAC). Stateless relocates that
+  state to the store — where `WriteProvenance`, `model::capability`, `model::acl` and `core::auth`
+  already live — and at that point **the auth boundary on the store becomes the security model, whole
+  and alone**, because the process boundary that does the work today is deleted.
+- **Roots / sampling / logging — not-affected**, each verified: no `roots` reference and capabilities
+  are exactly `enable_tools().enable_resources()`; no `sampling`/`create_message` (and
+  `mnemo-graph::extract` is still a stub that never reads `MNEMO_GRAPH_EXTRACT_MODEL`); no MCP
+  `logging` — diagnostics go to stderr, which is the only correct channel on stdio.
+- **DCR → CIMD — needs-design.** No client registration exists to migrate from; on stdio the trust
+  decision is `safe_spawn.rs`'s parent-process gauntlet. Documents what a CIMD metadata document must
+  carry, and states the consequence plainly: **CIMD relocates the trust anchor to a URL the client
+  hosts**, making freshness (fetch/cache/TTL) and revocation (fail-closed vs serve-stale when the URL
+  is unreachable) *runtime* concerns. For a memory server a stale CIMD document is a live credential.
+- **Nothing is implemented.** The document is the map that makes the next PR small.
+
+### Docs (2026-08-14) - install docs no longer hand a user a stale binary
+
+- The `cargo install mnemo-mcp-server` line in [`README.md`](README.md),
+  [`crates/mnemo-mcp/README.md`](crates/mnemo-mcp/README.md) and
+  [`sdks/typescript/README.md`](sdks/typescript/README.md) now states the **actually published version
+  and date (`0.4.4`, 2026-05-18)** next to the command, with the build-from-source alternative. Each
+  note carries a `STALE-PUBLISH-NOTE(#140)` marker so the PR that publishes the fix can delete them by
+  grep.
+- **Verified no doc tells a user to `cargo add mnemo`** — that name on crates.io is an unrelated
+  project at 1.0.0. (`crates/mnemo-db` remains the defensive name-reservation pointer.)
+- Corrected the stale **"21 registered tools"** claim to **23** in README, the TypeScript SDK README,
+  and the tools/compliance docs — `crates/mnemo-mcp/tests/mcp_test.rs` has asserted 23 since the
+  provenance tools landed, so the prose had been contradicting a passing test.
+
+### Added (2026-08-12) - write-time opaque-reasoning-payload flag (arXiv:2608.09867)
+
+Stored memory can now contain decodable credentials — [arXiv:2608.09867](https://arxiv.org/abs/2608.09867)
+(2026-08-10) showed provider-returned encrypted reasoning blocks carry no session/user/model binding,
+and that 315,320 scraped blocks yielded 367 PII artifacts and 182 credentials. An agent that REMEMBERs a
+raw assistant turn plausibly persists one.
+
+- **Write-time SHAPE detector** (`mnemo_core::opaque_reasoning`): on REMEMBER, flags content matching the
+  shape of a provider opaque reasoning payload (structured `reasoning`/`redacted_thinking` blocks, or a
+  long high-entropy base64-ish blob). **Shape only — never decodes, takes no dependency that could**, and
+  a flag is NOT proof a secret is present.
+- **Wired to the existing provenance model** (not a new one): a flagged write records
+  `WriteFlag::OpaqueReasoningPayload` on its `WriteProvenance`, alongside the principal and session — so
+  `forget_by_principal` / `forget_by_session` sweep it for free. The flag is **hashed into**
+  `content_hash` (tamper-evident: it cannot be stripped without breaking the chain). Persistence version
+  5 → 6 (`write_provenance.flags`), migrated additively on DuckDB and PostgreSQL.
+- **Default warn-and-record, not reject** — a `tracing::warn!` + the recorded flag; the write is stored so
+  it can be revoked, not silently dropped.
+- Surfaced on the provenance read path everywhere (REST/MCP/Python/TS/Go `flags`). Documented in
+  [`docs/security/opaque-reasoning-payloads.md`](docs/security/opaque-reasoning-payloads.md) and both SDK
+  READMEs, with the limit stated plainly.
+
+### Added (2026-08-12) - the Salami fixture now has a committed number (#37)
+
+`bench/salami_poisoning` landed 2026-08-11 as a compositional-poisoning fixture (arXiv:2608.01637) with
+**no committed result** — the same shape of gap as an unrun protocol. Now run and recorded:
+
+- **Dated result** [`bench/salami_poisoning/results/salami_2026-08-12.{json,md}`](bench/salami_poisoning/results/salami_2026-08-12.md)
+  with the exact command, determinism note (no RNG; background varies by trial index), embedder
+  (`DeterministicEmbedding`, offline), and machine (Apple M4, rustc 1.97.0).
+- **Numbers** (n=200/arm): individually-benign slices **save at 100%** [Wilson 95% 99.5, 100] (no per-write
+  control rejects them) and one trigger recall **assembles the harm at 100%** [98.1, 100]; the topic-matched
+  **benign control co-retrieves identically (mean 4.0 slices) but assembles 0%** [0, 1.9].
+- **Threshold sweep** (new `run_threshold_sweep`): the aggregate crosses only on the **4th** benign write
+  (1–3 slices → 0% assembly, 4 → 100%) — the harm appears on the last write, no gradual ramp.
+- **Honest reading** in the result file: how many writes before crossing (4, the full set), what each
+  per-record filter did (nothing — save path, opaque-payload flag, and z-score lane all pass an
+  individually-benign slice), and what the number does NOT show (not a defense; lexical not semantic;
+  structural harm oracle not an LLM; compositional subset of #37 only).
+
+### Fixed (2026-08-12) - the release pipeline now catches registry drift early and across all three registries
+
+Three registries disagreed with `main` and with each other (crates.io `mnemo-mcp-server` 0.4.4 while the
+workspace is 0.5.23; `mnemo-embeddings-bench` uncreated; npm `@mndfreek/mnemo-sdk` package.json 0.4.8 vs
+published 0.4.4). The pipeline is fixed, not just the numbers:
+
+- **Hard, early new-crate gate** in [`release-crate.yml`](.github/workflows/release-crate.yml): when the
+  publish walk contains a NEW crate, the release now **fails before the ~30-min build** unless the operator
+  has confirmed the token carries `publish-new` (a `confirm_publish_new` dispatch input, or the
+  `RELEASE_TOKEN_HAS_PUBLISH_NEW` repo variable), with exact remediation in the failure. crates.io exposes
+  no token-scope API, so this human ack is the honest early signal — and it means `mnemo-mcp-server` can
+  never again strand behind an uncreatable dependency.
+- **Cross-registry release parity** ([`scripts/registry_parity.sh`](scripts/registry_parity.sh) `--mode assert`):
+  after publish, asserts the workspace version, the **git tag**, and every crates.io closure crate agree;
+  and checks the independently-versioned SDK artifacts — **PyPI `mnemo-db`** and **npm `@mndfreek/mnemo-sdk`**
+  — against their OWN published versions (per `python/pyproject.toml`, these version independently, so they
+  are NOT forced equal to the workspace). A registry ahead of the repo is drift (fail); an unpublished bump
+  is a pending-publish warning; all numbers are printed.
+- **Generated per-registry versions row** in the README
+  ([`scripts/gen_published_versions.py`](scripts/gen_published_versions.py)): the published version + date
+  for each registry, generated from the live registries rather than typed.
 
 ### Added (2026-08-11) - memory-write provenance, revocation by principal, and a minimal capability primitive
 
@@ -57,8 +207,10 @@ does. See #140.
 
 - **New-crate preflight verified**, not just trusted: its exact logic, run against live crates.io,
   flags `mnemo-embeddings-bench` as the new crate that needs `publish-new`.
-- **`scripts/assert_release_parity.sh`** — a hard, un-baselined post-publish gate wired into
-  `release-crate.yml`: after the walk it asserts every closure crate reached the workspace version
+- **A hard, un-baselined post-publish gate** wired into `release-crate.yml` (now
+  [`scripts/registry_parity.sh`](scripts/registry_parity.sh) `--mode assert`; it landed as the
+  separate `assert_release_parity.sh` and was folded into the one parity implementation later in
+  this same window): after the walk it asserts every closure crate reached the workspace version
   and fails the release if any lags. The stranding was invisible for multiple releases because
   nothing asserted the publish fully landed; this makes a partial publish loud. Skipped on dry-runs.
 

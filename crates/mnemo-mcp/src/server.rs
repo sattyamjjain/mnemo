@@ -175,6 +175,7 @@ fn provenance_to_json(
         "session_id": p.session_id,
         "op": p.op.as_str(),
         "authored_at": p.authored_at.to_rfc3339(),
+        "flags": p.flags.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
         "content_hash": hex_encode(&p.content_hash),
         "prev_hash": p.prev_hash.as_deref().map(hex_encode),
     })

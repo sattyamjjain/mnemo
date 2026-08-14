@@ -203,6 +203,13 @@ export interface WriteProvenanceRecord {
   op: string;
   /** RFC 3339 timestamp of the write. */
   authored_at: string;
+  /**
+   * Write-time flags, e.g. `"opaque_reasoning_payload"` when the content had the
+   * SHAPE of a provider opaque reasoning payload (arXiv:2608.09867). A flag is a
+   * shape match recorded for revocation — NOT proof a secret is present. Hashed
+   * into `content_hash`, so it is tamper-evident.
+   */
+  flags: string[];
   /** Hex-encoded content hash (tamper-evidence). */
   content_hash: string;
   /** Hex-encoded previous-record hash, forming the chain (null for the first). */

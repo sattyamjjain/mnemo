@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS write_provenance (
     session_id VARCHAR,
     op VARCHAR NOT NULL,
     authored_at VARCHAR NOT NULL,
+    flags VARCHAR,
     prev_hash BLOB,
     content_hash BLOB NOT NULL
 );
@@ -229,9 +230,18 @@ CREATE INDEX IF NOT EXISTS idx_write_provenance_session_id ON write_provenance(s
 CREATE INDEX IF NOT EXISTS idx_write_provenance_authored_at ON write_provenance(authored_at);
 ";
 
+/// v6 column upgrade: add the `flags` column to `write_provenance` for DBs that
+/// were created at v5 (before write-time flags existed). A fresh DB already has
+/// it from `CREATE_WRITE_PROVENANCE_TABLE`; this ALTER is the existing-DB path.
+/// `flags` stores the comma-joined flag names (empty/NULL = no flags), which is
+/// hashed into each record's `content_hash` — see `model::write_provenance`.
+pub const WRITE_PROVENANCE_V6_ALTERS: &[&str] =
+    &["ALTER TABLE write_provenance ADD COLUMN flags VARCHAR"];
+
 /// Persistence format version this release writes. Bump when the on-disk
-/// schema changes in a way that requires a migrator pass.
-pub const CURRENT_PERSISTENCE_VERSION: u32 = 5;
+/// schema changes in a way that requires a migrator pass. v6 added
+/// `write_provenance.flags`.
+pub const CURRENT_PERSISTENCE_VERSION: u32 = 6;
 
 pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_MEMORIES_TABLE)?;
@@ -264,6 +274,8 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_EMBEDDING_BASELINE_TABLE)?;
     // Write-provenance chain (who wrote each memory, under what authority).
     conn.execute_batch(CREATE_WRITE_PROVENANCE_TABLE)?;
+    // v6: add write_provenance.flags to a DB created at v5 (idempotent).
+    apply_alters_idempotent(conn, WRITE_PROVENANCE_V6_ALTERS)?;
     stamp_persistence_version(conn)?;
     Ok(())
 }
@@ -420,6 +432,7 @@ mod tests {
         for sql in SPRINT3_COLUMN_ALTERS
             .iter()
             .chain(SPRINT4_COLUMN_ALTERS.iter())
+            .chain(WRITE_PROVENANCE_V6_ALTERS.iter())
         {
             let parsed = parse_alter_table_add_column(sql);
             assert!(
@@ -427,6 +440,34 @@ mod tests {
                 "ALTER does not match `ALTER TABLE <t> ADD COLUMN <c> ...`: {sql:?}"
             );
         }
+    }
+
+    #[test]
+    fn fresh_and_upgraded_db_both_have_write_provenance_flags() {
+        // Fresh DB: CREATE includes the flags column.
+        let fresh = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&fresh).unwrap();
+        assert!(column_exists(&fresh, "write_provenance", "flags").unwrap());
+
+        // Upgrade path: build the v5 table WITHOUT flags, then run_migrations
+        // must ALTER it in (idempotently).
+        let up = duckdb::Connection::open_in_memory().unwrap();
+        up.execute_batch(
+            "CREATE TABLE write_provenance (
+                id VARCHAR PRIMARY KEY, memory_id VARCHAR NOT NULL, principal VARCHAR NOT NULL,
+                capability_id VARCHAR, session_id VARCHAR, op VARCHAR NOT NULL,
+                authored_at VARCHAR NOT NULL, prev_hash BLOB, content_hash BLOB NOT NULL);",
+        )
+        .unwrap();
+        assert!(!column_exists(&up, "write_provenance", "flags").unwrap());
+        run_migrations(&up).unwrap();
+        assert!(column_exists(&up, "write_provenance", "flags").unwrap());
+        // Idempotent second pass.
+        run_migrations(&up).unwrap();
+        assert_eq!(
+            read_persistence_version(&up).unwrap(),
+            Some(CURRENT_PERSISTENCE_VERSION)
+        );
     }
 
     #[test]

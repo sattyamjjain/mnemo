@@ -9,6 +9,7 @@ pub mod eval;
 pub mod hash;
 pub mod index;
 pub mod model;
+pub mod opaque_reasoning;
 pub mod provenance;
 pub mod query;
 pub mod retrieval;

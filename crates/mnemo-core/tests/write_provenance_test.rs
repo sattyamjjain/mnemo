@@ -157,3 +157,52 @@ async fn invalid_capability_is_rejected() {
         "a capability signed with the wrong key must be rejected"
     );
 }
+
+#[tokio::test]
+async fn opaque_reasoning_payload_is_flagged_on_provenance_and_revocable() {
+    use mnemo_core::model::write_provenance::WriteFlag;
+
+    let e = engine();
+
+    // A long, mixed-case+digit base64-ish blob has the SHAPE of a provider
+    // opaque reasoning payload (arXiv:2608.09867). It is stored (warn-and-record,
+    // NOT rejected) and its provenance carries the flag.
+    const ALPHA: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let blob: String = (0..320).map(|k| ALPHA[k % ALPHA.len()] as char).collect();
+
+    let flagged = e
+        .remember(req(&blob, Some("mallory"), Some("sess-x")))
+        .await
+        .expect("write is recorded, not rejected");
+    let ordinary = e
+        .remember(req(
+            "the user prefers dark mode",
+            Some("mallory"),
+            Some("sess-x"),
+        ))
+        .await
+        .unwrap();
+
+    let fp = e.write_provenance_for(flagged.id).await.unwrap().unwrap();
+    assert_eq!(fp.flags, vec![WriteFlag::OpaqueReasoningPayload]);
+    assert!(fp.content_hash_valid(), "flag must be inside the hash");
+
+    let op = e.write_provenance_for(ordinary.id).await.unwrap().unwrap();
+    assert!(op.flags.is_empty(), "ordinary prose is not flagged");
+
+    // The chain (flag included) still verifies end-to-end.
+    let chain = e.verify_provenance_chain(100).await.unwrap();
+    assert!(
+        chain.valid,
+        "provenance chain with a flagged record must verify"
+    );
+
+    // FORGET BY PROVENANCE still sweeps the flagged write for free (it is an
+    // ordinary write attributed to the principal/session).
+    let resp = e
+        .forget_by_session("sess-x", ForgetStrategy::HardDelete)
+        .await
+        .unwrap();
+    assert_eq!(resp.forgotten.len(), 2);
+    assert!(e.storage.get_memory(flagged.id).await.unwrap().is_none());
+}

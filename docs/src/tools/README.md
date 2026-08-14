@@ -84,7 +84,7 @@ experience-memory mode to be enabled.
 ## A note on audit-log export
 
 `mnemo.export_audit_log` is referenced by the manifest schema but is **not** one
-of the 21 registered tools above. The audit-log export capability itself already
+of the 23 registered tools above. The audit-log export capability itself already
 exists today as a library API:
 [`mnemo_compliance::export_audit_log(events, format, signer)`](../compliance/eu-ai-act.md)
 (with `verify_ndjson_signed`), which produces a signed NDJSON / EU-AI-Office CSV

@@ -223,6 +223,7 @@ CREATE TABLE IF NOT EXISTS write_provenance (
     session_id VARCHAR,
     op VARCHAR NOT NULL,
     authored_at VARCHAR NOT NULL,
+    flags VARCHAR,
     prev_hash BYTEA,
     content_hash BYTEA NOT NULL
 )
@@ -231,6 +232,15 @@ CREATE TABLE IF NOT EXISTS write_provenance (
     .execute(pool)
     .await
     .map_err(|e| Error::Storage(format!("create write_provenance: {e}")))?;
+
+    // v6: add write_provenance.flags to a DB created before write-time flags
+    // existed. PG's ADD COLUMN IF NOT EXISTS makes this idempotent. `flags`
+    // stores the comma-joined flag names (NULL/empty = no flags), hashed into
+    // each record's content_hash — see mnemo_core::model::write_provenance.
+    sqlx::query("ALTER TABLE write_provenance ADD COLUMN IF NOT EXISTS flags VARCHAR")
+        .execute(pool)
+        .await
+        .map_err(|e| Error::Storage(format!("add write_provenance.flags: {e}")))?;
 
     // ---- Indexes ----
     // sqlx 0.9 gates dynamic SQL behind `SqlSafeStr`; these statements are
