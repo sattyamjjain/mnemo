@@ -6,10 +6,11 @@ All notable changes to Mnemo are documented in this file.
 
 ### Landing trace (2026-08-14)
 
-The 0.5.24 window opens on the **v0.5.23** cut — `main` at
-[`7599fbc`](https://github.com/sattyamjjain/mnemo/commit/7599fbc), the
-[#155](https://github.com/sattyamjjain/mnemo/pull/155) merge the `v0.5.23` tag points at.
-Nothing has accumulated on top of it yet.
+The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with the
+[#155](https://github.com/sattyamjjain/mnemo/pull/155) merge — `main` at
+[`7599fbc`](https://github.com/sattyamjjain/mnemo/commit/7599fbc) — and the `v0.5.23` tag
+points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
+publish gate requires first exists. Nothing has accumulated on top of it yet.
 
 ## [0.5.23] - 2026-08-14
 
