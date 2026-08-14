@@ -58,3 +58,10 @@ Thumbs.db
 # mdBook build output (docs/book.toml sets build-dir = "book"); built in CI and
 # deployed to Pages, never committed.
 /docs/book/
+
+# Private working docs — strategy/ROI analysis and the kill-criteria for the
+# mnemo bet. Both are marked PRIVATE in their own headers and have sat untracked
+# but UNIGNORED in a public repo, one `git add -A` away from being published.
+# Ignore them so that cannot happen by accident.
+/MNEMO_STRATEGY_PRIVATE.md
+/KILL_CRITERIA.md

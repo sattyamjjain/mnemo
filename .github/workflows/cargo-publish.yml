@@ -80,16 +80,27 @@ jobs:
           #   mnemo-rest            -> compliance, core
           #   mnemo-grpc            -> compliance, core
           #   mnemo-admin/pgwire/letta/mesh/codemode/deal/md-sync/cma/baseline -> core
+          #   mnemo-amp             -> core        [added 2026-08-14: it was
+          #                                        publishable but in NO walk, so
+          #                                        nothing would ever ship it —
+          #                                        the orphan case registry_parity
+          #                                        now warns about. It is a NEW
+          #                                        crate, so creating it needs the
+          #                                        token's publish-new scope.]
           #   mnemo-db              (leaf name-reservation pointer, no deps)
-          # mnemo-mcp-server is intentionally NOT here: it has a path-only dep on
-          # the unpublished `mnemo-embeddings-bench` (bench/embeddings) with no
-          # version, which `cargo publish` rejects. Publishing the CLI needs that
-          # dep versioned+published (or made optional) first — tracked separately.
+          # mnemo-mcp-server is intentionally NOT here — this is the LIBRARY path.
+          # (The old reason, an unpublishable path-only dep on
+          # `mnemo-embeddings-bench`, is resolved: that crate publishes as of
+          # v0.5.23.) The server binary ships from the tag path in
+          # release-crate.yml, which gates on the full closure. Keep it that way:
+          # registry_parity.sh's preflight deliberately does NOT fail this walk
+          # over mnemo-mcp-server lagging, because this walk cannot publish it.
           for crate in mnemo-core mnemo-graph mnemo-attention-state \
                        mnemo-compliance mnemo-mcp mnemo-postgres \
                        mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire \
                        mnemo-letta mnemo-mesh mnemo-codemode mnemo-deal \
-                       mnemo-md-sync mnemo-cma mnemo-baseline mnemo-db; do
+                       mnemo-md-sync mnemo-cma mnemo-baseline mnemo-amp \
+                       mnemo-db; do
             # 200 = already published; 404 = needs publishing.
             http=$(curl -s -A "$UA" -o /dev/null -w "%{http_code}" \
               "https://crates.io/api/v1/crates/${crate}/${ver}")

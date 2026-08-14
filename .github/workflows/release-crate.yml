@@ -18,18 +18,24 @@ name: release-crate
 # reddens) means a tag ships the whole line — PROVIDED the registry token is
 # valid.
 #
-# STATUS (as of 2026-08-02): still not shipped. v0.5.17 / v0.5.18 / v0.5.20 were
-# all tagged and NONE reached crates.io; every walk died uploading mnemo-core
-# with "403 Forbidden: authentication failed" — an EXPIRED CARGO_REGISTRY_TOKEN
-# (last rotated 2026-04-25, ~90-day expiry ≈ 2026-07-24; v0.5.16 published
-# 2026-07-24 was the last that beat it). The timeout / 5xx-retry commits treated
-# it as transient; it is not. UPDATE (2026-08-09): the token preflight below no
-# longer HARD-fails on a /api/v1/me non-200 — that false-blocked a working
-# GRANULAR token (the 0.5.22 libraries shipped 2026-08-08 with a token that
-# publishes but 403s on /me, which has no account-read scope). It now hard-fails
-# only on a MISSING secret; a /me non-200 is advisory and the real publish is the
-# authority. This ships the moment the operator uses a token that can publish and
-# carries publish-new (to create the still-new mnemo-embeddings-bench crate).
+# STATUS (2026-08-14): SHIPPED. v0.5.23 published the whole line, including
+# `mnemo-mcp-server` (stranded at 0.4.4 for 87 days) and the then-new
+# `mnemo-embeddings-bench`. `cargo add mnemo-mcp-server` resolves 0.5.23. #140 is
+# closed.
+#
+# The long-held diagnosis was WRONG and is corrected here so nobody re-derives
+# it: the token was never the blocker. It carries BOTH publish-update AND
+# publish-new (it created mnemo-embeddings-bench on the first real attempt). The
+# earlier 403s on /api/v1/me were a GRANULAR token lacking account-read scope —
+# advisory, not fatal — which is why the preflight below only hard-fails on a
+# MISSING secret. What actually blocked v0.5.23 was procedural: no `v0.5.23` tag
+# and no `## [0.5.23]` CHANGELOG heading (the cargo-publish gate), plus the
+# new-crate gate below needing explicit publish-new confirmation.
+#
+# IMPORTANT for the next release: repo variable RELEASE_TOKEN_HAS_PUBLISH_NEW is
+# NOT set, so a bare tag push ABORTS at the new-crate gate whenever the walk
+# contains a crate that does not exist yet. Dispatch it instead:
+#     gh workflow run release-crate.yml --ref vX.Y.Z -f confirm_publish_new=true
 #
 # `mnemo-attention-state` is in the set because `mnemo-mcp` hard-depends on it
 # (server.rs uses `mnemo_attention_state::AttentionStateStore`); it was
@@ -104,7 +110,7 @@ jobs:
           cargo clippy --all-targets \
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db \
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
             -p mnemo-embeddings-bench -p mnemo-mcp-server -- -D warnings
       # Full closure test suite. The recall-QUALITY benchmark
       # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
@@ -117,7 +123,7 @@ jobs:
           cargo test \
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db \
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
             -p mnemo-embeddings-bench -p mnemo-mcp-server
 
   publish:
@@ -138,7 +144,7 @@ jobs:
       # dependent never precedes a crate it needs). Used by BOTH the new-crate
       # preflight and the real publish loop below, so they can never disagree
       # about what the walk contains.
-      WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
+      WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
     steps:
       # fetch-depth: 0 so the registry-parity preflight can report a real
       # "newest git tag" column (the default shallow checkout fetches no tags).
@@ -307,7 +313,7 @@ jobs:
           cargo publish --dry-run \
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-db \
+            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
             -p mnemo-embeddings-bench -p mnemo-mcp-server
 
       # --- Real publish, dependency order -----------------------------------

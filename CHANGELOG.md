@@ -12,6 +12,28 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-14) - `mnemo-amp` joins the publish walks; two private docs can no longer be committed by accident
+
+- **`mnemo-amp` was publishable, absent from crates.io, and in NO publish walk** — nothing would
+  ever have shipped it. This is the orphan case `registry_parity.sh` started warning about hours
+  earlier, acted on rather than left as a standing warning. It is added to **both** walks the way
+  `mnemo-db` already appears in both: `cargo-publish.yml`'s library list, and `release-crate.yml`'s
+  `WALK` **plus its clippy gate, test gate and coordinated dry-run** — a crate in the walk that the
+  gate never compiled would be published untested, which is a worse bug than the one being fixed.
+  It depends only on `mnemo-core`, so it is topologically safe anywhere after it. It is a NEW crate,
+  so the first release that includes it needs the token's `publish-new` scope.
+- **`MNEMO_STRATEGY_PRIVATE.md` and `KILL_CRITERIA.md` are now gitignored.** Both declare
+  themselves PRIVATE in their own first lines, and both had been sitting untracked *but unignored*
+  in a public repo — one `git add -A` (which this repo's own conventions call for) away from being
+  published irreversibly.
+- **Two stale workflow comments corrected**, both of which asserted things that are now false:
+  `release-crate.yml`'s STATUS block still said the line was unshipped and blamed an expired token,
+  and `cargo-publish.yml` still explained `mnemo-mcp-server`'s exclusion by an unpublishable
+  `mnemo-embeddings-bench`. The corrected STATUS records the real diagnosis — **the token was never
+  the blocker; it carries both scopes** — and the operational consequence: `RELEASE_TOKEN_HAS_PUBLISH_NEW`
+  is unset, so a bare tag push aborts at the new-crate gate and a release containing a new crate
+  must be dispatched with `-f confirm_publish_new=true`.
+
 ### Fixed (2026-08-14) - #140 is closed: the whole 0.5.23 line is on crates.io, binary included
 
 `mnemo-mcp-server` had been stranded at **0.4.4 since 2026-05-18 — 87 days** while the libraries
