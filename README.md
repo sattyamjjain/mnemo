@@ -868,6 +868,12 @@ Options:
   --rest-port <PORT>            Enable REST API on this port [env: MNEMO_REST_PORT]
   --postgres-url <URL>          Use PostgreSQL backend [env: MNEMO_POSTGRES_URL]
   --encryption-key <HEX>        AES-256-GCM encryption key (64 hex chars) [env: MNEMO_ENCRYPTION_KEY]
+  --capability-key <HEX>        HMAC key for per-request capabilities (ADR 0002) [env: MNEMO_CAPABILITY_KEY]
+  --capability-key-id <ID>      Key id recorded in issued capabilities [default: default] [env: MNEMO_CAPABILITY_KEY_ID]
+  --http-port <PORT>            Serve MCP over authenticated Streamable HTTP instead of stdio
+                                (needs --features http-transport; requires --capability-key) [env: MNEMO_HTTP_PORT]
+  --lease-ttl-seconds <SECS>    Capability-leased reads (#126): recall mints a lease, forget_subject
+                                requires one (0 = disabled) [default: 0] [env: MNEMO_LEASE_TTL_SECONDS]
   --idle-timeout-seconds <SECS> Auto-shutdown after idle period (0 = disabled) [default: 0] [env: MNEMO_IDLE_TIMEOUT]
 
 Commands:
@@ -939,6 +945,34 @@ client that can reach it act as the operator.
 
 > The HTTP transport binds `127.0.0.1` and does not terminate TLS. Put it behind
 > a reverse proxy for anything beyond local use.
+
+### Capability-leased reads (#126)
+
+`--lease-ttl-seconds <N>` binds destructive erasure to a read the same caller
+just performed, breaking the OX-MCP "exfiltrate-then-act" chain. With it on,
+`mnemo.recall` returns a `lease` and `mnemo.forget_subject` requires it:
+
+```jsonc
+// mnemo.recall result gains:
+"lease": { "token": "01a0…", "agent_id": "alice",
+           "scopes": ["forget_subject"], "ttl_seconds": 60 }
+
+// mnemo.forget_subject then requires:
+{ "subject_id": "s1", "lease_token": "01a0…" }
+```
+
+A lease is refused if it is expired, names the wrong scope, was never issued, or
+**belongs to a different caller** — the replay case it exists to stop. Requires
+`--capability-key`: without per-request identity every caller shares the boot
+agent id, so every lease would validate for everyone.
+
+**Off by default**, because it changes the contract of two shipped tools.
+
+> Enforced today: freshness, causality, and caller-binding. **Not** yet enforced:
+> narrowing the erasure to the subjects the read covered — a lease earned by a
+> narrow read still authorises that caller to erase a different subject within
+> the TTL. See [ADR 0001](docs/adr/0001-capability-leased-reads.md) for why and
+> what closing it requires.
 
 ## Architecture
 

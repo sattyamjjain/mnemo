@@ -43,6 +43,37 @@ per-request identity; this implements it.
   `crates/mnemo-mcp/tests/per_request_identity.rs` shows two capabilities resolving to two
   distinct callers on one server.
 
+### Added (2026-08-15) - capability-leased reads, closing [#126](https://github.com/sattyamjjain/mnemo/issues/126)
+
+`--lease-ttl-seconds <N>` binds a destructive erasure to a read the **same caller** just
+performed, breaking the OX-MCP "exfiltrate-then-act" chain. `mnemo.recall` mints a short-lived
+lease; `mnemo.forget_subject` requires it.
+
+- **The blocker turned out not to be the transport.** #126 and [ADR 0001](docs/adr/0001-capability-leased-reads.md)
+  deferred this pending "a multi-caller authenticated transport", because on single-caller stdio a
+  lease keyed on `agent_id` is ceremony. What actually unblocked it was **per-request identity**
+  (ADR 0002): the lease binds to the capability-verified principal of the request that minted it,
+  so a replay by another principal fails — on stdio too, where a gateway may multiplex several
+  agents over one pipe.
+- **Off by default.** `mnemo.recall` and `mnemo.forget_subject` are shipped, docs-drift-tested
+  tools; enforcing unconditionally would break every existing client on upgrade. Unattached, both
+  behave exactly as before. Requires `--capability-key` — without per-request identity every
+  lease would validate for every caller, which is a defence in appearance only.
+- **No `ExportAuditLog` scope**, though the original design named it: `export_audit_log` is not
+  an MCP tool but a library function, and a scope gating a tool that does not exist is the
+  claimed-but-not-wired defect this repo has now repaired four times.
+- **The lease is checked against the caller, not the requested `agent_id`** — validating against
+  a caller-supplied field would let the caller answer its own question.
+- Verified live over the HTTP transport, not just in unit tests: recall mints a lease bound to
+  `alice`; `forget_subject` without one is refused; **`mallory` replaying `alice`'s lease is
+  refused**; an invented token is refused; `alice` spending her own succeeds.
+
+> **Scope narrowing is not implemented.** Freshness (TTL), causality (a read must have happened),
+> and caller-binding are enforced. The design's third property — restricting the erasure to the
+> subjects the read covered — is not: a lease earned by a narrow read still authorises that caller
+> to erase a different subject within the TTL. ADR 0001 records why (deriving a subject set from a
+> ranked query result either over-narrows or over-broadens) and what closing it requires.
+
 ### Added (2026-08-15) - authenticated Streamable HTTP transport for MCP (feature-gated)
 
 `mnemo --http-port <PORT>` serves MCP over rmcp's Streamable HTTP transport, behind the

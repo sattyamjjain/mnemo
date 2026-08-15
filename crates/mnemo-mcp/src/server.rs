@@ -81,6 +81,17 @@ pub struct MnemoServer {
     /// Unset is the default and keeps pre-ADR-0002 behaviour byte-for-byte:
     /// no capability presented, boot-derived identity, exactly as on stdio today.
     capability_issuer: Option<Arc<CapabilityIssuer>>,
+    /// Capability-leased reads ([#126](https://github.com/sattyamjjain/mnemo/issues/126)).
+    ///
+    /// When attached, `mnemo.recall` mints a short-lived lease bound to the
+    /// caller's per-request identity, and `mnemo.forget_subject` **requires**
+    /// one — binding the destructive act to a read the same caller just
+    /// performed (the OX-MCP exfiltrate-then-act chain).
+    ///
+    /// Unattached (the default) both tools behave exactly as they always have.
+    /// Enforcing unconditionally would break every shipped client of a
+    /// docs-drift-tested tool on upgrade; that is the operator's call.
+    lease_store: Option<Arc<crate::lease::LeaseStore>>,
 }
 
 impl MnemoServer {
@@ -308,7 +319,23 @@ impl MnemoServer {
             attention_state: None,
             role_filter: None,
             capability_issuer: None,
+            lease_store: None,
         }
+    }
+
+    /// Enable capability-leased reads ([#126](https://github.com/sattyamjjain/mnemo/issues/126)).
+    ///
+    /// With a store attached, `mnemo.recall` returns a `lease` in its result
+    /// and `mnemo.forget_subject` requires a `lease_token` argument naming a
+    /// live, correctly-scoped lease bound to the calling principal.
+    ///
+    /// **This changes two shipped tools' contracts**, so it is opt-in. It is
+    /// also only meaningful alongside per-request identity
+    /// ([`Self::with_capability_issuer`]): a lease bound to a boot-time agent
+    /// id proves nothing when every caller shares it.
+    pub fn with_lease_store(mut self, store: Arc<crate::lease::LeaseStore>) -> Self {
+        self.lease_store = Some(store);
+        self
     }
 
     pub fn with_activity_tracker(mut self, tracker: Arc<AtomicU64>) -> Self {
@@ -442,6 +469,7 @@ impl MnemoServer {
     async fn recall(
         &self,
         Parameters(input): Parameters<RecallInput>,
+        Extension(caller): Extension<CallerContext>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
         let memory_type = match input.memory_type {
@@ -547,6 +575,22 @@ impl MnemoServer {
                     "memories": response.memories,
                     "total": response.total,
                 });
+                // #126 — mint a lease bound to THIS caller, so a following
+                // `forget_subject` can prove it is acting on a read this same
+                // principal just performed. Additive: absent unless the
+                // operator attached a store.
+                if let Some(store) = self.lease_store.as_ref() {
+                    let lease = store.issue(
+                        &caller.caller_id,
+                        std::iter::once(crate::lease::LeaseScope::ForgetSubject).collect(),
+                    );
+                    result["lease"] = serde_json::json!({
+                        "token": lease.id.to_string(),
+                        "agent_id": lease.agent_id,
+                        "scopes": lease.scopes.iter().map(|s| s.name()).collect::<Vec<_>>(),
+                        "ttl_seconds": store.ttl_seconds(),
+                    });
+                }
                 if let Some(superseded) = response.superseded.as_ref() {
                     result["superseded"] = serde_json::to_value(superseded).unwrap_or_default();
                 }
@@ -774,8 +818,44 @@ impl MnemoServer {
     async fn forget_subject(
         &self,
         Parameters(input): Parameters<ForgetSubjectInput>,
+        Extension(caller): Extension<CallerContext>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
+        // #126 — capability-leased read gate. Enforced only when a store is
+        // attached; unattached, this is the pre-#126 behaviour exactly.
+        //
+        // The lease is checked against the CALLER's per-request identity, not
+        // the requested `agent_id`: the question is "did *you* just read?", and
+        // letting the caller name the agent the lease is checked against would
+        // let it answer its own question.
+        if let Some(store) = self.lease_store.as_ref() {
+            let Some(ref raw) = input.lease_token else {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "this server requires a lease for mnemo.forget_subject: call mnemo.recall \
+                     first and pass the `lease` token it returns as `lease_token`. The lease \
+                     binds this erasure to a read you just performed."
+                        .to_string(),
+                )]));
+            };
+            let token_id = match raw.parse::<uuid::Uuid>() {
+                Ok(id) => id,
+                Err(_) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "lease_token '{raw}' is not a valid lease id (expected the `lease.token` \
+                         value from a mnemo.recall result)"
+                    ))]));
+                }
+            };
+            if let Err(err) = store.check(
+                token_id,
+                &caller.caller_id,
+                crate::lease::LeaseScope::ForgetSubject,
+            ) {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "lease rejected: {err}"
+                ))]));
+            }
+        }
         let strategy = match input.strategy.as_deref().unwrap_or("redact") {
             "redact" => ForgetStrategy::Redact,
             "hard_delete" => ForgetStrategy::HardDelete,

@@ -100,6 +100,20 @@ struct Cli {
     #[arg(long, env = "MNEMO_HTTP_PORT")]
     http_port: Option<u16>,
 
+    /// Enable capability-leased reads with this TTL in seconds (0 = disabled).
+    ///
+    /// When set, `mnemo.recall` returns a short-lived `lease` bound to the
+    /// calling principal and `mnemo.forget_subject` REQUIRES one — binding the
+    /// erasure to a read the same caller just performed, which breaks the
+    /// OX-MCP exfiltrate-then-act chain (#126).
+    ///
+    /// This changes the contract of two shipped tools, so it is off by default.
+    /// Only meaningful with `--capability-key`: without per-request identity
+    /// every caller shares the boot agent id, and a lease bound to an identity
+    /// everyone holds proves nothing.
+    #[arg(long, default_value = "0", env = "MNEMO_LEASE_TTL_SECONDS")]
+    lease_ttl_seconds: u64,
+
     /// Idle timeout in seconds — auto-shutdown after no requests (0 = disabled)
     #[arg(long, default_value = "0", env = "MNEMO_IDLE_TIMEOUT")]
     idle_timeout_seconds: u64,
@@ -570,8 +584,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Per-request identity (ADR 0002). Optional: without a key, a request that
     // presents no capability keeps the boot-derived agent id exactly as before,
     // and a request that DOES present one is rejected rather than downgraded.
-    #[cfg(feature = "http-transport")]
-    let has_capability_issuer = cli.capability_key.is_some();
+    let has_capability_key = cli.capability_key.is_some();
     if let Some(ref key_hex) = cli.capability_key {
         let key = hex::decode(key_hex.trim()).map_err(|e| -> Box<dyn std::error::Error> {
             format!("--capability-key must be hex-encoded HMAC key material: {e}").into()
@@ -588,12 +601,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // #126 — capability-leased reads. Off unless the operator sets a TTL,
+    // because it changes the contract of two shipped tools.
+    if cli.lease_ttl_seconds > 0 {
+        if !has_capability_key {
+            return Err(
+                "--lease-ttl-seconds requires --capability-key (or MNEMO_CAPABILITY_KEY).\n\
+                 \n\
+                 A lease binds an erasure to a read by the SAME caller. Without per-request \
+                 identity every caller resolves to the boot --agent-id, so every lease would \
+                 validate for every caller — ceremony that looks like a defence and is not."
+                    .into(),
+            );
+        }
+        let store = std::sync::Arc::new(mnemo_mcp::lease::LeaseStore::new(cli.lease_ttl_seconds));
+        // Bound memory on a long-lived server. `check` already refuses expired
+        // leases, so this is hygiene rather than enforcement.
+        let purge_handle = store.clone();
+        let purge_every = std::time::Duration::from_secs(cli.lease_ttl_seconds.max(1));
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(purge_every);
+            loop {
+                ticker.tick().await;
+                purge_handle.purge_expired();
+            }
+        });
+        server = server.with_lease_store(store);
+        tracing::info!(
+            ttl_seconds = cli.lease_ttl_seconds,
+            "Capability-leased reads enabled (#126): mnemo.forget_subject now requires a lease \
+             from mnemo.recall"
+        );
+    }
+
     // The HTTP transport replaces stdio rather than running alongside it: one
     // process serves one MCP transport, and a server reachable both ways would
     // have two identity paths into the same engine.
     #[cfg(feature = "http-transport")]
     if let Some(http_port) = cli.http_port {
-        return http_transport::serve(server, http_port, has_capability_issuer).await;
+        return http_transport::serve(server, http_port, has_capability_key).await;
     }
     #[cfg(not(feature = "http-transport"))]
     if cli.http_port.is_some() {
