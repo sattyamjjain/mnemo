@@ -901,7 +901,44 @@ Commands:
                             it. Flags: --profile <dpdp|eu-ai-act-art19|hipaa>
                             [default: dpdp], --floor-days <N> (override the
                             legal-minimum floor).
+  capability  Mint per-request capabilities (ADR 0002). Subcommand:
+                issue       Issue a signed capability. Flags: --key <HEX>
+                            (must match the server's --capability-key),
+                            --key-id <ID> [default: default], --principal <ID>,
+                            --scope "<tokens>" (`role:<id>` entries become RBAC
+                            roles; others are opaque scopes), --ttl-seconds <N>,
+                            --format <bearer|json> [default: bearer].
 ```
+
+### Per-request identity (ADR 0002)
+
+By default the caller is the boot-time `--agent-id`: one process, one caller,
+which is exactly right on stdio. Set `--capability-key <hex>` and a request may
+instead carry a signed capability whose principal becomes the caller identity
+**for that one call** — in `_meta["dev.mnemo/capability"]` on any transport, or
+as `Authorization: Bearer <base64url>` over HTTP.
+
+```bash
+# One key for the server and for minting.
+export MNEMO_CAPABILITY_KEY=$(openssl rand -hex 32)
+
+# Serve MCP over authenticated Streamable HTTP (needs --features http-transport).
+mnemo --capability-key "$MNEMO_CAPABILITY_KEY" --http-port 8080
+
+# Mint a caller's token.
+mnemo capability issue --key "$MNEMO_CAPABILITY_KEY" \
+  --principal alice --scope "role:reader" --ttl-seconds 900
+```
+
+A capability that cannot be verified — malformed, forged, expired, unknown key,
+or presented to a server holding no key — is **rejected**, never quietly
+downgraded to the boot identity. Over HTTP a request carrying **no** capability
+is also rejected: the boot fallback is only sound on a transport where the
+operator is the sole possible caller, and on a network port it would let any
+client that can reach it act as the operator.
+
+> The HTTP transport binds `127.0.0.1` and does not terminate TLS. Put it behind
+> a reverse proxy for anything beyond local use.
 
 ## Architecture
 

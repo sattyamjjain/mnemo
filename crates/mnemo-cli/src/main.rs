@@ -9,6 +9,8 @@ use tokio::sync::Notify;
 
 mod attest;
 mod commands;
+#[cfg(feature = "http-transport")]
+mod http_transport;
 mod manifest;
 mod safe_spawn;
 
@@ -70,6 +72,34 @@ struct Cli {
     #[arg(long, env = "MNEMO_REST_PORT")]
     rest_port: Option<u16>,
 
+    /// HMAC key (hex) for verifying per-request capabilities (ADR 0002).
+    ///
+    /// When set, a request may carry a signed capability — in `_meta` under
+    /// `dev.mnemo/capability` on any transport, or as an
+    /// `Authorization: Bearer <base64url>` header over HTTP — and its principal
+    /// becomes the caller identity for that one call. Requests without a
+    /// capability keep the boot-derived `--agent-id`, so setting this does not
+    /// break existing clients. Presenting a capability WITHOUT this key set is
+    /// an error, never a silent downgrade.
+    #[arg(long, env = "MNEMO_CAPABILITY_KEY")]
+    capability_key: Option<String>,
+
+    /// Key id recorded in issued capabilities, so a rotated key can still
+    /// verify tokens minted under the previous one.
+    #[arg(long, default_value = "default", env = "MNEMO_CAPABILITY_KEY_ID")]
+    capability_key_id: String,
+
+    /// Serve MCP over authenticated Streamable HTTP on this port instead of stdio.
+    ///
+    /// Requires the `http-transport` build feature. This is the multi-caller
+    /// transport #126's capability leases are designed for: each request
+    /// carries its own credential, so distinct callers hold distinct
+    /// identities. Requires `--capability-key`; without one the server could
+    /// not tell its callers apart, which on a network-facing port means every
+    /// client would silently act as the operator.
+    #[arg(long, env = "MNEMO_HTTP_PORT")]
+    http_port: Option<u16>,
+
     /// Idle timeout in seconds — auto-shutdown after no requests (0 = disabled)
     #[arg(long, default_value = "0", env = "MNEMO_IDLE_TIMEOUT")]
     idle_timeout_seconds: u64,
@@ -130,6 +160,47 @@ enum Command {
     /// error if it cannot.
     #[command(subcommand)]
     Compliance(ComplianceCommand),
+    /// Mint per-request capabilities (ADR 0002).
+    ///
+    /// Verification without a way to issue tokens is an unusable feature, so
+    /// this is the operator-facing half of `--capability-key`.
+    #[command(subcommand)]
+    Capability(CapabilityCommand),
+}
+
+#[derive(Subcommand)]
+enum CapabilityCommand {
+    /// Issue a signed capability and print it.
+    ///
+    /// The `--format bearer` output goes straight into an
+    /// `Authorization` header on the HTTP transport; `--format json` is the
+    /// value to place in a request's `_meta["dev.mnemo/capability"]` on any
+    /// transport, stdio included.
+    Issue(CapabilityIssueArgs),
+}
+
+#[derive(clap::Args)]
+struct CapabilityIssueArgs {
+    /// HMAC key (hex) — must match the server's `--capability-key`.
+    #[arg(long, env = "MNEMO_CAPABILITY_KEY")]
+    key: String,
+    /// Key id recorded in the token, so a rotated key can still verify it.
+    #[arg(long, default_value = "default", env = "MNEMO_CAPABILITY_KEY_ID")]
+    key_id: String,
+    /// Principal this capability authenticates — becomes the caller identity.
+    #[arg(long)]
+    principal: String,
+    /// Space-separated scope tokens. `role:<id>` entries become RBAC roles for
+    /// the tool filter; everything else is an opaque scope (#126 leases).
+    #[arg(long, default_value = "")]
+    scope: String,
+    /// Lifetime in seconds. Omit for a token that never expires — prefer a
+    /// short TTL: expiry is the only revocation this token has.
+    #[arg(long)]
+    ttl_seconds: Option<i64>,
+    /// `bearer` for an HTTP `Authorization` value, `json` for `_meta`.
+    #[arg(long, value_parser = ["bearer", "json"], default_value = "bearer")]
+    format: String,
 }
 
 #[derive(Subcommand)]
@@ -261,6 +332,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Eval(args)) => return run_eval(&cli, args).await,
         Some(Command::Bench(sub)) => return run_bench(sub).await,
         Some(Command::Compliance(sub)) => return run_compliance(sub).await,
+        Some(Command::Capability(sub)) => return run_capability(sub),
         None => {}
     }
 
@@ -494,6 +566,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref tracker) = activity_tracker {
         server = server.with_activity_tracker(tracker.clone());
     }
+
+    // Per-request identity (ADR 0002). Optional: without a key, a request that
+    // presents no capability keeps the boot-derived agent id exactly as before,
+    // and a request that DOES present one is rejected rather than downgraded.
+    #[cfg(feature = "http-transport")]
+    let has_capability_issuer = cli.capability_key.is_some();
+    if let Some(ref key_hex) = cli.capability_key {
+        let key = hex::decode(key_hex.trim()).map_err(|e| -> Box<dyn std::error::Error> {
+            format!("--capability-key must be hex-encoded HMAC key material: {e}").into()
+        })?;
+        server = server.with_capability_issuer(std::sync::Arc::new(
+            mnemo_core::model::capability::CapabilityIssuer::new(
+                cli.capability_key_id.clone(),
+                &key,
+            ),
+        ));
+        tracing::info!(
+            key_id = %cli.capability_key_id,
+            "Per-request capability verification enabled (ADR 0002)"
+        );
+    }
+
+    // The HTTP transport replaces stdio rather than running alongside it: one
+    // process serves one MCP transport, and a server reachable both ways would
+    // have two identity paths into the same engine.
+    #[cfg(feature = "http-transport")]
+    if let Some(http_port) = cli.http_port {
+        return http_transport::serve(server, http_port, has_capability_issuer).await;
+    }
+    #[cfg(not(feature = "http-transport"))]
+    if cli.http_port.is_some() {
+        return Err(
+            "--http-port needs the `http-transport` build feature; this binary was built without \
+             it. Rebuild with `--features http-transport`, or omit --http-port to serve on stdio."
+                .into(),
+        );
+    }
+
     tracing::info!("Starting Mnemo MCP server on stdio");
 
     let service = server.serve(stdio()).await?;
@@ -1150,6 +1260,32 @@ async fn run_bench(sub: &BenchCommand) -> Result<(), Box<dyn std::error::Error>>
     match sub {
         BenchCommand::Embeddings(args) => run_bench_embeddings(args).await,
     }
+}
+
+/// Mint a capability (ADR 0002). Synchronous: signing touches no I/O.
+fn run_capability(sub: &CapabilityCommand) -> Result<(), Box<dyn std::error::Error>> {
+    let CapabilityCommand::Issue(args) = sub;
+
+    let key = hex::decode(args.key.trim()).map_err(|e| -> Box<dyn std::error::Error> {
+        format!("--key must be hex-encoded HMAC key material: {e}").into()
+    })?;
+    let issuer = mnemo_core::model::capability::CapabilityIssuer::new(args.key_id.clone(), &key);
+    let capability = issuer.issue(
+        args.principal.clone(),
+        args.scope.clone(),
+        args.ttl_seconds.map(chrono::Duration::seconds),
+    );
+
+    match args.format.as_str() {
+        // Encoding lives in mnemo-mcp so the minting side cannot drift from the
+        // server's decoder — one function, both directions.
+        "bearer" => println!(
+            "{}",
+            mnemo_mcp::identity::bearer_from_capability(&capability)
+        ),
+        _ => println!("{}", serde_json::to_string_pretty(&capability)?),
+    }
+    Ok(())
 }
 
 async fn run_compliance(sub: &ComplianceCommand) -> Result<(), Box<dyn std::error::Error>> {

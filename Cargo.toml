@@ -71,6 +71,12 @@ uuid = { version = "1.11", features = ["v7", "serde"] }
 sha2 = "0.11"
 hmac = "0.13"
 hex = "0.4"
+# `http` for `request::Parts` — the streamable-HTTP transport injects it into
+# the rmcp request extensions, which is how an `Authorization` header reaches
+# per-request identity resolution (ADR 0002). Already in the tree via hyper.
+http = "1"
+# base64url for the bearer-token encoding of a `Capability`.
+base64 = "0.22"
 
 # Storage
 # duckdb-rs re-versioned to a calendar-style scheme aligned with the

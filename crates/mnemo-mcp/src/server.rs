@@ -134,11 +134,44 @@ impl MnemoServer {
     pub fn resolve_caller(
         &self,
         meta: &rmcp::model::RequestMetaObject,
+        extensions: &rmcp::model::Extensions,
     ) -> Result<CallerContext, McpError> {
-        identity::resolve_caller(
+        // On the streamable-HTTP transport rmcp injects the `http::request::Parts`
+        // into the request extensions, so an `Authorization: Bearer <capability>`
+        // header lands in the *same* resolution path as `_meta`. On stdio there
+        // are no parts and this is simply `None`.
+        // Presence of HTTP parts means this request came in over the network
+        // rather than the operator's own stdio pipe. On stdio, "no capability"
+        // legitimately means the operator; over HTTP it would mean *anyone who
+        // can reach the port* acting as the operator, so the fallback is
+        // disabled there and an unauthenticated request is rejected.
+        let http_parts = extensions.get::<http::request::Parts>();
+        let require_capability = http_parts.is_some();
+
+        let bearer = http_parts
+            .and_then(|parts| parts.headers.get(identity::AUTHORIZATION_HEADER))
+            .map(|value| {
+                value
+                    .to_str()
+                    .map_err(|_| {
+                        McpError::invalid_params(
+                            "`Authorization` header is not valid UTF-8".to_string(),
+                            None,
+                        )
+                    })
+                    .and_then(|raw| {
+                        identity::capability_from_bearer(raw)
+                            .map_err(|err| McpError::invalid_params(err.to_string(), None))
+                    })
+            })
+            .transpose()?;
+
+        identity::resolve_caller_from(
             meta.0.0.get(CAPABILITY_META_KEY),
+            bearer.as_ref(),
             self.capability_issuer.as_deref(),
             &self.engine.default_agent_id,
+            require_capability,
         )
         .map_err(|err| McpError::invalid_params(err.to_string(), None))
     }
@@ -1691,7 +1724,7 @@ impl ServerHandler for MnemoServer {
         // by the capability it presented, not by a boot-time constant. A
         // rejected capability fails the listing rather than falling back —
         // otherwise a forged token would be shown the operator's full catalog.
-        let caller = self.resolve_caller(&context.meta)?;
+        let caller = self.resolve_caller(&context.meta, &context.extensions)?;
         let visible: std::collections::HashSet<String> =
             self.visible_tool_names_for(&caller).into_iter().collect();
         let tools = self
@@ -1727,7 +1760,7 @@ impl ServerHandler for MnemoServer {
         // Per-request identity (ADR 0002). Resolved BEFORE the role gate so the
         // gate runs against the capability's roles, and before dispatch so a
         // rejected capability never reaches a tool body.
-        let caller = self.resolve_caller(&context.meta)?;
+        let caller = self.resolve_caller(&context.meta, &context.extensions)?;
         if let Some(reason) = self.tool_call_denial_for(&caller, &name) {
             return Err(McpError::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -1758,7 +1791,7 @@ impl ServerHandler for MnemoServer {
         // This is the read-leak ADR 0002 names: boot-derived here, a
         // multi-caller transport would serve one agent's memories to every
         // authenticated caller while the tool filter correctly gated per caller.
-        let caller = self.resolve_caller(&context.meta)?;
+        let caller = self.resolve_caller(&context.meta, &context.extensions)?;
         let filter = MemoryFilter {
             agent_id: Some(caller.caller_id),
             include_deleted: false,

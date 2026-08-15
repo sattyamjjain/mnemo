@@ -66,11 +66,37 @@ pub const CAPABILITY_META_KEY: &str = "dev.mnemo/capability";
 /// directly rather than on roles.
 const ROLE_TOKEN_PREFIX: &str = "role:";
 
+/// HTTP header carrying a capability on the streamable-HTTP transport.
+///
+/// The value is `Bearer <base64url(JSON capability)>`. base64url rather than
+/// raw JSON because a serialised `Capability` contains characters that make a
+/// fragile header value, and every HTTP client already handles bearer tokens.
+pub const AUTHORIZATION_HEADER: &str = "authorization";
+
 /// Why a request's identity could not be established.
 ///
 /// Every variant is a *rejection*, never a downgrade — see the module docs.
 #[derive(Debug, PartialEq, Eq)]
 pub enum IdentityError {
+    /// The request presented a capability in **both** `_meta` and the
+    /// `Authorization` header, and they are not the same token.
+    ///
+    /// Rejected rather than resolved by precedence. Two disagreeing
+    /// credentials on one request is an ambiguity, and ambiguity in
+    /// authorisation is a vulnerability: whichever one the gate checked, the
+    /// *other* is what a reader of the audit trail might reasonably assume was
+    /// used. Refusing is the only answer that cannot be wrong.
+    AmbiguousCredentials,
+    /// The `Authorization` header was present but not a usable bearer token.
+    MalformedBearer(String),
+    /// No capability was presented on a transport that requires one.
+    ///
+    /// The boot-identity fallback is correct on stdio, where one process is one
+    /// caller and the operator genuinely *is* the caller. On a network-facing
+    /// transport it is a vulnerability: it would let anyone who can reach the
+    /// port act as the operator. So the fallback is conditioned on the
+    /// transport, and this is what an unauthenticated HTTP request gets.
+    AnonymousOnAuthenticatedTransport,
     /// A capability was presented to a server holding no issuer key.
     ///
     /// Deliberately an error and not a fallback: a server that cannot verify a
@@ -98,6 +124,24 @@ impl std::fmt::Display for IdentityError {
                 "`{CAPABILITY_META_KEY}` in request _meta is not a valid capability: {why}"
             ),
             Self::Rejected(err) => write!(f, "capability rejected: {err}"),
+            Self::AmbiguousCredentials => write!(
+                f,
+                "request presented different capabilities in the `Authorization` header and in \
+                 `_meta[{CAPABILITY_META_KEY}]`. Present exactly one: two disagreeing \
+                 credentials cannot be resolved without guessing which one authorised the call."
+            ),
+            Self::MalformedBearer(why) => write!(
+                f,
+                "`Authorization` header is not a usable capability bearer token \
+                 (expected `Bearer <base64url-encoded capability JSON>`): {why}"
+            ),
+            Self::AnonymousOnAuthenticatedTransport => write!(
+                f,
+                "this transport requires a capability on every request: send \
+                 `Authorization: Bearer <base64url capability>`. Falling back to the server's \
+                 boot identity is only valid on stdio, where the operator is the sole caller; \
+                 doing it here would let any client that can reach this port act as the operator."
+            ),
         }
     }
 }
@@ -136,11 +180,88 @@ pub fn scopes_from_scope(scope: &str) -> Vec<String> {
         .collect()
 }
 
+/// Decode an `Authorization: Bearer <base64url(JSON)>` value into a capability
+/// as an untyped [`Value`], so it joins the same verification path as `_meta`.
+///
+/// Accepts base64url with or without padding — clients differ, and rejecting a
+/// correctly-signed token over padding would be an authorisation failure caused
+/// by an encoding detail.
+pub fn capability_from_bearer(header_value: &str) -> Result<Value, IdentityError> {
+    use base64::Engine as _;
+
+    let token = header_value
+        .strip_prefix("Bearer ")
+        .or_else(|| header_value.strip_prefix("bearer "))
+        .ok_or_else(|| IdentityError::MalformedBearer("missing `Bearer ` prefix".into()))?
+        .trim();
+
+    let bytes = base64::engine::general_purpose::URL_SAFE
+        .decode(token)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(token))
+        .map_err(|err| IdentityError::MalformedBearer(format!("not base64url: {err}")))?;
+
+    serde_json::from_slice(&bytes)
+        .map_err(|err| IdentityError::MalformedBearer(format!("not JSON: {err}")))
+}
+
+/// Encode a capability as a bearer token value (`Bearer <base64url(JSON)>`).
+///
+/// The inverse of [`capability_from_bearer`]. Lives here so clients and tests
+/// cannot drift from the server's decoder.
+pub fn bearer_from_capability(cap: &Capability) -> String {
+    use base64::Engine as _;
+    let json = serde_json::to_vec(cap).expect("a Capability always serialises");
+    format!(
+        "Bearer {}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+    )
+}
+
+/// Pick the single capability a request presented, across both channels.
+///
+/// `_meta` works on every transport; the `Authorization` header only exists on
+/// HTTP. Presenting both is allowed **only** when they are byte-identical —
+/// otherwise the request is ambiguous and is rejected. See
+/// [`IdentityError::AmbiguousCredentials`].
+fn presented_capability<'a>(
+    meta_value: Option<&'a Value>,
+    bearer: Option<&'a Value>,
+) -> Result<Option<&'a Value>, IdentityError> {
+    match (meta_value, bearer) {
+        (None, None) => Ok(None),
+        (Some(v), None) | (None, Some(v)) => Ok(Some(v)),
+        (Some(a), Some(b)) if a == b => Ok(Some(a)),
+        (Some(_), Some(_)) => Err(IdentityError::AmbiguousCredentials),
+    }
+}
+
 /// Resolve the caller for one request.
 ///
-/// `meta_value` is the `_meta[CAPABILITY_META_KEY]` entry, if the request had
-/// one. `fallback_agent_id` is the boot-derived agent id used only when no
-/// capability was presented at all.
+/// `meta_value` is the `_meta[CAPABILITY_META_KEY]` entry and `bearer` the
+/// decoded `Authorization` header, either of which may be absent.
+/// `fallback_agent_id` is the boot-derived agent id used only when *neither*
+/// channel presented a capability.
+///
+/// See the module docs for the full fail-closed table.
+/// `require_capability` disables the boot-identity fallback. Set it whenever
+/// the request did **not** arrive over a transport where the operator is the
+/// only possible caller — see
+/// [`IdentityError::AnonymousOnAuthenticatedTransport`].
+pub fn resolve_caller_from(
+    meta_value: Option<&Value>,
+    bearer: Option<&Value>,
+    issuer: Option<&CapabilityIssuer>,
+    fallback_agent_id: &str,
+    require_capability: bool,
+) -> Result<CallerContext, IdentityError> {
+    let presented = presented_capability(meta_value, bearer)?;
+    if presented.is_none() && require_capability {
+        return Err(IdentityError::AnonymousOnAuthenticatedTransport);
+    }
+    resolve_caller(presented, issuer, fallback_agent_id)
+}
+
+/// Resolve the caller from a single presented capability (or none).
 ///
 /// See the module docs for the full fail-closed table.
 pub fn resolve_caller(

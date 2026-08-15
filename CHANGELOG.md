@@ -43,6 +43,33 @@ per-request identity; this implements it.
   `crates/mnemo-mcp/tests/per_request_identity.rs` shows two capabilities resolving to two
   distinct callers on one server.
 
+### Added (2026-08-15) - authenticated Streamable HTTP transport for MCP (feature-gated)
+
+`mnemo --http-port <PORT>` serves MCP over rmcp's Streamable HTTP transport, behind the
+`http-transport` build feature. **stdio remains the default** and is unchanged.
+
+- **Callers authenticate per request** with `Authorization: Bearer <base64url capability>`.
+  rmcp injects the request's `http::request::Parts` into the rmcp extensions, so the header
+  is read by the *same* resolver `_meta` capabilities go through — one verification path with
+  two carriers, rather than a second security path to keep in sync.
+- **`mnemo capability issue`** mints tokens (`--format bearer` for the header, `--format json`
+  for `_meta`). Verification without a way to issue was an unusable feature.
+- **`--http-port` refuses to start without `--capability-key`.** A network-facing port whose
+  server cannot tell its callers apart is a multi-caller transport with a single-caller
+  identity model.
+- **An unauthenticated HTTP request is rejected**, not treated as the operator. This was a
+  real hole in the first cut of this work, found by end-to-end probing rather than by the unit
+  tests: with no `Authorization` header, `mnemo.delegate` happily recorded
+  `delegator: "default"` — the boot identity — so anyone who could reach the port held operator
+  authority. The boot fallback is sound on stdio, where one process genuinely is one caller,
+  and unsound anywhere else, so it is now conditioned on the transport.
+- **Two credentials that disagree are rejected** rather than resolved by precedence. Whichever
+  one a gate checked, the other is what a reader of the audit trail might reasonably believe
+  authorised the call.
+- Binds `127.0.0.1` and does not terminate TLS — put it behind a reverse proxy.
+- 14 identity tests plus a live end-to-end check: two capabilities on one running server
+  produce `delegator: alice` and `delegator: bob` on the same tool.
+
 ### Fixed (2026-08-15) - the Python suite runs in CI for the first time, and it is green
 
 Nothing ran `pytest`. The 138-test Python suite was **unexecuted in CI**, and had been sitting on
