@@ -62,14 +62,24 @@ langgraph = ["langgraph-checkpoint>=0.2"]
 crewai = ["crewai>=0.40"]
 openai-agents = ["openai-agents>=0.1"]
 claude = ["claude-agent-sdk>=0.1", "watchdog>=4.0"]
-# Workspace backends for the OpenAI Agents SDK GA snapshot store.
-# `mnemo[openai-sandbox-s3]` pulls `boto3` + `cryptography`; R2/GCS/Azure
-# stubs today — follow-on extras once the respective SDKs land.
+# Workspace backends for the OpenAI Agents SDK GA snapshot store. All four
+# are real as of #39; each pulls only its own provider SDK plus `cryptography`
+# for the shared Ed25519 manifest signing.
+#   s3    -> boto3            (AWS)
+#   r2    -> boto3            (Cloudflare R2 is S3-wire-compatible; subclasses S3Workspace)
+#   gcs   -> google-cloud-storage   (standalone; GCS is NOT S3-wire-compatible)
+#   azure -> azure-storage-blob     (standalone; Azure Blob is NOT S3-wire-compatible)
 "openai-sandbox-s3" = ["boto3>=1.34", "cryptography>=42"]
 "openai-sandbox-r2" = ["boto3>=1.34", "cryptography>=42"]
+"openai-sandbox-gcs" = ["google-cloud-storage>=2.14", "cryptography>=42"]
+"openai-sandbox-azure" = ["azure-storage-blob>=12.19", "cryptography>=42"]
 "anthropic-memory-tool" = ["anthropic>=0.40"]
 benchmark = ["datasets>=4.0"]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "moto>=5.0"]
+# `moto` fakes S3 for the s3/r2 backends; GCS and Azure have no moto
+# equivalent, so their tests use in-process fakes and only need the
+# provider SDK importable for the module-level import guard.
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "moto>=5.0",
+       "google-cloud-storage>=2.14", "azure-storage-blob>=12.19"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

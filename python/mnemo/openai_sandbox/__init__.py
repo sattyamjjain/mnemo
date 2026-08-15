@@ -7,7 +7,12 @@ Ships two sides of the v0.3.2 roadmap commitment:
   them back to us across a worker restart.
 * `S3Workspace` — real `boto3`-backed implementation of the workspace
   put/get/delete contract. Opt-in; install with
-  `pip install mnemo-db[openai-sandbox-s3]`.
+  `pip install mnemo-db[openai-sandbox-s3]`. `CloudflareR2Workspace`
+  subclasses it (R2 speaks the S3 wire protocol); `GCSWorkspace` and
+  `AzureBlobWorkspace` are standalone classes using their providers'
+  native clients, since neither is S3-wire-compatible. All four write
+  the identical object layout, so a snapshot is portable between
+  providers by copying objects.
 
 A workspace payload is a directory tree. We walk it with
 `pathlib.PurePosixPath`, record every file's SHA-256 digest, record every
@@ -53,5 +58,19 @@ try:
     from mnemo.openai_sandbox.r2_workspace import CloudflareR2Workspace
 
     __all__.append("CloudflareR2Workspace")
+except ImportError:
+    pass
+
+try:
+    from mnemo.openai_sandbox.gcs_workspace import GCSWorkspace
+
+    __all__.append("GCSWorkspace")
+except ImportError:
+    pass
+
+try:
+    from mnemo.openai_sandbox.azure_workspace import AzureBlobWorkspace
+
+    __all__.append("AzureBlobWorkspace")
 except ImportError:
     pass

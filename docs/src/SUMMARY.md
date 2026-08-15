@@ -25,6 +25,7 @@
   - [Claude Agent SDK](./integrations/claude-agent-sdk.md)
   - [Anthropic memory tool](./integrations/anthropic-memory-tool.md)
   - [OpenAI Agents GA](./integrations/openai-agents-ga.md)
+  - [Workspace backends](./integrations/workspace-backends.md)
   - [Cloudflare R2 workspace](./integrations/r2-workspace.md)
   - [Letta Conversations adapter](./integrations/letta-conversations.md)
   - [mnemo mcp-server (hardened)](./integrations/mcp-server.md)

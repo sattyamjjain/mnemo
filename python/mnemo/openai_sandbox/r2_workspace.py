@@ -15,7 +15,8 @@ shape, the Ed25519 signature contract — is inherited unchanged. This
 keeps R2 a one-paragraph maintenance burden: when the parent class
 gets a new feature, R2 inherits it for free.
 
-See :doc:`/storage/workspace-backends` for the parity matrix.
+See ``docs/src/integrations/workspace-backends.md`` for the
+four-backend parity matrix.
 
 Install
 -------
