@@ -12,6 +12,81 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Added (2026-08-15) - GCS + Azure Blob workspace backends (closes #39)
+
+Completes the four-backend set for the OpenAI Agents SDK GA snapshot store (S3 v0.3.2,
+R2 v0.3.4). Both new backends are **standalone classes, not `S3Workspace` subclasses**, per #39's
+"single class per backend": GCS's interoperability XML API is only a partial S3 emulation (it
+lacks the paginated `list_objects_v2` / batch `delete_objects` calls `S3Workspace` relies on, so
+subclassing would inherit methods that fail against a real bucket), and Azure Blob shares no S3
+wire surface at all.
+
+- The signing contract is untouched — `manifest.py` still does all Ed25519 and per-blob digest
+  work, so **all four backends write a byte-identical object layout** and a snapshot is portable
+  between providers by copying objects.
+- **One Azure behaviour needed encoding**: `upload_blob` *rejects* an existing name unless
+  `overwrite=True` (S3/GCS overwrite silently). Without it, re-saving to the same `key_prefix`
+  fails on the **second** attempt — a retry-path bug that only surfaces in production. Pinned by a
+  regression test, and the in-process fake enforces the same rule rather than accepting every write.
+- 13 tests passing, 2 skipped (live-credential gates: `GCS_BUCKET`;
+  `AZURE_STORAGE_CONNECTION_STRING` + `AZURE_CONTAINER`, the latter working against **Azurite**).
+  GCS has no moto equivalent and both official emulators need Docker, so the unit substrate is
+  in-process fakes implementing only the methods the backend calls — a future change reaching for
+  an unfaked method fails loudly instead of passing against a permissive mock.
+- New [`docs/src/integrations/workspace-backends.md`](docs/src/integrations/workspace-backends.md)
+  parity matrix; fixes the dangling ``:doc:`/storage/workspace-backends``` reference in
+  `r2_workspace.py` that pointed at a path which never existed.
+
+### Added (2026-08-15) - DuckLake evaluated and declined; the #41 gate is met in the wrong direction
+
+[#41](https://github.com/sattyamjjain/mnemo/issues/41) set its own bar: *"do NOT flip default until
+Step 2 shows >= 20% p95 win."* Measured at the issue's own specified 1M rows, DuckLake meets that
+gate on **0 of 5** query shapes — it is **2.2×–10.7× slower** than the embedded DuckDB backend
+mnemo already ships, including on `COUNT(*)`, the operation DuckLake's own 1.0 announcement
+advertises 8×–258× speedups for.
+
+- **Feasibility was never the blocker.** Every DDL feature #41 names works today: catalog `ATTACH`,
+  partitioned tables, data inlining, and `VARIANT` metadata (JSON round-trips intact).
+- **The announced speedups do not transfer**, and that is not a defect in DuckLake: they are
+  measured against *other lakehouse formats* (Iceberg/Delta) on *object storage*. mnemo is
+  embedded, single-node, single-writer, local-file — the corner where catalog indirection and
+  Parquet round-trips are pure added cost. DuckLake is faster than the thing it replaces; mnemo is
+  not running that thing.
+- **The cost side**: `StorageBackend` has **50 methods** and the two existing impls are 1,853 and
+  1,657 lines. Step 2 is a ~1,500-line commitment to ship a backend that is slower on every read
+  shape mnemo performs.
+- Recommendation recorded in
+  [`docs/benchmarks/2026-08-15-ducklake-evaluation.md`](docs/benchmarks/2026-08-15-ducklake-evaluation.md):
+  close Step 2 as evaluated-and-declined; re-open if mnemo ever gains multi-writer concurrency,
+  object-store-backed storage, cross-engine access, or a time-travel requirement — DuckLake's
+  actual wins, none of which mnemo has today. Reproduce with
+  `python3 scripts/bench/ducklake_eval.py`.
+
+### Added (2026-08-15) - two ADRs that unblock the MCP migration, and the MINJA design #37 asks for
+
+- **[ADR 0002 — request identity model](docs/adr/0002-request-identity-model.md)** answers the one
+  question blocking *both* [#126](https://github.com/sattyamjjain/mnemo/issues/126) and the MCP
+  2026-07-28 migration's §1. **Decision: per-request identity**, with per-connection resolution as
+  a cache that is never the source of truth. Per-*connection* identity was rejected because it is
+  structurally the same "boundary established once and then assumed" defect this repo has repaired
+  three times (`role_filter` #124, tool-catalog attestation v0.5.20, the `LeaseStore` behind ADR
+  0001) — and because it is a session token by another name, which ADR 0001's threat model
+  explicitly does not survive. Choosing it would have made #126 undeliverable against its own
+  threat.
+- **[ADR 0003 — MINJA procedure harness](docs/adr/0003-minja-procedure-harness.md)** is the design
+  doc [#37](https://github.com/sattyamjjain/mnemo/issues/37) requires before any harness code
+  (it is labelled `needs-design` and scopes itself out: ">500 LoC of attacker logic + an LLM
+  budget"). Fixes the measurement protocol *in advance* — defense-delta not bare ASR, mandatory
+  benign control arm, Wilson-95, structural success oracle — and records the uncomfortable
+  prediction up front: **the z-score lane will probably catch nothing**, because a
+  Phase-2-shortened record is engineered to look ordinary and mnemo's own prior finding puts
+  poisoned content at ~1.5σ against a 3.0σ default. Writing the expected negative down now removes
+  the temptation to redefine success after seeing the data.
+- Filed [#156](https://github.com/sattyamjjain/mnemo/issues/156) for an untracked gap found while
+  auditing: `mnemo_graph::extract::TemporalEdge::extract` returns an empty `Vec` and never reads
+  the `MNEMO_GRAPH_EXTRACT_MODEL` env var its own docstring documents — so the bitemporal graph
+  layer has no edge extraction, and nothing tracked it.
+
 ### Fixed (2026-08-14) - `mnemo-amp` joins the publish walks; two private docs can no longer be committed by accident
 
 - **`mnemo-amp` was publishable, absent from crates.io, and in NO publish walk** — nothing would

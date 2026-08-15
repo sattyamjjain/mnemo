@@ -10,3 +10,5 @@ it today.
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-capability-leased-reads.md) | Capability-leased reads (per-read lease tokens for privileged tools) | Proposed, not built ([#126](https://github.com/sattyamjjain/mnemo/issues/126)) |
+| [0002](0002-request-identity-model.md) | Request identity model for an authenticated MCP transport | Proposed ([#126](https://github.com/sattyamjjain/mnemo/issues/126), [migration](../mcp-2026-07-28-migration.md) §1) |
+| [0003](0003-minja-procedure-harness.md) | MINJA procedure harness design | Proposed, not built ([#37](https://github.com/sattyamjjain/mnemo/issues/37)) |
