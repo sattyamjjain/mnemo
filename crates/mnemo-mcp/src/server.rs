@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use rmcp::{
     ErrorData as McpError, ServerHandler,
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    handler::server::{common::Extension, router::tool::ToolRouter, wrapper::Parameters},
     model::*,
     tool, tool_handler, tool_router,
 };
@@ -13,6 +13,7 @@ use rmcp::{
 use rmcp::model::ContentBlock as Content;
 
 use mnemo_attention_state::AttentionStateStore;
+use mnemo_core::model::capability::CapabilityIssuer;
 use mnemo_core::model::memory::{MemoryType, Scope, SourceType};
 use mnemo_core::query::MnemoEngine;
 use mnemo_core::query::branch::BranchRequest;
@@ -26,6 +27,7 @@ use mnemo_core::query::remember::RememberRequest;
 use mnemo_core::query::replay::ReplayRequest;
 use mnemo_core::query::share::ShareRequest;
 
+use crate::identity::{self, CAPABILITY_META_KEY};
 use crate::role_filter::{AllowDecision, CallerContext, RoleFilter};
 use crate::tools::agent_managed::{
     AGENT_MANAGED_TAG, MemForgetInput, MemReadInput, MemReviseInput, MemWriteInput,
@@ -69,6 +71,16 @@ pub struct MnemoServer {
     /// exposed and every call passes (byte-for-byte pre-v0.5.19 behaviour).
     /// See [`crate::role_filter`].
     role_filter: Option<Arc<dyn RoleFilter>>,
+    /// Per-request identity verifier ([ADR 0002](../../../docs/adr/0002-request-identity-model.md)).
+    ///
+    /// When set, a capability presented in a request's `_meta` is verified and
+    /// becomes the caller's identity for that **one call**. When unset, a
+    /// request that presents a capability is *rejected* rather than downgraded
+    /// to the boot identity — see [`crate::identity`] for the fail-closed table.
+    ///
+    /// Unset is the default and keeps pre-ADR-0002 behaviour byte-for-byte:
+    /// no capability presented, boot-derived identity, exactly as on stdio today.
+    capability_issuer: Option<Arc<CapabilityIssuer>>,
 }
 
 impl MnemoServer {
@@ -82,18 +94,53 @@ impl MnemoServer {
         }
     }
 
-    /// Caller context used for role-filter checks. In the stdio transport the
-    /// MCP protocol carries **no per-call caller identity** — the binary's
-    /// operator is the caller, and the caller's roles are declared in the
-    /// manifest and held inside the [`RoleFilter`] itself (see
-    /// [`crate::role_filter::ManifestRoleFilter`]). We therefore pass the
-    /// server's default agent id as the opaque caller id (for audit) and an
-    /// empty role vec; the filter combines it with its manifest roles. When an
-    /// HTTP/SSE transport that authenticates the caller lands, build this from
-    /// the authenticated subject instead — that identity plumbing is the
-    /// follow-up (tracked with the attestation wiring in `mnemo-cli::attest`).
-    fn caller_context(&self) -> CallerContext {
+    /// The **boot-derived** caller context — the fallback used only when a
+    /// request presents no capability at all.
+    ///
+    /// On stdio with no capability in `_meta` this is the whole story: the
+    /// binary's operator is the caller, and the caller's roles are declared in
+    /// the manifest and held inside the [`RoleFilter`] itself (see
+    /// [`crate::role_filter::ManifestRoleFilter`]). We pass the server's default
+    /// agent id as the opaque caller id (for audit) and an empty role vec; the
+    /// filter combines it with its manifest roles.
+    ///
+    /// Prefer [`Self::resolve_caller`] on any path that has a
+    /// [`RequestMetaObject`] in hand: per [ADR
+    /// 0002](../../../docs/adr/0002-request-identity-model.md) identity is
+    /// per-request, and this method cannot see the request.
+    fn boot_caller_context(&self) -> CallerContext {
         CallerContext::new(self.engine.default_agent_id.clone(), Vec::new())
+    }
+
+    /// Resolve the caller for **one request** from its `_meta`
+    /// ([ADR 0002](../../../docs/adr/0002-request-identity-model.md)).
+    ///
+    /// A capability under [`CAPABILITY_META_KEY`] is verified (signature,
+    /// expiry, key id) and its principal becomes the caller id with its
+    /// `role:`-prefixed scope tokens as roles. No capability → the boot
+    /// fallback. A capability that cannot be verified → an error; it is never
+    /// downgraded to the boot identity, because that would hand a forged token
+    /// the operator's authority. The full table is in [`crate::identity`].
+    ///
+    /// Rejections surface as `-32602` (invalid params) with the reason in the
+    /// message: the credential travelled in the request's parameters, and MCP
+    /// has no dedicated authentication error code.
+    ///
+    /// `pub` so the wiring is testable without a live MCP service harness —
+    /// constructing the [`rmcp::service::RequestContext`] that `call_tool` and
+    /// `list_tools` take is not practical in a unit test, but a
+    /// [`rmcp::model::RequestMetaObject`] is. Same reasoning as
+    /// [`Self::visible_tool_names`].
+    pub fn resolve_caller(
+        &self,
+        meta: &rmcp::model::RequestMetaObject,
+    ) -> Result<CallerContext, McpError> {
+        identity::resolve_caller(
+            meta.0.0.get(CAPABILITY_META_KEY),
+            self.capability_issuer.as_deref(),
+            &self.engine.default_agent_id,
+        )
+        .map_err(|err| McpError::invalid_params(err.to_string(), None))
     }
 
     /// The calling agent's id — **the single identity source in this server**,
@@ -115,7 +162,7 @@ impl MnemoServer {
     /// requiring someone to remember this second site.
     /// `identity_sources_agree` pins that they cannot drift apart again.
     pub fn caller_agent_id(&self) -> String {
-        self.caller_context().caller_id
+        self.boot_caller_context().caller_id
     }
 
     /// The tool names visible to the current caller under the attached
@@ -124,6 +171,15 @@ impl MnemoServer {
     /// unit-testable without a live MCP service harness (which the
     /// `RequestContext` that `list_tools`/`call_tool` take requires).
     pub fn visible_tool_names(&self) -> Vec<String> {
+        self.visible_tool_names_for(&self.boot_caller_context())
+    }
+
+    /// [`Self::visible_tool_names`] for an explicitly-resolved caller.
+    ///
+    /// `tools/list` uses this with the request's verified identity so a
+    /// capability's roles decide the catalog, rather than a boot-time constant
+    /// that would show every caller the same tools.
+    pub fn visible_tool_names_for(&self, caller: &CallerContext) -> Vec<String> {
         let all: Vec<String> = self
             .tool_router
             .list_all()
@@ -131,7 +187,7 @@ impl MnemoServer {
             .map(|t| t.name.to_string())
             .collect();
         match &self.role_filter {
-            Some(filter) => filter.filter_tools(&self.caller_context(), &all),
+            Some(filter) => filter.filter_tools(caller, &all),
             None => all,
         }
     }
@@ -141,8 +197,14 @@ impl MnemoServer {
     /// before dispatch. `None` (allowed) when no filter is attached or the
     /// filter permits the call.
     pub fn tool_call_denial(&self, tool_name: &str) -> Option<String> {
+        self.tool_call_denial_for(&self.boot_caller_context(), tool_name)
+    }
+
+    /// [`Self::tool_call_denial`] for an explicitly-resolved caller — the gate
+    /// `tools/call` applies, using the request's verified identity.
+    pub fn tool_call_denial_for(&self, caller: &CallerContext, tool_name: &str) -> Option<String> {
         match &self.role_filter {
-            Some(filter) => match filter.allows(&self.caller_context(), tool_name) {
+            Some(filter) => match filter.allows(caller, tool_name) {
                 AllowDecision::Deny { reason } => Some(reason),
                 AllowDecision::Allow => None,
             },
@@ -212,11 +274,29 @@ impl MnemoServer {
             activity_tracker: None,
             attention_state: None,
             role_filter: None,
+            capability_issuer: None,
         }
     }
 
     pub fn with_activity_tracker(mut self, tracker: Arc<AtomicU64>) -> Self {
         self.activity_tracker = Some(tracker);
+        self
+    }
+
+    /// Attach a capability issuer, enabling **per-request identity**
+    /// ([ADR 0002](../../../docs/adr/0002-request-identity-model.md)).
+    ///
+    /// With an issuer attached, a request may present an HMAC-signed
+    /// [`CapabilityIssuer`]-minted token under the `dev.mnemo/capability`
+    /// `_meta` key; it is verified per call and its principal becomes the
+    /// caller identity for that call only. Requests without a capability keep
+    /// the boot-derived identity, so attaching an issuer does not break
+    /// existing clients.
+    ///
+    /// Without an issuer, presenting a capability is an error rather than a
+    /// silent downgrade — see [`crate::identity`].
+    pub fn with_capability_issuer(mut self, issuer: Arc<CapabilityIssuer>) -> Self {
+        self.capability_issuer = Some(issuer);
         self
     }
 
@@ -1009,6 +1089,7 @@ impl MnemoServer {
     async fn delegate(
         &self,
         Parameters(input): Parameters<DelegateInput>,
+        Extension(caller): Extension<CallerContext>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
         use mnemo_core::model::acl::Permission;
@@ -1043,12 +1124,13 @@ impl MnemoServer {
 
         let delegation = Delegation {
             id: uuid::Uuid::now_v7(),
-            // The delegator is whoever is CALLING, not a boot-time constant.
-            // Left boot-derived, a multi-caller transport would attribute every
-            // caller's grants to the boot identity — a caller could hand out
-            // permissions recorded as someone else's. Authority claims are the
-            // last place a stale identity should survive.
-            delegator_id: self.caller_agent_id(),
+            // The delegator is whoever is CALLING, resolved per request from the
+            // capability it presented (ADR 0002). Left boot-derived, a
+            // multi-caller transport would attribute every caller's grants to
+            // the boot identity — a caller could hand out permissions recorded
+            // as someone else's. Authority claims are the last place a stale
+            // identity should survive.
+            delegator_id: caller.caller_id.clone(),
             delegate_id: input.delegate_id.clone(),
             permission,
             scope,
@@ -1117,12 +1199,12 @@ impl MnemoServer {
     async fn trajectory_audit(
         &self,
         Parameters(input): Parameters<TrajectoryAuditInput>,
+        Extension(caller): Extension<CallerContext>,
     ) -> Result<CallToolResult, McpError> {
         self.touch_activity();
-        let agent_id = input
-            .agent_id
-            .clone()
-            .unwrap_or_else(|| self.caller_agent_id());
+        // Default to the REQUEST's caller (ADR 0002), not the boot identity —
+        // an omitted agent_id must audit the caller's own trajectory.
+        let agent_id = input.agent_id.clone().unwrap_or(caller.caller_id);
         // Mirror `verify_integrity`'s storage fetch shape: list_events
         // returns DESC order; the trajectory audit needs chronological
         // input, so we `.reverse()` before handing to compliance.
@@ -1603,10 +1685,15 @@ impl ServerHandler for MnemoServer {
     async fn list_tools(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
-        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, McpError> {
+        // Per-request identity (ADR 0002): the catalog a caller sees is decided
+        // by the capability it presented, not by a boot-time constant. A
+        // rejected capability fails the listing rather than falling back —
+        // otherwise a forged token would be shown the operator's full catalog.
+        let caller = self.resolve_caller(&context.meta)?;
         let visible: std::collections::HashSet<String> =
-            self.visible_tool_names().into_iter().collect();
+            self.visible_tool_names_for(&caller).into_iter().collect();
         let tools = self
             .tool_router
             .list_all()
@@ -1637,7 +1724,11 @@ impl ServerHandler for MnemoServer {
         // enum, so we pass its result through unchanged — every mnemo tool call is
         // synchronous, so it resolves to `CallToolResponse::Complete`.
         let name = request.name.to_string();
-        if let Some(reason) = self.tool_call_denial(&name) {
+        // Per-request identity (ADR 0002). Resolved BEFORE the role gate so the
+        // gate runs against the capability's roles, and before dispatch so a
+        // rejected capability never reaches a tool body.
+        let caller = self.resolve_caller(&context.meta)?;
+        if let Some(reason) = self.tool_call_denial_for(&caller, &name) {
             return Err(McpError::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 format!("tool '{name}' not found"),
@@ -1647,6 +1738,11 @@ impl ServerHandler for MnemoServer {
                 })),
             ));
         }
+        // Hand the resolved identity to the tool bodies. Tools that record
+        // authority (delegate) or scope reads (trajectory_audit) take
+        // `Extension<CallerContext>` and get THIS caller, not the boot one.
+        let mut context = context;
+        context.extensions.insert(caller);
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await
     }
@@ -1654,14 +1750,17 @@ impl ServerHandler for MnemoServer {
     async fn list_resources(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
-        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ListResourcesResult, McpError> {
         use mnemo_core::storage::MemoryFilter;
         self.touch_activity();
-        // Scope by the CALLER's identity, not a boot-time constant — the same
-        // source the role filter gates on. See `caller_agent_id`.
+        // Scope by the CALLER's per-request identity, not a boot-time constant.
+        // This is the read-leak ADR 0002 names: boot-derived here, a
+        // multi-caller transport would serve one agent's memories to every
+        // authenticated caller while the tool filter correctly gated per caller.
+        let caller = self.resolve_caller(&context.meta)?;
         let filter = MemoryFilter {
-            agent_id: Some(self.caller_agent_id()),
+            agent_id: Some(caller.caller_id),
             include_deleted: false,
             ..Default::default()
         };

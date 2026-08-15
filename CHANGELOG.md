@@ -12,6 +12,37 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Added (2026-08-15) - per-request caller identity on the MCP surface (ADR 0002)
+
+Identity on the MCP server was **boot-derived**: `engine.default_agent_id`, fixed at startup,
+was the caller for every request. [ADR 0002](docs/adr/0002-request-identity-model.md) decided
+per-request identity; this implements it.
+
+- **A capability now rides each request.** `crates/mnemo-mcp/src/identity.rs` reads an
+  HMAC-signed `Capability` from `_meta["dev.mnemo/capability"]`, verifies signature, expiry and
+  key id, and resolves a `CallerContext` whose id is the capability's principal and whose roles
+  are its `role:`-prefixed scope tokens.
+- **It needed no new transport.** The ADR — and #126, and this repo's own migration audit — all
+  assumed this waited on an authenticated HTTP transport. It did not: MCP requests carry `_meta`,
+  and rmcp surfaces it on **every** transport including stdio. That assumption had been blocking
+  the work; it was simply wrong.
+- **Resolved once per request, before the gate.** `call_tool` resolves the caller ahead of the
+  role check (so gating uses the capability's roles, not a boot constant) and injects the result
+  into the request extensions; `mnemo.delegate` and `mnemo.trajectory_audit` take it as an
+  `Extension<CallerContext>`. `list_tools` filters the catalog per caller, and `list_resources`
+  scopes reads to the caller — closing the read leak ADR 0002 names, where a boot-derived id
+  would serve one agent's memories to every authenticated caller behind a correct-looking gate.
+- **Fail-closed, and tested that way.** A capability that cannot be verified — no issuer
+  configured, malformed, forged, expired, unknown key — is rejected. It is never downgraded to
+  the boot identity, which would hand a forgery *more* authority than it claimed.
+  `no_rejection_path_ever_yields_the_boot_identity` asserts that over every failure mode.
+- **Backward compatible.** A request with no capability resolves to the boot identity exactly as
+  before, so existing stdio deployments are unchanged and no issuer is required.
+- Unblocks [#126](https://github.com/sattyamjjain/mnemo/issues/126): its revisit gate is
+  "distinct callers hold distinct identities", and
+  `crates/mnemo-mcp/tests/per_request_identity.rs` shows two capabilities resolving to two
+  distinct callers on one server.
+
 ### Fixed (2026-08-15) - the Python suite runs in CI for the first time, and it is green
 
 Nothing ran `pytest`. The 138-test Python suite was **unexecuted in CI**, and had been sitting on
