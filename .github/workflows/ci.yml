@@ -203,25 +203,42 @@ jobs:
                                 "google-cloud-storage>=2.14" "azure-storage-blob>=12.19" \
                                 "boto3>=1.34" "cryptography>=42"
       # The native extension is the ENTIRE reason this job builds a wheel instead
-      # of running pure-Python. Six tests in test_openai_sessions.py — including
+      # of running pure-Python. Sixteen tests — every @integration test in
+      # test_openai_sessions.py, test_openai_sessions_ga.py and
+      # test_write_provenance.py, including
       # `test_sessions_do_not_leak_across_session_ids`, the regression test for
       # the Tantivy LockBusy fix — are gated behind
       # `importlib.util.find_spec("mnemo._mnemo")` and SKIP when it is missing.
+      # A skip is green, so a job that lets them skip passes while testing
+      # nothing.
       #
-      # A skip is green. So without this guard the job reports success while
-      # silently not running the tests it exists to run — the same
-      # "skip is indistinguishable from a pass" failure mode that let
-      # mnemo-mcp-server sit unpublished for 87 days. Fail loudly instead.
-      - name: Assert the native extension actually imports
+      # RUN FROM THE REPOSITORY ROOT, NOT FROM python/. `python -m pytest`
+      # prepends its working directory to sys.path. With cwd=python/, the
+      # SOURCE package `python/mnemo/` shadows the wheel installed into
+      # site-packages — and the source tree carries no compiled `_mnemo`
+      # (locally it appears to, only because `maturin develop` copies the .so
+      # into it; a wheel install does not). All sixteen therefore skipped on
+      # 2026-08-15 while the job reported success.
+      #
+      # The guard runs in the SAME STEP as pytest, deliberately. As a separate
+      # step it ran from the repo root while pytest ran from python/, so it
+      # asserted against a different sys.path than the tests used and printed
+      # "imports OK" over sixteen skips. Co-locating them is what makes the
+      # assertion structurally honest; splitting them re-opens the bug.
+      #
+      # `-rs` prints the reason for every skip — without it the log is a bare
+      # "N passed, M skipped" and a newly-silenced test is invisible in review.
+      - name: pytest (with native-extension guard)
         run: |
           set -euo pipefail
           python - <<'PY'
           import importlib.util, sys
 
           FAIL = (
-              "mnemo._mnemo is NOT importable — the wheel did not install the "
-              "native extension. The native-gated tests would silently skip and "
-              "this job would pass while testing nothing. Failing instead."
+              "mnemo._mnemo is NOT importable from the repository root — the "
+              "wheel did not install the native extension, or something is "
+              "shadowing it on sys.path. The native-gated tests would silently "
+              "skip and this job would pass while testing nothing. Failing."
           )
 
           # find_spec RAISES ModuleNotFoundError when the PARENT package is
@@ -236,13 +253,26 @@ jobs:
               sys.exit(FAIL)
 
           import mnemo._mnemo  # prove it loads, not just that it resolves
-          print("mnemo._mnemo imports OK")
+          print(f"mnemo._mnemo imports OK from {mnemo._mnemo.__file__}")
           PY
-      # `-rs` prints the reason for every skip. Without it the log is a bare
-      # "N passed, M skipped" and a newly-silenced test is invisible in review.
-      - name: pytest
-        working-directory: python
-        run: python -m pytest tests/ -q -rs
+
+          python -m pytest python/tests/ -q -rs --import-mode=importlib \
+            | tee "$RUNNER_TEMP/pytest.log"
+
+          # The import check above proves only what the GUARD can see. This
+          # asserts what the TESTS actually did: if any test skipped because the
+          # native extension was missing, the wheel is not reaching pytest and
+          # the run is not covering the native path — regardless of the guard.
+          #
+          # Deliberately matches only the "native extension not built" reasons
+          # (test_openai_sessions*.py, test_write_provenance.py). It does NOT
+          # match test_claude_agent_sdk.py, which additionally needs
+          # OPENAI_API_KEY and so skips here legitimately.
+          if grep -q "native extension not built" "$RUNNER_TEMP/pytest.log"; then
+            echo "::error::Tests skipped for a missing native extension:"
+            grep "native extension not built" "$RUNNER_TEMP/pytest.log" >&2
+            exit 1
+          fi
 
   # OFFLINE workspace version fence — every crate's Cargo.toml, every internal
   # dependency pin, the newest git tag and the CHANGELOG must agree on ONE
