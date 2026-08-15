@@ -1,6 +1,7 @@
 # ADR 0002 — Request identity model for an authenticated MCP transport
 
-- Status: **Proposed** (decision recorded; implementation not started)
+- Status: **Accepted — implemented** for the MCP surface (`crates/mnemo-mcp/src/identity.rs`,
+  wired in `server.rs` at `list_tools` / `call_tool` / `list_resources`)
 - Date: 2026-08-15
 - Tracking: [#126](https://github.com/sattyamjjain/mnemo/issues/126), [`docs/mcp-2026-07-28-migration.md`](../mcp-2026-07-28-migration.md) §1
 - Related: [ADR 0001 — capability-leased reads](0001-capability-leased-reads.md)
@@ -92,6 +93,38 @@ path that already does vector search and disk I/O. Per-connection caching
 of the *resolution* (principal → ACL set) recovers whatever is left. The
 expensive part of a request was never the auth check.
 
+## How it was implemented
+
+The ADR assumed this work was gated behind "an authenticated HTTP transport".
+**It was not.** MCP requests carry a `_meta` object and rmcp surfaces it as
+`RequestMetaObject` on *every* transport, stdio included — so a capability can
+ride each individual request today, with no new transport.
+
+- `crates/mnemo-mcp/src/identity.rs` — reads the capability from
+  `_meta["dev.mnemo/capability"]`, verifies it with `CapabilityIssuer`
+  (signature, expiry, key id), and returns a `CallerContext` whose `caller_id`
+  is the capability's principal and whose roles are its `role:`-prefixed scope
+  tokens.
+- `server.rs` resolves the caller **once per request**, in `call_tool` (before
+  the role gate, so gating uses the capability's roles), `list_tools` (so the
+  catalog is per-caller), and `list_resources` (so reads are scoped to the
+  caller, closing the read leak named below). The resolved `CallerContext` is
+  injected into the request's `extensions`, and the tools that record authority
+  (`mnemo.delegate`) or scope reads (`mnemo.trajectory_audit`) take it as an
+  `Extension<CallerContext>` rather than reading a boot-time constant.
+- **Fail-closed**: a capability that cannot be verified — no issuer configured,
+  malformed, forged, expired, unknown key — is an error. It is *never*
+  downgraded to the boot identity, which would hand a forgery the operator's
+  authority. `no_rejection_path_ever_yields_the_boot_identity` pins this over
+  every failure mode.
+- **Backward compatible**: a request with no capability still resolves to the
+  boot-derived identity, so existing stdio deployments are unchanged.
+
+This satisfies #126's revisit gate ("distinct callers hold distinct
+identities") without the transport — see
+`crates/mnemo-mcp/tests/per_request_identity.rs`, which asserts two
+capabilities resolve to two distinct callers on one server instance.
+
 ## What this changes in the code
 
 Two concrete sites, both already named in the migration doc as boot-time
@@ -106,8 +139,14 @@ where they must become request-derived:
    tool denylist. Under (B) it becomes per-principal RBAC resolved from
    the request's capability.
 
-Neither changes on the stdio transport. Both are prerequisites for any
-HTTP transport, and #126 is gated behind both.
+**Both are now done, and — contrary to this ADR's original expectation —
+both landed on the stdio transport**, because `_meta` carries a per-request
+capability there too. `list_resources` scopes by the resolved caller and the
+role filter gates on the capability's roles. What is unchanged is the
+*capability-less* path: with no token presented, both still resolve to the
+boot identity, exactly as before.
+
+With both prerequisites met, **#126 is no longer gated on them.**
 
 ## Consequences
 

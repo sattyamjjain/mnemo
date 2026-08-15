@@ -53,6 +53,9 @@ tempfile = { workspace = true }
 [features]
 default = ["rest"]
 rest = ["dep:mnemo-rest", "dep:axum"]
+# Authenticated Streamable HTTP transport for MCP (ADR 0002 / #126).
+# stdio stays the default transport; this only adds `--http-port`.
+http-transport = ["rmcp/transport-streamable-http-server", "dep:axum"]
 admin = ["dep:mnemo-admin"]
 pgwire = ["dep:mnemo-pgwire"]
 grpc = ["dep:mnemo-grpc"]

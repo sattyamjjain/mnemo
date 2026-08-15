@@ -110,6 +110,27 @@ None of that is a mechanical edit, which is why this is **needs-design** and not
 per-request, or does the server resolve a principal once per connection and
 cache it?* Every other decision here follows from that one.
 
+### Update (2026-08-15): the design question is answered, and 1–2 are built
+
+[ADR 0002](adr/0002-request-identity-model.md) decided **per-request identity**,
+and it is now implemented in `crates/mnemo-mcp/src/identity.rs`.
+
+The audit assumed all of this waited on an HTTP transport. It did not: MCP
+requests carry `_meta`, which rmcp surfaces on **every** transport including
+stdio, so a capability rides each individual request today.
+
+| Item above | Status |
+|---|---|
+| 1. `default_agent_id` → request-derived principal | **done** — `list_resources` scopes by the resolved caller |
+| 2. `role_filter` → per-principal RBAC | **done** — gating uses the capability's `role:` scope tokens |
+| 3. Capability verification on every mutating tool | **partial** — verified per request at the `call_tool` boundary; per-tool *scope enforcement* is #126 |
+
+What remains for this item is **session semantics**, not identity: whether
+anything still needs a server-side session once identity is per-request. Since
+per-request identity makes the store's auth boundary the whole security model
+(as §1 already argued), the remaining question is narrower than when this audit
+was written.
+
 ---
 
 ## 2. Roots

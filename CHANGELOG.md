@@ -12,6 +12,95 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Added (2026-08-15) - per-request caller identity on the MCP surface (ADR 0002)
+
+Identity on the MCP server was **boot-derived**: `engine.default_agent_id`, fixed at startup,
+was the caller for every request. [ADR 0002](docs/adr/0002-request-identity-model.md) decided
+per-request identity; this implements it.
+
+- **A capability now rides each request.** `crates/mnemo-mcp/src/identity.rs` reads an
+  HMAC-signed `Capability` from `_meta["dev.mnemo/capability"]`, verifies signature, expiry and
+  key id, and resolves a `CallerContext` whose id is the capability's principal and whose roles
+  are its `role:`-prefixed scope tokens.
+- **It needed no new transport.** The ADR — and #126, and this repo's own migration audit — all
+  assumed this waited on an authenticated HTTP transport. It did not: MCP requests carry `_meta`,
+  and rmcp surfaces it on **every** transport including stdio. That assumption had been blocking
+  the work; it was simply wrong.
+- **Resolved once per request, before the gate.** `call_tool` resolves the caller ahead of the
+  role check (so gating uses the capability's roles, not a boot constant) and injects the result
+  into the request extensions; `mnemo.delegate` and `mnemo.trajectory_audit` take it as an
+  `Extension<CallerContext>`. `list_tools` filters the catalog per caller, and `list_resources`
+  scopes reads to the caller — closing the read leak ADR 0002 names, where a boot-derived id
+  would serve one agent's memories to every authenticated caller behind a correct-looking gate.
+- **Fail-closed, and tested that way.** A capability that cannot be verified — no issuer
+  configured, malformed, forged, expired, unknown key — is rejected. It is never downgraded to
+  the boot identity, which would hand a forgery *more* authority than it claimed.
+  `no_rejection_path_ever_yields_the_boot_identity` asserts that over every failure mode.
+- **Backward compatible.** A request with no capability resolves to the boot identity exactly as
+  before, so existing stdio deployments are unchanged and no issuer is required.
+- Unblocks [#126](https://github.com/sattyamjjain/mnemo/issues/126): its revisit gate is
+  "distinct callers hold distinct identities", and
+  `crates/mnemo-mcp/tests/per_request_identity.rs` shows two capabilities resolving to two
+  distinct callers on one server.
+
+### Added (2026-08-15) - capability-leased reads, closing [#126](https://github.com/sattyamjjain/mnemo/issues/126)
+
+`--lease-ttl-seconds <N>` binds a destructive erasure to a read the **same caller** just
+performed, breaking the OX-MCP "exfiltrate-then-act" chain. `mnemo.recall` mints a short-lived
+lease; `mnemo.forget_subject` requires it.
+
+- **The blocker turned out not to be the transport.** #126 and [ADR 0001](docs/adr/0001-capability-leased-reads.md)
+  deferred this pending "a multi-caller authenticated transport", because on single-caller stdio a
+  lease keyed on `agent_id` is ceremony. What actually unblocked it was **per-request identity**
+  (ADR 0002): the lease binds to the capability-verified principal of the request that minted it,
+  so a replay by another principal fails — on stdio too, where a gateway may multiplex several
+  agents over one pipe.
+- **Off by default.** `mnemo.recall` and `mnemo.forget_subject` are shipped, docs-drift-tested
+  tools; enforcing unconditionally would break every existing client on upgrade. Unattached, both
+  behave exactly as before. Requires `--capability-key` — without per-request identity every
+  lease would validate for every caller, which is a defence in appearance only.
+- **No `ExportAuditLog` scope**, though the original design named it: `export_audit_log` is not
+  an MCP tool but a library function, and a scope gating a tool that does not exist is the
+  claimed-but-not-wired defect this repo has now repaired four times.
+- **The lease is checked against the caller, not the requested `agent_id`** — validating against
+  a caller-supplied field would let the caller answer its own question.
+- Verified live over the HTTP transport, not just in unit tests: recall mints a lease bound to
+  `alice`; `forget_subject` without one is refused; **`mallory` replaying `alice`'s lease is
+  refused**; an invented token is refused; `alice` spending her own succeeds.
+
+> **Scope narrowing is not implemented.** Freshness (TTL), causality (a read must have happened),
+> and caller-binding are enforced. The design's third property — restricting the erasure to the
+> subjects the read covered — is not: a lease earned by a narrow read still authorises that caller
+> to erase a different subject within the TTL. ADR 0001 records why (deriving a subject set from a
+> ranked query result either over-narrows or over-broadens) and what closing it requires.
+
+### Added (2026-08-15) - authenticated Streamable HTTP transport for MCP (feature-gated)
+
+`mnemo --http-port <PORT>` serves MCP over rmcp's Streamable HTTP transport, behind the
+`http-transport` build feature. **stdio remains the default** and is unchanged.
+
+- **Callers authenticate per request** with `Authorization: Bearer <base64url capability>`.
+  rmcp injects the request's `http::request::Parts` into the rmcp extensions, so the header
+  is read by the *same* resolver `_meta` capabilities go through — one verification path with
+  two carriers, rather than a second security path to keep in sync.
+- **`mnemo capability issue`** mints tokens (`--format bearer` for the header, `--format json`
+  for `_meta`). Verification without a way to issue was an unusable feature.
+- **`--http-port` refuses to start without `--capability-key`.** A network-facing port whose
+  server cannot tell its callers apart is a multi-caller transport with a single-caller
+  identity model.
+- **An unauthenticated HTTP request is rejected**, not treated as the operator. This was a
+  real hole in the first cut of this work, found by end-to-end probing rather than by the unit
+  tests: with no `Authorization` header, `mnemo.delegate` happily recorded
+  `delegator: "default"` — the boot identity — so anyone who could reach the port held operator
+  authority. The boot fallback is sound on stdio, where one process genuinely is one caller,
+  and unsound anywhere else, so it is now conditioned on the transport.
+- **Two credentials that disagree are rejected** rather than resolved by precedence. Whichever
+  one a gate checked, the other is what a reader of the audit trail might reasonably believe
+  authorised the call.
+- Binds `127.0.0.1` and does not terminate TLS — put it behind a reverse proxy.
+- 14 identity tests plus a live end-to-end check: two capabilities on one running server
+  produce `delegator: alice` and `delegator: bob` on the same tool.
+
 ### Fixed (2026-08-15) - the Python suite runs in CI for the first time, and it is green
 
 Nothing ran `pytest`. The 138-test Python suite was **unexecuted in CI**, and had been sitting on
