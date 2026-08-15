@@ -12,6 +12,69 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-15) - the Python suite runs in CI for the first time, and it is green
+
+Nothing ran `pytest`. The 138-test Python suite was **unexecuted in CI**, and had been sitting on
+two failures nobody could see.
+
+- **New `python-tests` CI job.** It **builds the native extension** with maturin rather than
+  skipping it: the integration tests self-skip when `mnemo._mnemo` is absent, so a pure-Python job
+  would go green while silently not running the tests that cover the session-store fix below — the
+  same "a skip is indistinguishable from a pass" failure mode that let `mnemo-mcp-server` strand
+  for 87 days.
+- **Tantivy `LockBusy` fixed** (`python/mnemo/openai_sessions.py`). Two `MnemoSessionStore`
+  instances on one `db_path` each built their own `MnemoClient`, so each opened its own Tantivy
+  IndexWriter — and Tantivy takes an **exclusive** writer lock per index directory by design. The
+  second store died with `Failed to acquire Lockfile: LockBusy`, breaking the most ordinary usage
+  there is: two concurrent sessions over one database. A session is a *logical* scope over one
+  *physical* store, so clients are now shared per `(db_path, agent_id, embedding config)` within
+  the process. Isolation is unchanged — it was always enforced by the `_session_tag` filter, never
+  by having separate engines.
+- **The Python SDK is version-LOCKED to the workspace**, and the "versions independently" comment
+  that said otherwise is gone. It was self-contradictory (it claimed "currently 0.5.21" beside a
+  `0.5.12` value) and it produced exactly the bug you would predict: **the wheel metadata said
+  0.5.12 while the `mnemo-core` compiled into that same wheel was 0.5.23**, because
+  `python/Cargo.toml` already carries `version.workspace = true`. The distinction that matters:
+  the TypeScript and Go SDKs are thin MCP-over-STDIO clients that embed nothing, so they genuinely
+  version independently; `python/` is PyO3 bindings that ship an engine, so the wheel must name it.
+  Now fenced offline by `workspace_version_fence.rs`.
+- **Replaced a rot-prone test.** `test_v0_5_12_pinned` hard-coded a release literal, so it went red
+  the moment someone forgot to bump it — which is what happened. It now asserts the *structural*
+  invariant instead (`python/Cargo.toml` must inherit, never pin), which cannot rot with a release.
+  Also fixed the `[project].version` parser it used: a `\[project\][^\[]*?version` regex stops at
+  the first `[` **anywhere** after the header, including inside a comment, so a comment mentioning
+  `[workspace.package]` silently broke it. A version fence that fails closed on prose is not a fence.
+
+### Changed (2026-08-15) - one identity source in the MCP server (ADR 0002 §2)
+
+Three surfaces disagreed about where caller identity came from: `list_resources` scoped reads by
+`engine.default_agent_id`, `delegate` stamped `delegator_id` from that same boot constant, and only
+tool gating went through `caller_context()`. On stdio all three resolve to the same string, so the
+divergence was **invisible** — which is the problem.
+
+Under the multi-caller transport [ADR 0002](docs/adr/0002-request-identity-model.md) designs for,
+that code would have served one agent's memories to **every** authenticated caller, and attributed
+**every** caller's delegations to the boot identity — a read leak and a forged authority claim,
+both sitting behind a tool filter that was gating correctly. All three now route through
+`MnemoServer::caller_agent_id()`, so the HTTP follow-up changes `caller_context()` once and every
+identity-derived surface moves with it. `identity_sources_agree` pins that they cannot drift apart
+again. **No behaviour change on stdio** — one process is still one caller.
+
+### Removed (2026-08-15) - `mnemo-graph`'s extract stub, which was three false claims (#156)
+
+`TemporalEdge::extract` always returned `Vec::new()`. Removed rather than left in place, because a
+function that always returns empty is **worse than an absent one**: a caller cannot distinguish
+"found no relations" from "not implemented", so wiring it in yields silent no-ops forever — the
+latent-stub class `onnx.rs` already warns about in a comment.
+
+Three claims around it were false at once: the docstring promised the real extractor "lands in
+v0.4.0 final" (the workspace reached **0.5.23**, five releases later); `lib.rs` described it as
+"feature-gated under `graph-extract`" while `pub mod extract;` was compiled **unconditionally**, so
+the flag gated nothing; and `MNEMO_GRAPH_EXTRACT_MODEL` was documented in `CLAUDE.md` as a real
+environment variable that **no code reads**. All four are gone, and `mnemo-graph` now says plainly
+what it is: a bitemporal **storage + query** layer with no LLM in it. If extraction is wanted later
+it should arrive as a designed feature with its own issue, not a placeholder.
+
 ### Added (2026-08-15) - GCS + Azure Blob workspace backends (closes #39)
 
 Completes the four-backend set for the OpenAI Agents SDK GA snapshot store (S3 v0.3.2,

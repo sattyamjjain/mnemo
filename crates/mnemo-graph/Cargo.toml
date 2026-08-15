@@ -28,11 +28,6 @@ duckdb = { workspace = true }
 
 [features]
 default = []
-# When enabled, `engine.remember` may invoke `TemporalEdge::extract`
-# against an LLM. v0.4.0-rc1 ships the gate but the extractor itself
-# is a stub that returns an empty edge set — full extraction lands
-# in v0.4.0 final.
-graph-extract = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

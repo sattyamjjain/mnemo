@@ -98,7 +98,6 @@ python3 scripts/check_docs_links.py  # mdBook link check
 **Environment variables for other surfaces**:
 - `MNEMO_AUTH_TOKEN` — gRPC bearer secret; auth is enforced when set non-empty (`mnemo-grpc`)
 - `MNEMO_CORS_ORIGINS` — REST CORS allowlist; defaults to localhost only (`mnemo-rest`)
-- `MNEMO_GRAPH_EXTRACT_MODEL` — extraction model for `mnemo-graph`
 - `MNEMO_TEST_POSTGRES_URL` — gates the live pgvector test; it skips (still green) when unset
 - `MNEMO_LONGMEMEVAL_PATH` — swaps the fixture file for `longmemeval_bench`
 

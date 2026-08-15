@@ -150,12 +150,11 @@ The server never asks the client to run an LLM turn. No `sampling`,
 `create_message`, or `createMessage` reference exists in
 `crates/mnemo-mcp/src/`, and sampling is not among the declared capabilities.
 
-The one place that looks like an exception is not one:
-`mnemo_graph::extract::TemporalEdge::extract` documents a
-`MNEMO_GRAPH_EXTRACT_MODEL` env var, but the function is still a stub returning
-an empty `Vec` and **the env var is not read**. When a real extractor lands it is
-planned as a direct provider call, not MCP sampling — and `mnemo-graph` is not a
-dependency of `mnemo-mcp` regardless.
+The one place that used to look like an exception no longer exists.
+`mnemo_graph` once carried a `TemporalEdge::extract` stub documenting a
+`MNEMO_GRAPH_EXTRACT_MODEL` env var it never read; it was removed in #156 and
+the crate is now explicitly a bitemporal **storage + query** layer with no LLM in
+it. `mnemo-graph` is not a dependency of `mnemo-mcp` regardless.
 
 Worth stating for the record: mnemo is a store, not an agent. It has no reason to
 request model turns from its client, so this item is expected to stay

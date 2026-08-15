@@ -142,13 +142,25 @@ view (via `valid_from`).
 | DuckDB-backed `DuckGraphStore` | ✓ |
 | `graph_expand` BFS with `as_of` filter | ✓ |
 | Postgres-backed store | _v0.4.0 final_ |
-| `TemporalEdge::extract` LLM-driven | _v0.4.0 final_ |
+| `TemporalEdge::extract` LLM-driven | **out of scope** ([#156](https://github.com/sattyamjjain/mnemo/issues/156)) |
 | `hybrid_rrf` 4th-signal integration | _v0.4.0 final_ |
 | MCP / REST / gRPC `graph_expand` tools | _v0.4.0 final_ |
 
-The LLM extractor stays a stub today (`Vec::new()`) because the
-prompt + ICL examples are still being tuned and shipping a
-half-tuned extractor would put bad edges into everyone's graphs.
+**There is no LLM extractor, and there is no longer a stub pretending to be
+one.** `mnemo-graph` is a bitemporal storage + query layer: callers construct
+`TemporalEdge`s, and this crate stores, closes and walks them.
+
+A `TemporalEdge::extract` stub lived here until 2026-08-15, always returning
+`Vec::new()`. It was removed rather than left in place, because a function that
+always returns empty is *worse* than an absent one: a caller cannot tell "found
+no relations" from "not implemented", so wiring it in produces silent no-ops
+indefinitely. It also outlived its own promise by five releases — the docstring
+said "lands in v0.4.0 final" while the workspace reached 0.5.23 — and its
+`graph-extract` feature flag gated nothing, since the module was compiled
+unconditionally. See [#156](https://github.com/sattyamjjain/mnemo/issues/156).
+
+If LLM-driven extraction is wanted later it should arrive as a designed feature
+with its own issue, not as a placeholder.
 
 ## Sources
 

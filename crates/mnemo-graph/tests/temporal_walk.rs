@@ -131,11 +131,3 @@ async fn close_edge_is_idempotent() {
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].valid_to, Some(close_at));
 }
-
-#[tokio::test]
-async fn extract_stub_returns_empty_today() {
-    // The v0.4.0-rc1 stub returns no edges; once the real extractor
-    // lands this assertion flips and we'll write a proper test.
-    let edges = TemporalEdge::extract("Priya works at Acme Corp.", &[]);
-    assert!(edges.is_empty(), "v0.4.0-rc1 ships an extract stub");
-}

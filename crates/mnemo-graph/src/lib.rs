@@ -25,12 +25,15 @@
 //! 3. [`graph_expand`] — bounded BFS that respects `as_of` filtering
 //!    and a maximum depth.
 //!
-//! The LLM-driven [`TemporalEdge::extract`] path is feature-gated under
-//! `graph-extract` and currently returns an empty `Vec`. A real
-//! extractor lands in v0.4.0 final once the prompt + ICL examples are
-//! tuned.
+//! **Edge extraction is out of scope for this crate.** It is a bitemporal
+//! STORAGE + QUERY layer: callers construct `TemporalEdge`s and this crate
+//! stores, closes and walks them. There is deliberately no LLM in it.
+//!
+//! An `extract()` stub used to live here, always returning an empty `Vec`.
+//! That is worse than absent: a caller cannot distinguish "found no
+//! relations" from "not implemented", so wiring it in yields silent no-ops
+//! forever. It was removed in favour of saying so (see #156).
 
-pub mod extract;
 pub mod model;
 pub mod store;
 
