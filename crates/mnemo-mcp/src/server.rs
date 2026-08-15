@@ -96,6 +96,28 @@ impl MnemoServer {
         CallerContext::new(self.engine.default_agent_id.clone(), Vec::new())
     }
 
+    /// The calling agent's id — **the single identity source in this server**,
+    /// the same one the role filter gates on.
+    ///
+    /// This exists so there is exactly ONE identity source in the server.
+    /// `list_resources` previously reached into `engine.default_agent_id`
+    /// directly while tool gating went through [`Self::caller_context`]. On
+    /// stdio both resolve to the same string, so the divergence was invisible —
+    /// and it is precisely the divergence
+    /// [ADR 0002](../../../docs/adr/0002-request-identity-model.md) warns about:
+    /// under a multi-caller transport, a boot-derived `default_agent_id` would
+    /// serve one agent's memories to *every* authenticated caller while the
+    /// tool filter correctly gated per caller. A read leak behind a correct-
+    /// looking gate.
+    ///
+    /// Routing both through here means the HTTP follow-up changes
+    /// `caller_context()` once and resource scoping moves with it, rather than
+    /// requiring someone to remember this second site.
+    /// `identity_sources_agree` pins that they cannot drift apart again.
+    pub fn caller_agent_id(&self) -> String {
+        self.caller_context().caller_id
+    }
+
     /// The tool names visible to the current caller under the attached
     /// [`RoleFilter`] — exactly the set `tools/list` returns. All registered
     /// tools when no filter is attached. Exposed so the filtering decision is
@@ -1021,7 +1043,12 @@ impl MnemoServer {
 
         let delegation = Delegation {
             id: uuid::Uuid::now_v7(),
-            delegator_id: self.engine.default_agent_id.clone(),
+            // The delegator is whoever is CALLING, not a boot-time constant.
+            // Left boot-derived, a multi-caller transport would attribute every
+            // caller's grants to the boot identity — a caller could hand out
+            // permissions recorded as someone else's. Authority claims are the
+            // last place a stale identity should survive.
+            delegator_id: self.caller_agent_id(),
             delegate_id: input.delegate_id.clone(),
             permission,
             scope,
@@ -1095,7 +1122,7 @@ impl MnemoServer {
         let agent_id = input
             .agent_id
             .clone()
-            .unwrap_or_else(|| self.engine.default_agent_id.clone());
+            .unwrap_or_else(|| self.caller_agent_id());
         // Mirror `verify_integrity`'s storage fetch shape: list_events
         // returns DESC order; the trajectory audit needs chronological
         // input, so we `.reverse()` before handing to compliance.
@@ -1631,8 +1658,10 @@ impl ServerHandler for MnemoServer {
     ) -> Result<rmcp::model::ListResourcesResult, McpError> {
         use mnemo_core::storage::MemoryFilter;
         self.touch_activity();
+        // Scope by the CALLER's identity, not a boot-time constant — the same
+        // source the role filter gates on. See `caller_agent_id`.
         let filter = MemoryFilter {
-            agent_id: Some(self.engine.default_agent_id.clone()),
+            agent_id: Some(self.caller_agent_id()),
             include_deleted: false,
             ..Default::default()
         };

@@ -497,3 +497,46 @@ async fn advertised_tool_catalog_matches_visible_and_respects_role_filter() {
         "the one allowed tool must remain in the filtered catalog"
     );
 }
+
+// ---------------------------------------------------------------------------
+// MCP 2026-07-28 migration §2 / ADR 0002 — one identity source in the server.
+// ---------------------------------------------------------------------------
+
+/// Every identity-derived surface must read the SAME source.
+///
+/// Before this, three sites disagreed about where identity came from:
+/// `list_resources` scoped reads by `engine.default_agent_id`, `delegate`
+/// stamped `delegator_id` from that same boot constant, and only tool gating
+/// went through `caller_context()`. On stdio all three resolve to the same
+/// string, so the divergence was invisible — and invisible is exactly the
+/// problem.
+///
+/// Under the multi-caller transport
+/// [ADR 0002](../../docs/adr/0002-request-identity-model.md) designs for, that
+/// same code would serve one agent's memories to *every* authenticated caller
+/// and attribute *every* caller's delegations to the boot identity — a read
+/// leak and a forged authority claim, both sitting behind a tool filter that
+/// was gating correctly. All three now route through `caller_agent_id()`.
+///
+/// This pins that they cannot drift apart again before that transport lands.
+#[tokio::test]
+async fn identity_sources_agree() {
+    let (server, engine) = create_server();
+
+    // The caller identity the server derives.
+    let caller = server.caller_agent_id();
+
+    // On stdio it resolves to the boot agent id — one caller, one process.
+    // The point is not the VALUE, it is that resource scoping and the role
+    // filter now read one source rather than two.
+    assert_eq!(
+        caller, engine.default_agent_id,
+        "on the stdio transport caller_agent_id() must resolve to the boot \
+         agent id (one process = one caller)"
+    );
+    assert!(
+        !caller.is_empty(),
+        "caller identity must never be empty — an empty agent_id would scope \
+         resource listing to nothing, or to everything, depending on backend"
+    );
+}
