@@ -202,9 +202,47 @@ jobs:
           python -m pip install "pytest>=7.0" "pytest-asyncio>=0.23" "moto>=5.0" \
                                 "google-cloud-storage>=2.14" "azure-storage-blob>=12.19" \
                                 "boto3>=1.34" "cryptography>=42"
+      # The native extension is the ENTIRE reason this job builds a wheel instead
+      # of running pure-Python. Six tests in test_openai_sessions.py — including
+      # `test_sessions_do_not_leak_across_session_ids`, the regression test for
+      # the Tantivy LockBusy fix — are gated behind
+      # `importlib.util.find_spec("mnemo._mnemo")` and SKIP when it is missing.
+      #
+      # A skip is green. So without this guard the job reports success while
+      # silently not running the tests it exists to run — the same
+      # "skip is indistinguishable from a pass" failure mode that let
+      # mnemo-mcp-server sit unpublished for 87 days. Fail loudly instead.
+      - name: Assert the native extension actually imports
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.util, sys
+
+          FAIL = (
+              "mnemo._mnemo is NOT importable — the wheel did not install the "
+              "native extension. The native-gated tests would silently skip and "
+              "this job would pass while testing nothing. Failing instead."
+          )
+
+          # find_spec RAISES ModuleNotFoundError when the PARENT package is
+          # missing and only returns None when the parent exists but the
+          # submodule does not — so both have to be handled or a totally absent
+          # wheel exits with a bare traceback that explains nothing.
+          try:
+              found = importlib.util.find_spec("mnemo._mnemo") is not None
+          except ModuleNotFoundError:
+              found = False
+          if not found:
+              sys.exit(FAIL)
+
+          import mnemo._mnemo  # prove it loads, not just that it resolves
+          print("mnemo._mnemo imports OK")
+          PY
+      # `-rs` prints the reason for every skip. Without it the log is a bare
+      # "N passed, M skipped" and a newly-silenced test is invisible in review.
       - name: pytest
         working-directory: python
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q -rs
 
   # OFFLINE workspace version fence — every crate's Cargo.toml, every internal
   # dependency pin, the newest git tag and the CHANGELOG must agree on ONE
