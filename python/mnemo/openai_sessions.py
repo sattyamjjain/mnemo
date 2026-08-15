@@ -36,10 +36,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from typing import Any, Optional
 
 _SESSION_TAG_PREFIX = "_session:"
+
+# Process-wide MnemoClient cache, keyed by the engine-identifying parameters
+# (NOT by session_id). See `_ensure_client` for why: Tantivy holds an exclusive
+# IndexWriter lock per index directory, so one client per session meant two
+# sessions on the same db_path could not both open the engine.
+_CLIENT_CACHE: dict[tuple, Any] = {}
+_CLIENT_CACHE_LOCK = threading.Lock()
 
 
 def _session_tag(session_id: str) -> str:
@@ -99,13 +107,49 @@ class MnemoSessionStore:
             raise MnemoClientUnavailable(
                 "MnemoSessionStore needs the native mnemo._mnemo extension"
             ) from exc
-        self._client = MnemoClient(
-            db_path=self.db_path,
-            agent_id=self.agent_id,
-            openai_api_key=self.openai_api_key,
-            embedding_model=self.embedding_model,
-            dimensions=self.dimensions,
+
+        # Share ONE client per (db_path, agent_id, embedding config) within the
+        # process.
+        #
+        # A session is a LOGICAL scope over one PHYSICAL database — the
+        # session_id is a tag, not a separate store. Building a client per
+        # session meant two MnemoSessionStore instances on the same db_path each
+        # opened their own engine, and therefore their own Tantivy IndexWriter.
+        # Tantivy takes an EXCLUSIVE writer lock per index directory (by design,
+        # not a bug), so the second one died with:
+        #
+        #     RuntimeError: index error: Failed to acquire Lockfile: LockBusy
+        #
+        # That broke the most ordinary usage there is — two concurrent sessions
+        # backed by one database — which is exactly what
+        # `test_sessions_do_not_leak_across_session_ids` asserts should work.
+        # Session isolation is enforced by the `_session_tag` filter, so sharing
+        # the client changes no visibility semantics; it only stops N sessions
+        # from opening N engines against one file.
+        #
+        # The key deliberately excludes session_id (that is the whole point) and
+        # includes every parameter that would otherwise produce a
+        # differently-configured engine, so two stores never silently share a
+        # client built with someone else's embedding settings.
+        key = (
+            os.path.abspath(self.db_path),
+            self.agent_id,
+            self.embedding_model,
+            self.dimensions,
+            self.openai_api_key,
         )
+        with _CLIENT_CACHE_LOCK:
+            client = _CLIENT_CACHE.get(key)
+            if client is None:
+                client = MnemoClient(
+                    db_path=self.db_path,
+                    agent_id=self.agent_id,
+                    openai_api_key=self.openai_api_key,
+                    embedding_model=self.embedding_model,
+                    dimensions=self.dimensions,
+                )
+                _CLIENT_CACHE[key] = client
+        self._client = client
         return self._client
 
     # ------------------------------------------------ storage encoding

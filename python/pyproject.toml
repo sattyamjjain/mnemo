@@ -9,11 +9,19 @@ build-backend = "maturin"
 # the PyPI distribution name moves. Users do `pip install mnemo-db`
 # then `from mnemo import MnemoClient`.
 name = "mnemo-db"
-# Versioned INDEPENDENTLY of the Rust workspace (currently 0.5.21): this is a
-# separate PyPI artifact with its own release cadence. This value tracks the
-# newest release on PyPI (mnemo-db 0.5.12), not the workspace version. Bump it
-# only when cutting a new PyPI release via maturin.
-version = "0.5.12"
+# LOCKED to the Rust workspace `[workspace.package].version`. This is NOT an
+# independently-versioned artifact, unlike the TypeScript and Go SDKs.
+#
+# Why the difference: those two are thin MCP-over-STDIO clients that embed
+# nothing, so their version describes the client. This package is PyO3 bindings
+# that COMPILE mnemo-core into the wheel (see python/Cargo.toml, which already
+# has `version.workspace = true`), so `pip install mnemo-db` ships an engine and
+# the wheel version has to say which engine.
+#
+# The previous "versioned independently" comment produced exactly the bug you
+# would predict: the wheel metadata said 0.5.12 while the compiled core inside it
+# was 0.5.23. Fenced now by workspace_version_fence.rs.
+version = "0.5.23"
 description = "MCP-native memory database for AI agents"
 readme = "README.md"
 license = { text = "Apache-2.0" }

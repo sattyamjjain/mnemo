@@ -319,6 +319,70 @@ fn internal_dependency_pins_match_the_workspace() {
     );
 }
 
+/// The Python SDK's wheel metadata must equal the workspace version.
+///
+/// `mnemo-db` on PyPI is **not** an independently-versioned artifact, unlike
+/// the TypeScript and Go SDKs. Those two are thin MCP-over-STDIO clients that
+/// embed nothing, so their version describes the client. `python/` is PyO3
+/// bindings that compile `mnemo-core` *into the wheel* — `python/Cargo.toml`
+/// already carries `version.workspace = true` — so `pip install mnemo-db`
+/// ships an engine and the wheel version has to name it.
+///
+/// It had drifted exactly as you would predict from a comment claiming the
+/// opposite: `pyproject.toml` said 0.5.12 while the compiled core inside the
+/// same wheel was 0.5.23. Two places declare the Python version
+/// (`pyproject.toml [project].version` and `mnemo/__init__.py __version__`);
+/// both are checked here because the Python-side test that used to check them
+/// runs in no CI job.
+#[test]
+fn python_sdk_version_matches_the_workspace() {
+    let ws = workspace_version();
+    let root = repo_root();
+
+    let pyproject =
+        std::fs::read_to_string(root.join("python/pyproject.toml")).expect("read pyproject.toml");
+    let mut in_project = false;
+    let mut project_version = None;
+    for line in pyproject.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_project = trimmed == "[project]";
+            continue;
+        }
+        if in_project
+            && trimmed.starts_with("version")
+            && !trimmed.starts_with('#')
+            && let Some(v) = trimmed.split('"').nth(1)
+        {
+            project_version = Some(v.to_string());
+            break;
+        }
+    }
+    let project_version =
+        project_version.expect("python/pyproject.toml must declare [project].version");
+    assert_eq!(
+        project_version, ws,
+        "python/pyproject.toml [project].version is `{project_version}` but the workspace is \
+         `{ws}`. The Python SDK compiles mnemo-core into its wheel and is version-LOCKED to the \
+         workspace (unlike the TypeScript/Go SDKs, which are thin clients and version \
+         independently). Bump pyproject.toml and python/mnemo/__init__.py together."
+    );
+
+    let init =
+        std::fs::read_to_string(root.join("python/mnemo/__init__.py")).expect("read __init__.py");
+    let dunder = init
+        .lines()
+        .find(|l| l.trim_start().starts_with("__version__"))
+        .and_then(|l| l.split('"').nth(1))
+        .expect("python/mnemo/__init__.py must declare __version__");
+    assert_eq!(
+        dunder, ws,
+        "python/mnemo/__init__.py __version__ is `{dunder}` but the workspace is `{ws}`. \
+         It is what `mnemo.__version__` reports to users at runtime, so it must match the \
+         engine compiled into the wheel."
+    );
+}
+
 /// The newest git tag must never be AHEAD of the workspace version.
 ///
 /// A tag ahead of `Cargo.toml` means the workspace version regressed below
