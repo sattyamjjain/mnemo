@@ -76,7 +76,7 @@ jobs:
         # 0.3.60 and 0.3.68 surfaces a NEW critical, this job fails loudly and the
         # baseline must be re-derived — that is the intended signal, not a reason
         # to unpin. Bump deliberately after reviewing the tool's CHANGELOG.
-        uses: sattyamjjain/agent-audit-kit@v0.3.68
+        uses: sattyamjjain/agent-audit-kit@v0.3.74
         with:
           path: .
           config: .agent-audit-kit.yml
