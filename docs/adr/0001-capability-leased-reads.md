@@ -115,7 +115,9 @@ but it was never the thing standing in the way.
   limit) or over-broaden into exactly the blanket authority it is meant to
   prevent. Doing it properly means the lease recording an explicit subject set
   the caller asked for at recall time — a further tool-contract change. Tracked
-  as remaining work under #126.
+  in [#160](https://github.com/sattyamjjain/mnemo/issues/160) (#126 is closed;
+  pointing remaining work at a closed issue is how a known gap quietly becomes
+  an unknown one).
 - **A single compromised caller.** If the same principal is induced to recall
   and then erase, the lease is issued and spent legitimately. The lease breaks
   *cross-principal* replay and *stale* authority, not an agent acting against

@@ -971,8 +971,9 @@ agent id, so every lease would validate for everyone.
 > Enforced today: freshness, causality, and caller-binding. **Not** yet enforced:
 > narrowing the erasure to the subjects the read covered — a lease earned by a
 > narrow read still authorises that caller to erase a different subject within
-> the TTL. See [ADR 0001](docs/adr/0001-capability-leased-reads.md) for why and
-> what closing it requires.
+> the TTL. See [ADR 0001](docs/adr/0001-capability-leased-reads.md) for why, and
+> [#160](https://github.com/sattyamjjain/mnemo/issues/160) for what closing it
+> requires.
 
 ## Architecture
 
