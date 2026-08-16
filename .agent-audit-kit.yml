@@ -11,11 +11,30 @@ severity: low
 fail-on: critical
 
 # Rule suppressions — each with a rationale. Baseline RE-DERIVED by running the
-# v0.3.60 scanner (271 rules) against this repo on 2026-07-28. Gate result:
-# 0 critical, 4 high, 31 medium, 1 low → `fail-on: critical` passes clean with
-# the single exclusion below. The 9 rules added since v0.3.52 surface new
-# medium/high/low findings (noted below) but no new critical, so no new
-# hard-exclude is needed to keep CI green.
+# v0.3.79 scanner (303 rules evaluated) against this repo on 2026-08-16, with
+# the CI parameters. Gate result: **0 critical** → `fail-on: critical` passes
+# clean with the single exclusion below.
+#
+# Full counts, and why two sets are recorded rather than one: a local working
+# tree contains gitignored files that a clean CI checkout does not, so a locally
+# reproduced scan legitimately reports MORE than CI does. Recording only one
+# number makes the other look like a regression.
+#
+#   severity   local tree   clean CI checkout
+#   critical            0                   0
+#   high                9                   3
+#   medium             32                  31
+#   low                 1                   0
+#
+# The six local-only highs are five AAK-SECRET-004 hits in the built mdBook
+# output (docs/book/highlight-*.js) plus one AAK-TRUST-004 in the gitignored
+# .claude/settings.local.json; the local-only low is AAK-SUPPLY-005 on the
+# gitignored Cargo.lock. The three CI-visible highs are the AAK-SECRET-004 test
+# vectors noted below.
+#
+# v0.3.68 -> v0.3.79 (275 -> 303 rules evaluated) changed NOTHING here: the
+# finding sets were byte-identical by rule ID and location. 28 new rules, zero
+# new findings on mnemo.
 exclude-rules:
   - AAK-AGENT-001 # "Agent instruction file contains shell command directives"
     #                (critical). At v0.3.52 this fired 60x on CLAUDE.md; in

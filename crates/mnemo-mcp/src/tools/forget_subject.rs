@@ -16,8 +16,10 @@ pub struct ForgetSubjectInput {
     /// capability-leased reads enabled (#126).
     ///
     /// Required in that configuration and ignored otherwise. The lease must be
-    /// unexpired, name the `forget_subject` scope, and be bound to the calling
-    /// principal — which is what ties this destructive act to a read the same
+    /// unexpired, name the `forget_subject` scope, be bound to the calling
+    /// principal, and **cover `subject_id`** — that is, the recall it came from
+    /// must have returned a record tagged `subject:<subject_id>` (#160). Together
+    /// those tie this destructive act to a read of *this subject* that the same
     /// caller just performed, breaking the exfiltrate-then-act chain.
     pub lease_token: Option<String>,
 }

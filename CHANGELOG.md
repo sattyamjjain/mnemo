@@ -12,6 +12,79 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Added (2026-08-16) - prior-art citation and a release check with teeth
+
+Cited the governed-persistent-memory paper in prior art, including the part mnemo does not do.
+Added a release check so a crate cannot sit five minor versions behind the workspace without the
+release failing.
+
+- **[arXiv:2608.12476](https://arxiv.org/abs/2608.12476) — Governed Persistent Memory.** New
+  anchor at [`docs/research/governed-persistent-memory-2608.12476.md`](docs/research/governed-persistent-memory-2608.12476.md),
+  cited from the README and from [POSITIONING](docs/POSITIONING.md) under *Where mnemo does not
+  lead*. The paper's argument is that retrieval never decides whether a contradictory,
+  superseded, retracted, deleted or stale record may support an outgoing claim, and it proposes a
+  bitemporal state-transition model with source-bound admission, derived lifecycle state and
+  fail-closed structured release. Of its five clauses mnemo ships ledger integrity outright,
+  source binding and conflict isolation in weaker partial forms, and neither non-revival after
+  retraction nor claim closure over a verified head. **mnemo does not implement the bitemporal
+  derived-lifecycle-state model, and has no release gate at all** — `RECALL` returns records and
+  mnemo's involvement ends. Non-revival is in direct conflict with a shipped feature, since
+  `as_of` recall deliberately surfaces deleted records. The clause-by-clause table says which is
+  which. Numbers are quoted with the paper's own caveat that they are bounded contract results,
+  not open-world accuracy.
+- **Severity floor on the release path.** `scripts/registry_parity.sh --fail-on-minor-lag`, passed
+  by `release-crate.yml` and by nothing else: a publishable crate that is a whole minor behind the
+  workspace, or absent from crates.io, and that the current walk does not repair, now fails the
+  release instead of emitting a warning. `--mode assert` already caught a walk skipping a crate it
+  owned; it could say nothing about a crate in **no** walk, which is the hole #140 came through.
+  The threshold is any minor-level lag, not "more than one minor" — #140 was 0.4.4 against a
+  0.5.22 workspace, exactly one minor, so the obvious spelling would have missed the incident it
+  was written for. Patch-level lag still passes, because a repo one patch ahead of the registry is
+  a release in flight. `--self-test` asserts that table offline in CI. The flag is deliberately not
+  set on `cargo-publish.yml`, which cannot publish `mnemo-mcp-server` by design and must not be
+  failed over it.
+- **[`docs/release/registry-token-runbook.md`](docs/release/registry-token-runbook.md)** — the
+  five-minute triage order, with the corrected diagnosis stated first: the token was never #140's
+  blocker, and the `/api/v1/me` 403 that anchored that belief is advisory. Check walk membership
+  and the tag/CHANGELOG gates before touching credentials. Linked from the failure summary the
+  parity script writes.
+
+### Changed (2026-08-16) - agent-audit-kit 0.3.68 to 0.3.79
+
+Jumped past the stale Dependabot PR (0.3.68 to 0.3.74, already five releases behind when it
+opened) straight to current. **Verified rather than assumed:** both versions were run against this
+repo with the CI parameters. Rules evaluated went 275 to 303 and the finding set was identical by
+rule id and location — 28 new rules, zero new findings, 0 critical, exit 0 on both. Nothing needed
+fixing, so nothing was pinned back. The `.agent-audit-kit.yml` baseline was re-derived and now
+records both the local-tree and clean-checkout counts, because a local working tree carries
+gitignored files CI does not and recording one number makes the other look like a regression.
+
+### Fixed (2026-08-16) - capability leases now narrow to the subjects the read covered (#160)
+
+The last of [ADR 0001](docs/adr/0001-capability-leased-reads.md)'s four properties. Freshness,
+causality and caller-binding shipped in #159; scope did not, so a lease earned by reading `alice`
+still authorised that same caller to erase `bob` inside the TTL.
+
+- **The lease now records what the read returned.** `mnemo.recall` collects the `subject:` tags
+  carried by the records in its own response, and `mnemo.forget_subject` is refused unless the
+  requested `subject_id` is in that set.
+- **#160 called this blocked, and it was one step short.** Its reasoning — that inferring subjects
+  from a ranked result set either over-narrows or over-broadens — is correct about the *query* and
+  does not apply to the *response*, which is what the caller was actually handed. The proposed fix
+  was a breaking change to `mnemo.recall` letting the caller declare a subject set up front; that
+  is both weaker (a scope the caller nominates is a scope the caller chose) and unnecessary.
+- **Empty means nothing, not everything.** A recall that surfaced no subject-tagged record mints a
+  lease authorising no erasure. `a_read_covering_no_subject_authorises_no_erasure` pins it, because
+  the inverted reading would turn every subject-free recall into a blanket grant — worse than the
+  gap being closed.
+- **Ordered after the coarser refusals**, so an expired lease still reports expired and a stale
+  lease does not leak which subjects it covered. `LeaseError::SubjectNotCovered` names both the
+  subject asked for and the subjects covered, so a refusal is diagnosable.
+- Six tests across `crates/mnemo-mcp/src/lease.rs` and
+  `crates/mnemo-mcp/tests/capability_leased_reads.rs`. Also corrects the README capability matrix,
+  which still listed lease tokens as "not shipped — removed as dead code" a day after #159 shipped
+  them, and a README line still claiming crates.io was stuck at 0.4.4.
+
 ### Added (2026-08-15) - per-request caller identity on the MCP surface (ADR 0002)
 
 Identity on the MCP server was **boot-derived**: `engine.default_agent_id`, fixed at startup,

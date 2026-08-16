@@ -111,6 +111,10 @@ struct Cli {
     /// Only meaningful with `--capability-key`: without per-request identity
     /// every caller shares the boot agent id, and a lease bound to an identity
     /// everyone holds proves nothing.
+    ///
+    /// The lease also covers only the subjects the recall actually returned
+    /// (#160), so an erasure of a subject the caller never read is refused even
+    /// inside the TTL.
     #[arg(long, default_value = "0", env = "MNEMO_LEASE_TTL_SECONDS")]
     lease_ttl_seconds: u64,
 

@@ -417,7 +417,7 @@ pip install mnemo-db
 > **Version line & wire compatibility.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**. That gap is expected, not skew — and here is exactly what `0.5.12` is compatible with, stated rather than left implicit:
 >
 > - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.23 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
-> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — build the current one from source (`cargo build --release -p mnemo-mcp-server`) since crates.io is stuck at 0.4.4 ([#140](https://github.com/sattyamjjain/mnemo/issues/140)). The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
+> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — install it with `cargo install mnemo-mcp-server` (0.5.23 as of 2026-08-14 — the 0.4.4 strand tracked by [#140](https://github.com/sattyamjjain/mnemo/issues/140) is repaired and that issue is closed), or build from source with `cargo build --release -p mnemo-mcp-server`. The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
 
 ```python
 from mnemo import MnemoClient
@@ -671,7 +671,7 @@ path calls it.
 | **MCP role-filter** (manifest `[role_filter]`) | ✅ when a `[role_filter]` block is present and not a no-op — a denied tool is hidden from `tools/list` and rejected by `tools/call` with `-32601`; on stdio there is no per-call caller identity, so this is a **server-wide tool denylist, not per-caller RBAC**. No block → every advertised tool reachable (unchanged) | `mnemo-mcp::role_filter` dispatch, attached by the `mnemo-cli` hardened server; `hardened_mode_attaches_role_filter` (CLI) + `role_filter_*` (library) tests |
 | **MCP tool-catalog attestation** | ✅ when a `[tool_catalog_pin]` block is present — the hardened server fingerprints the tools it will advertise (post role-filter) and, **before serving stdio**, refuses to start on any added/mutated tool (and on removed-only drift unless `allow_removed_drift`); every verdict is an `mcp_tool_catalog_drift` audit event. On stdio the catalog is static after boot, so this one boot-time check is complete for the transport — **not per-request**, and only as strong as the manifest file's permissions. No block → no attestation (unchanged) | `mnemo-cli::attest` wired in `run_mcp_server`; `hardened_mode_attests_tool_catalog` (CLI stdio) + `attest` unit tests; generate a pin with `--print-catalog-pin` |
 | **Consent-token-per-write** | ❌ **library only** — core engine never calls it | `mnemo-compliance::ConsentTokenGuard` |
-| Lease tokens (capability-leased reads) | ❌ **not shipped** — removed as dead code (the store ran but no operation was ever gated on a lease); design captured in [#126](https://github.com/sattyamjjain/mnemo/issues/126) for a future multi-caller transport where a per-read lease has real cross-caller value | — (removed; see git history) |
+| Lease tokens (capability-leased reads) | ✅ **shipped, opt-in** via `--lease-ttl-seconds <N>` (requires `--capability-key`) — `mnemo.recall` mints a lease and `mnemo.forget_subject` refuses without a live one. All four ADR 0001 properties enforced: **freshness** (TTL), **causality** (only a recall mints one), **caller-binding** (the minting principal alone can spend it), and **subject scope** (it covers only the subjects the read returned — [#160](https://github.com/sattyamjjain/mnemo/issues/160)). Unattached, both tools behave exactly as before. This row read "not shipped — removed as dead code" until #159; the earlier removal was real, and so is this | `mnemo-mcp::lease` wired in `server.rs`; `lease.rs` unit tests + `tests/capability_leased_reads.rs` |
 | Cloudflare Mesh / Agent-Deal / baseline exporter / CMA shim | ❌ standalone adapter crates — not invoked by the running server | `mnemo-mesh` / `mnemo-deal` / `mnemo-baseline` / `mnemo-cma` |
 
 #### Bearer-token auth (the floor)
@@ -808,6 +808,52 @@ artifact's full plan / input / trace / output tetrad and diff against
 what the primary agent's plan asked for —
 see [`docs/research/delegate52-2604.15597.md`](docs/research/delegate52-2604.15597.md)
 for the operator recipe and the explicit non-overlap callout.
+
+### Prior art — the release decision mnemo does not make
+
+**Governed Persistent Memory** ([arXiv:2608.12476](https://arxiv.org/abs/2608.12476),
+Guodong Xu, 2026-08-12) is the clearest academic statement of a problem mnemo has
+only partly solved, so it is cited here rather than left out.
+
+Its argument: agent memory is wrongly modelled as select–store–retrieve, because
+**retrieval never decides whether a contradictory, superseded, retracted, deleted
+or stale record may support an outgoing claim**. It proposes a bitemporal
+state-transition model with source-bound admission, derived lifecycle state, and
+fail-closed structured release, expressed as five executable clauses. On its
+hash-frozen 3,600-case GPM-ReleaseBench, the strongest of three *complete* simple
+policies matches only **1,800/3,600** and makes unmatched releases on **50% of
+violation cases**; in its sealed service evaluation the governed lane is correct
+on **2,400/2,400** clusters against **600/2,400** for ungoverned local
+Qwen2.5-7B. Those are bounded contract-conformance results by the paper's own
+framing, not open-world accuracy — the 7B figure is the ungoverned comparison,
+not a claim about model accuracy.
+
+**Where mnemo lands, stated plainly.** mnemo ships two of the five clauses in
+recognisable form and does not ship the model:
+
+- **Ledger integrity — shipped.** SHA-256 hash-chained `agent_events` with an
+  offline verifier; 100% single-byte-mutation detection over 256 trials, with two
+  disclosed 0% gaps (payload-only forge, tail truncation).
+- **Source binding — partial, and weaker than the clause.** `WriteProvenance`
+  binds writes to a principal / capability / session, but `source_type` is
+  optional, defaults to `Agent`, is outside the content hash and absent from the
+  read receipt — so a tool return is not provably separable from user input.
+- **Conflict isolation — partial.** Conflicts are *resolved* at read time and
+  superseded versions de-ranked; the loser is not made unreleasable.
+- **Non-revival after retraction or deletion — not implemented**, and in direct
+  conflict with a shipped feature: point-in-time `as_of` recall deliberately
+  surfaces deleted records.
+- **Exact claim closure over a verified head — not implemented.** There is no
+  release step. `RECALL` returns ranked records and mnemo's involvement ends;
+  mnemo's release posture is fail-open.
+
+**mnemo does not implement GPM's bitemporal derived-lifecycle-state model.**
+There is bitemporal machinery in [`mnemo-graph`](crates/mnemo-graph) and `as_of`
+in core, but no state machine derives per-record releasability from transitions.
+An unforgeable ledger of a bad release is still a bad release — that is the gap,
+and it is not scheduled. See
+[`docs/research/governed-persistent-memory-2608.12476.md`](docs/research/governed-persistent-memory-2608.12476.md)
+for the clause-by-clause table and what adoption would actually cost.
 
 ### Project Think — loop vs. ledger
 
@@ -953,27 +999,36 @@ just performed, breaking the OX-MCP "exfiltrate-then-act" chain. With it on,
 `mnemo.recall` returns a `lease` and `mnemo.forget_subject` requires it:
 
 ```jsonc
-// mnemo.recall result gains:
+// mnemo.recall result gains — `subjects` lists what this read actually covered:
 "lease": { "token": "01a0…", "agent_id": "alice",
-           "scopes": ["forget_subject"], "ttl_seconds": 60 }
+           "scopes": ["forget_subject"], "subjects": ["s1"], "ttl_seconds": 60 }
 
 // mnemo.forget_subject then requires:
 { "subject_id": "s1", "lease_token": "01a0…" }
 ```
 
-A lease is refused if it is expired, names the wrong scope, was never issued, or
-**belongs to a different caller** — the replay case it exists to stop. Requires
-`--capability-key`: without per-request identity every caller shares the boot
-agent id, so every lease would validate for everyone.
+A lease is refused if it is expired, names the wrong scope, was never issued,
+**belongs to a different caller** (the replay case it exists to stop), or
+**does not cover the subject being erased**. Requires `--capability-key`:
+without per-request identity every caller shares the boot agent id, so every
+lease would validate for everyone.
 
 **Off by default**, because it changes the contract of two shipped tools.
 
-> Enforced today: freshness, causality, and caller-binding. **Not** yet enforced:
-> narrowing the erasure to the subjects the read covered — a lease earned by a
-> narrow read still authorises that caller to erase a different subject within
-> the TTL. See [ADR 0001](docs/adr/0001-capability-leased-reads.md) for why, and
-> [#160](https://github.com/sattyamjjain/mnemo/issues/160) for what closing it
-> requires.
+**All four of [ADR 0001](docs/adr/0001-capability-leased-reads.md)'s properties
+are enforced** — freshness, causality, caller-binding, and subject scope. The
+`subjects` set is read off the `subject:` tags of the records the recall
+*returned*, not inferred from the query, so an injected "forget everything about
+bob" cannot ride a legitimate read of `alice`. A read that surfaced no
+subject-tagged record mints a lease that authorises **no** erasure — the empty
+set means nothing, never everything.
+
+> **What it still does not defend:** a single caller driven through both steps.
+> If the same principal is induced to recall subject `s1` and then erase it, the
+> lease is issued and spent legitimately. Narrowing raises the cost — the
+> injection must now steer a read of the very subject it wants erased — but the
+> lease breaks *cross-principal* replay and *stale* authority, not an agent
+> acting against its own interest throughout.
 
 ## Architecture
 

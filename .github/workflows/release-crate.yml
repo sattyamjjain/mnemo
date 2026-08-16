@@ -298,8 +298,28 @@ jobs:
       # mnemo-mcp-server sat at 0.4.4 for 87 days while the libraries moved to
       # 0.5.22. Silence was the failure mode; this makes the state explicit
       # before the walk, and the `--mode assert` step below re-checks it after.
+      #
+      # --fail-on-minor-lag adds the SEVERITY FLOOR, and is passed here and
+      # nowhere else. `--mode assert` (below) already hard-fails on any crate in
+      # WALK that did not land, but it can say nothing about a crate in NO walk —
+      # and that is the hole #140 actually came through: mnemo-embeddings-bench
+      # was absent from every walk, mnemo-mcp-server was stranded behind it, and
+      # the pipeline emitted a warning on each run for 87 days.
+      #
+      # With the floor on, an out-of-walk crate that is a whole minor behind (or
+      # absent from crates.io entirely) fails this release instead of warning.
+      # Note the threshold is ANY minor-level lag, not "more than one minor":
+      # #140 was 0.4.4 against a 0.5.22 workspace, exactly one minor, so a `> 1`
+      # gate would have missed the very incident it was written for.
+      #
+      # This flag is deliberately NOT set in cargo-publish.yml. That workflow is
+      # the push-to-main LIBRARY path and cannot publish mnemo-mcp-server by
+      # design; failing it over a crate only this tag path can ship would block
+      # good library releases on a repair it is incapable of making. WALK here
+      # covers every publishable crate, so the floor can only ever fire on a
+      # crate genuinely nothing will publish.
       - name: Registry parity preflight (print the triple, fail on an unrepaired lag)
-        run: bash scripts/registry_parity.sh --mode preflight --walk "$WALK"
+        run: bash scripts/registry_parity.sh --mode preflight --walk "$WALK" --fail-on-minor-lag
 
       # --- Dry-run first (task step 4) --------------------------------------
       # A PER-CRATE dry-run cannot resolve the not-yet-published internal deps

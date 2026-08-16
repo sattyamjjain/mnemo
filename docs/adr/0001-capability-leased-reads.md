@@ -1,9 +1,11 @@
 # ADR 0001 — Capability-leased reads (per-read lease tokens for privileged tools)
 
-- Status: **Accepted — built and enforced**, opt-in via `--lease-ttl-seconds`
-  (`crates/mnemo-mcp/src/lease.rs`, wired into `mnemo.recall` and `mnemo.forget_subject`)
-- Date: 2026-08-04 (built 2026-08-15)
-- Tracking: [#126](https://github.com/sattyamjjain/mnemo/issues/126)
+- Status: **Accepted — built and enforced, all four properties**, opt-in via
+  `--lease-ttl-seconds` (`crates/mnemo-mcp/src/lease.rs`, wired into
+  `mnemo.recall` and `mnemo.forget_subject`)
+- Date: 2026-08-04 (built 2026-08-15; subject-scope narrowing 2026-08-16)
+- Tracking: [#126](https://github.com/sattyamjjain/mnemo/issues/126),
+  [#160](https://github.com/sattyamjjain/mnemo/issues/160)
 - Supersedes: the removed `crates/mnemo-cli/src/lease.rs` (v0.4.0-rc3 Task B2 dead code, deleted in the publish-drift-and-dead-lease pass)
 
 > **2026-08-15 — this is no longer an unbuilt design.** The text below was written while it was, and is kept as the record of that reasoning. See *What shipped* at the end for the differences between the design and the implementation.
@@ -78,6 +80,9 @@ but it was never the thing standing in the way.
 
 ### Three deliberate departures from the design above
 
+(A fourth — dropping subject-scope narrowing — was listed until 2026-08-16, when
+it landed instead. See the [#160 section](#subject-scope-narrowing--landed-2026-08-16-160).)
+
 1. **No `ExportAuditLog` scope.** The design named two privileged tools, but
    `export_audit_log` is not an MCP tool — it is the
    `mnemo_compliance::export_audit_log` library function. A scope gating a tool
@@ -95,33 +100,71 @@ but it was never the thing standing in the way.
    lease is checked against — answering its own question. The check uses the
    request's resolved principal.
 
+   The `subject_id` check added in [#160](https://github.com/sattyamjjain/mnemo/issues/160)
+   is *not* the same shape, despite also reading a caller-supplied field. There,
+   the caller says which subject it wants to erase and the server tests that
+   against a set **the server derived from its own recall response**. The caller
+   picks the question; it does not get to pick the answer.
+
+### Subject-scope narrowing — landed 2026-08-16 ([#160](https://github.com/sattyamjjain/mnemo/issues/160))
+
+**All four of the design's properties are now enforced.** This section previously
+recorded scope narrowing as *not implemented*, and the reasoning it gave for
+deferring turned out to be one step short of the answer. Both are kept below,
+because a deferral that was wrong is worth reading next to what corrected it.
+
+The original argument: a recall is a *query* (possibly semantic, possibly
+filtered) while `forget_subject` erases by `subject:<id>` tag, so deriving "which
+subjects did this query cover" from a ranked result set would either over-narrow
+(breaking legitimate erasures whose subject ranked below the limit) or
+over-broaden into the blanket authority the lease is meant to prevent. The
+conclusion drawn was that closing it needed the caller to *declare* a subject set
+at recall time — a further breaking change to `mnemo.recall`.
+
+**What was missed: the returned records are not an inference.** Both failure
+modes are properties of guessing from the *query*. The recall *response* is what
+the caller was actually handed, and every record in it carries its own `subject:`
+tags. So the lease records the subjects present on the records the read returned,
+and `forget_subject(subject_id = S)` is authorised iff `S` is in that set.
+Nothing is derived, so neither over-narrowing nor over-broadening applies, and
+the declared-set contract change is unnecessary — a scope the caller nominates is
+a scope the caller chose, which lets it answer its own question. The
+result-derived set is both stricter and free.
+
+Two consequences worth stating outright:
+
+- **A read that surfaced no subject-tagged record authorises no erasure.** The
+  empty set means *nothing*, never *anything*. Reading the empty case as
+  unrestricted would have turned every subject-free recall into a blanket
+  erasure grant — strictly worse than the gap this closes.
+- **It narrows, it does not block.** A wide read still earns a wide lease; the
+  binding is to what was read, not to one subject per lease. And where the
+  original deferral worried about over-narrowing, the caller's remedy is
+  ordinary: recall the subject you intend to erase, then spend that lease.
+
+`LeaseError::SubjectNotCovered` names the subject asked for and the subjects the
+read covered, so a refusal is diagnosable rather than a bare denial. The subject
+check is ordered *after* agent-binding, expiry and scope, so an expired lease
+still reports "expired" and a stale lease does not leak which subjects it covered.
+
+Tests: `a_narrow_read_cannot_be_spent_on_a_different_subject`,
+`a_read_covering_no_subject_authorises_no_erasure`,
+`a_read_covering_several_subjects_authorises_each_of_them`, and
+`subject_check_is_ordered_after_the_coarser_refusals` in
+[`crates/mnemo-mcp/src/lease.rs`](../../crates/mnemo-mcp/src/lease.rs), plus
+`a_lease_earned_by_a_narrow_read_cannot_erase_a_wider_subject` and
+`a_read_that_surfaced_no_subject_authorises_no_erasure` in
+[`crates/mnemo-mcp/tests/capability_leased_reads.rs`](../../crates/mnemo-mcp/tests/capability_leased_reads.rs).
+
 ### What it does not defend
 
-- **Subject-scope narrowing — the design's third property is NOT implemented.**
-  The design says the lease "names what the read covered", so that
-  `forget_subject` can only delete inside that scope and "an injected 'delete
-  everything' cannot ride a narrow read's lease". What shipped enforces
-  **freshness** (TTL), **causality** (a read must have happened), and
-  **caller-binding** (the same principal), but the scope is the coarse
-  `forget_subject` capability, not the subject set the recall returned. A lease
-  earned by a narrow read therefore authorises an erasure of a *different*
-  subject by that same caller, within the TTL.
-  
-  It is left out because the mapping is not obvious and a wrong one would be
-  worse than none: a recall is a *query* (possibly semantic, possibly filtered),
-  while `forget_subject` erases by `subject:<id>` tag, and deriving "which
-  subjects did this query cover" from a ranked result set would either
-  over-narrow (breaking legitimate erasures whose subject ranked below the
-  limit) or over-broaden into exactly the blanket authority it is meant to
-  prevent. Doing it properly means the lease recording an explicit subject set
-  the caller asked for at recall time — a further tool-contract change. Tracked
-  in [#160](https://github.com/sattyamjjain/mnemo/issues/160) (#126 is closed;
-  pointing remaining work at a closed issue is how a known gap quietly becomes
-  an unknown one).
 - **A single compromised caller.** If the same principal is induced to recall
   and then erase, the lease is issued and spent legitimately. The lease breaks
   *cross-principal* replay and *stale* authority, not an agent acting against
-  its own interest throughout.
+  its own interest throughout. Scope narrowing raises the cost — the injection
+  must now steer a read of *the subject it wants erased*, not any read at all,
+  so a single stray recall no longer arms an arbitrary delete — but a caller
+  that can be driven twice can still be driven through both steps.
 - **Anything outside MCP.** The REST, gRPC and pgwire surfaces have their own
   auth and are untouched by this.
 - **Durability.** Leases are process-local and die with the server, by design:
