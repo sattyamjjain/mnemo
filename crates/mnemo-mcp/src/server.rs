@@ -580,14 +580,33 @@ impl MnemoServer {
                 // principal just performed. Additive: absent unless the
                 // operator attached a store.
                 if let Some(store) = self.lease_store.as_ref() {
+                    // #160 — narrow the lease to the subjects this read actually
+                    // covered. Read off the RETURNED records' `subject:` tags,
+                    // not inferred from the query: the response is what the
+                    // caller was handed, so there is nothing to over- or
+                    // under-estimate. A read that surfaced no subject-tagged
+                    // record yields an empty set, which authorises no erasure —
+                    // fail-closed, and the refusal message says why.
+                    let subjects: std::collections::BTreeSet<String> = response
+                        .memories
+                        .iter()
+                        .flat_map(|m| m.tags.iter())
+                        .filter_map(|t| {
+                            t.strip_prefix(mnemo_core::query::forget::SUBJECT_TAG_PREFIX)
+                        })
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect();
                     let lease = store.issue(
                         &caller.caller_id,
                         std::iter::once(crate::lease::LeaseScope::ForgetSubject).collect(),
+                        subjects,
                     );
                     result["lease"] = serde_json::json!({
                         "token": lease.id.to_string(),
                         "agent_id": lease.agent_id,
                         "scopes": lease.scopes.iter().map(|s| s.name()).collect::<Vec<_>>(),
+                        "subjects": lease.subjects.iter().collect::<Vec<_>>(),
                         "ttl_seconds": store.ttl_seconds(),
                     });
                 }
@@ -828,6 +847,11 @@ impl MnemoServer {
         // the requested `agent_id`: the question is "did *you* just read?", and
         // letting the caller name the agent the lease is checked against would
         // let it answer its own question.
+        //
+        // #160 — and against the requested `subject_id`, which the lease must
+        // already cover. That is what makes the question "did you just read
+        // *this subject*?" rather than merely "did you just read?", so an
+        // injected wide delete cannot ride a narrow read's lease.
         if let Some(store) = self.lease_store.as_ref() {
             let Some(ref raw) = input.lease_token else {
                 return Ok(CallToolResult::error(vec![Content::text(
@@ -850,6 +874,7 @@ impl MnemoServer {
                 token_id,
                 &caller.caller_id,
                 crate::lease::LeaseScope::ForgetSubject,
+                &input.subject_id,
             ) {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "lease rejected: {err}"

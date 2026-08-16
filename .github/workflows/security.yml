@@ -69,14 +69,27 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: AgentAuditKit MCP security scan
-        # Pinned to v0.3.68 (latest released tag). This jumps straight past the
-        # stale Dependabot PR #132 (0.3.60 -> 0.3.62) to current. The gate stays
-        # `fail-on: critical` with the .agent-audit-kit.yml suppression baseline
-        # (e.g. AAK-AGENT-001 CLAUDE.md false positive); if a rule added between
-        # 0.3.60 and 0.3.68 surfaces a NEW critical, this job fails loudly and the
+        # Pinned to v0.3.79 (2026-08-15, the current release). This jumps
+        # straight past the stale Dependabot PR #157 (0.3.68 -> 0.3.74), which
+        # was already five releases behind when it opened — merging a stale
+        # intermediate buys another bump immediately and re-runs this triage for
+        # nothing.
+        #
+        # VERIFIED, not assumed. 0.3.68 and 0.3.79 were both run against this
+        # repo with the CI parameters (--config .agent-audit-kit.yml --severity
+        # low --fail-on critical) on 2026-08-16. Rules evaluated went 275 -> 303,
+        # and the finding set was IDENTICAL: same rule IDs, same locations, same
+        # counts, 0 critical, exit 0 on both. 28 new rules, zero new findings on
+        # mnemo. Nothing needed fixing, so nothing was pinned back.
+        #
+        # The gate stays `fail-on: critical` with the .agent-audit-kit.yml
+        # suppression baseline (e.g. the AAK-AGENT-001 CLAUDE.md false positive).
+        # If a future rule surfaces a NEW critical, this job fails loudly and the
         # baseline must be re-derived — that is the intended signal, not a reason
-        # to unpin. Bump deliberately after reviewing the tool's CHANGELOG.
-        uses: sattyamjjain/agent-audit-kit@v0.3.68
+        # to unpin. Reproduce the comparison locally with:
+        #   pipx run --spec agent-audit-kit==0.3.79 aak scan . \
+        #     --config .agent-audit-kit.yml --severity low --fail-on critical
+        uses: sattyamjjain/agent-audit-kit@v0.3.79
         with:
           path: .
           config: .agent-audit-kit.yml

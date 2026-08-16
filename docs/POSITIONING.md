@@ -86,6 +86,19 @@ Stated plainly, because the honesty is the credibility:
   enforce a retention calendar (e.g. Art.26(6)'s six-month clock) and is not a
   conformity assessment. It proves the log is complete and tamper-evident — the
   precondition a record-keeping obligation depends on, not the obligation itself.
+- **There is no release gate — mnemo's release posture is fail-open.** `RECALL`
+  returns ranked records and mnemo's involvement ends; nothing decides whether a
+  contradictory, superseded, retracted, deleted or stale record may support an
+  agent's outgoing claim. **Governed Persistent Memory**
+  ([arXiv:2608.12476](https://arxiv.org/abs/2608.12476)) is the academic
+  statement of exactly this gap, and mnemo does **not** implement its bitemporal
+  derived-lifecycle-state model. Of its five clauses mnemo ships ledger integrity
+  outright, source binding and conflict isolation in weaker partial forms, and
+  neither non-revival after retraction nor claim closure over a verified head —
+  non-revival is in direct conflict with a shipped feature, since `as_of` recall
+  deliberately surfaces deleted records. An unforgeable ledger of a bad release
+  is still a bad release. Clause-by-clause table:
+  [`docs/research/governed-persistent-memory-2608.12476.md`](research/governed-persistent-memory-2608.12476.md).
 
 If your bar is "highest LoCoMo QA," mnemo is the wrong tool. If your bar is "I
 can hand an auditor a memory log they can verify offline, on my own

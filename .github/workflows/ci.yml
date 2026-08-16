@@ -165,6 +165,14 @@ jobs:
       - uses: actions/checkout@v7
       - run: bash scripts/check_version_drift.sh
 
+      # Offline. Asserts the severity-floor threshold in registry_parity.sh
+      # against its documented table. That threshold only ever fires during a
+      # broken release, so nothing else would exercise it — and the natural
+      # wrong spelling ("fail on more than one minor") silently misses #140,
+      # which was exactly ONE minor behind. This is what keeps it honest.
+      - name: Registry-parity severity-floor self-test
+        run: bash scripts/registry_parity.sh --self-test
+
   # Python test suite. Added 2026-08-15 — until then NOTHING ran pytest, so the
   # 138-test Python suite was unexecuted in CI and had been sitting on two
   # failures nobody could see: a version-alignment test red since 0.5.12, and a

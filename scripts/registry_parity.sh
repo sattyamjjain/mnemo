@@ -26,7 +26,14 @@
 #   --mode preflight   Run BEFORE the publish walk. Prints, for every publishable
 #                      crate, the triple (workspace version, newest git tag,
 #                      crates.io version), and reports every lag by name. It is
-#                      deliberately hard to fail — see "where the teeth are".
+#                      deliberately hard to fail — see "where the teeth are" —
+#                      UNLESS --fail-on-minor-lag is passed.
+#
+#   --fail-on-minor-lag  Preflight only. Adds a SEVERITY FLOOR: a crate that is
+#                      behind at MINOR level (or absent entirely) and is NOT in
+#                      this walk becomes a hard failure instead of a warning.
+#                      Used by release-crate.yml, NOT by cargo-publish.yml —
+#                      see "the severity floor" below for why the split matters.
 #
 #   --mode assert      Run AFTER the publish walk. Every crate named must now be
 #                      AT the workspace version on crates.io. A crate still
@@ -61,6 +68,47 @@
 # crate only blocks good releases; a post-publish assertion catches the bad ones.
 #
 # ---------------------------------------------------------------------------
+# The severity floor (--fail-on-minor-lag)
+# ---------------------------------------------------------------------------
+# `--mode assert` closes the "walk skipped a crate it owned" hole. It does NOT
+# close the hole that actually produced #140: a crate that is in NO walk. Nothing
+# asserts over it, because no walk claimed it, so it warns forever and 87 days
+# pass. `mnemo-embeddings-bench` was absent from every walk; `mnemo-mcp-server`
+# was stranded behind it. Both only ever produced ::warning:: lines.
+#
+# So: pass --fail-on-minor-lag on the RELEASE path and an out-of-walk crate that
+# is behind at minor level, or absent entirely, is a hard failure.
+#
+# THE THRESHOLD, AND WHY IT IS NOT "more than one minor version".
+#
+# The obvious spelling of this gate is "fail if a crate drifts by more than one
+# minor version". Check it against the case it exists for: #140 was
+# mnemo-mcp-server at 0.4.4 against a 0.5.22 workspace. That is exactly ONE minor
+# behind. A `> 1 minor` gate would have watched the whole 87 days go by in
+# silence — a guard that misses the incident it was written for is worse than no
+# guard, because it also supplies confidence.
+#
+# The floor is therefore ANY minor-level lag: a crate behind by a whole minor (or
+# a major) fails. Patch-level lag keeps the existing one-patch slack, because
+# between a version bump and its publish the repo is legitimately ahead and a
+# gate that reddens on every release PR gets disabled within a week.
+#
+#   workspace 0.5.24, registry 0.5.23  -> pass (one patch, publish in flight)
+#   workspace 0.5.24, registry 0.5.22  -> pass at the floor (still patch-level;
+#                                         the existing >1-patch warning fires)
+#   workspace 0.5.22, registry 0.4.4   -> FAIL  (#140's exact shape)
+#   workspace 0.5.22, absent           -> FAIL  (nothing will ever ship it)
+#
+# WHY ONLY THE RELEASE PATH. cargo-publish.yml (push-to-main, libraries) does not
+# and must not publish mnemo-mcp-server; only the tag path does. Applying the
+# floor there would block library releases on a crate that path cannot repair —
+# the exact coupling documented above as deadlock #2, which already broke a real
+# 0.5.23 run once. release-crate.yml's walk covers every publishable crate, so
+# there is no crate it is blamed for and cannot fix, and an in-walk lag is still
+# classified REPAIRING and proceeds. The floor can only fire on a crate that
+# genuinely nothing will publish.
+#
+# ---------------------------------------------------------------------------
 # Division of labour with the other version guards (do not merge these)
 # ---------------------------------------------------------------------------
 #   scripts/registry_parity.sh          ONLINE. repo vs crates.io/npm/PyPI.
@@ -77,6 +125,7 @@
 # ---------------------------------------------------------------------------
 #   scripts/registry_parity.sh --mode preflight
 #   scripts/registry_parity.sh --mode preflight --walk "mnemo-core mnemo-mcp"
+#   scripts/registry_parity.sh --mode preflight --walk "$WALK" --fail-on-minor-lag
 #   scripts/registry_parity.sh --mode assert mnemo-core mnemo-mcp-server
 #
 set -euo pipefail
@@ -86,17 +135,30 @@ UA='mnemo-registry-parity (https://github.com/sattyamjjain/mnemo)'
 
 MODE=""
 WALK=""
+FLOOR=0
+SELFTEST=0
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode) MODE="${2:-}"; shift 2 ;;
     --walk) WALK="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,80p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --fail-on-minor-lag) FLOOR=1; shift ;;
+    --self-test) SELFTEST=1; shift ;;
+    -h|--help) sed -n '2,90p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
-if [[ "$MODE" != "preflight" && "$MODE" != "assert" ]]; then
+# --self-test needs no --mode; it runs offline against the threshold table and
+# exits. The block itself lives below, after minor_level_behind is defined.
+if [[ "${SELFTEST:-0}" -eq 0 ]] && [[ "$MODE" != "preflight" && "$MODE" != "assert" ]]; then
   echo "::error::registry_parity.sh: --mode must be 'preflight' or 'assert' (got '${MODE:-}')" >&2
+  exit 2
+fi
+# The floor is a preflight concept. `assert` is already unconditionally hard on
+# every crate in the walk, so accepting the flag there would imply it loosens or
+# changes something. Reject it rather than silently ignore it.
+if [[ $FLOOR -eq 1 && "$MODE" != "preflight" ]]; then
+  echo "::error::registry_parity.sh: --fail-on-minor-lag applies to --mode preflight only (--mode assert is already hard-failing)" >&2
   exit 2
 fi
 
@@ -222,6 +284,71 @@ sys.exit(0)                     # behind by more than one patch
 PY
 }
 
+# True when `published` is behind `workspace` at MINOR level or worse — a whole
+# minor version, or a major. A patch-only lag is NOT minor-level, however many
+# patches wide it is; that case keeps the softer >1-patch warning above.
+#
+# This is the severity floor's predicate. See "the severity floor" in the header
+# for why it is not spelled "more than one minor" — #140 was exactly one minor
+# behind, so a `> 1` threshold would have missed it entirely.
+minor_level_behind() {
+  python3 - "$1" "$2" <<'PY'
+import sys
+def parts(v):
+    core = (v or "0").split("+", 1)[0].split("-", 1)[0]
+    out = []
+    for p in core.split("."):
+        n = ""
+        for ch in p:
+            if ch.isdigit(): n += ch
+            else: break
+        out.append(int(n) if n else 0)
+    return (out + [0, 0, 0])[:3]
+w, p = parts(sys.argv[1]), parts(sys.argv[2])
+if p >= w:            sys.exit(1)   # level or ahead: not behind at all
+if p[0] < w[0]:       sys.exit(0)   # a whole major behind
+if p[1] < w[1]:       sys.exit(0)   # a whole minor behind  <- #140's shape
+sys.exit(1)                         # same major+minor: patch-level only
+PY
+}
+
+if [[ $SELFTEST -eq 1 ]]; then
+  # Offline assertion of the severity floor's threshold, run in CI.
+  #
+  # A version-comparison predicate is exactly the kind of code that is written
+  # once, is never exercised because the healthy path never trips it, and is
+  # wrong when it finally matters. The rows below ARE the table in the header —
+  # if someone "simplifies" the threshold to `> 1 minor`, the #140 row goes red
+  # here instead of going quiet for 87 days in production.
+  st_fail=0
+  # fields: workspace  published  expect(yes = minor-level behind)  label
+  while read -r w p expect label; do
+    [[ -z "${w:-}" || "$w" == \#* ]] && continue
+    if minor_level_behind "$w" "$p"; then got=yes; else got=no; fi
+    if [[ "$got" == "$expect" ]]; then
+      printf '  ok    %-8s vs %-8s -> %-3s  %s\n' "$w" "$p" "$got" "$label"
+    else
+      printf '  FAIL  %-8s vs %-8s -> %-3s (expected %s)  %s\n' "$w" "$p" "$got" "$expect" "$label"
+      st_fail=1
+    fi
+  done <<'CASES'
+0.5.24 0.5.23 no one patch behind, publish in flight
+0.5.24 0.5.22 no two patches behind, still patch-level (the softer warning owns this)
+0.5.23 0.5.23 no at parity
+0.5.23 0.5.24 no registry ahead (the DRIFT check owns this)
+0.5.22 0.4.4 yes #140 EXACTLY - one whole minor behind, must fail
+0.6.0 0.5.23 yes one whole minor behind at a minor bump
+1.0.0 0.5.23 yes a whole major behind
+0.5.23 0.4.0 yes a whole minor behind at .0
+CASES
+  if [[ $st_fail -ne 0 ]]; then
+    echo "::error::registry_parity.sh --self-test FAILED: the severity-floor threshold no longer matches its documented table. #140 was exactly ONE minor behind, so a '> 1 minor' threshold silently misses the incident this gate exists for." >&2
+    exit 1
+  fi
+  echo "registry_parity.sh --self-test OK (severity-floor threshold matches its documented table)"
+  exit 0
+fi
+
 in_walk() { case " $WALK " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 # ---------------------------------------------------------------------------
@@ -241,6 +368,11 @@ echo "registry parity — mode=${MODE}"
 echo "  workspace version : ${ws}"
 echo "  newest git tag    : ${newest_tag}"
 [[ -n "$WALK" ]] && echo "  publish walk      : ${WALK}"
+if [[ $FLOOR -eq 1 ]]; then
+  echo "  severity floor    : ON — an out-of-walk crate a whole minor behind (or absent) FAILS this release"
+else
+  echo "  severity floor    : off — lags outside this walk warn only"
+fi
 echo
 printf '  %-30s %-11s %-11s %-11s %s\n' "crate" "workspace" "git tag" "crates.io" "status"
 printf '  %-30s %-11s %-11s %-11s %s\n' "------------------------------" "-----------" "-----------" "-----------" "------"
@@ -267,6 +399,12 @@ for c in "${crates[@]}"; do
       elif in_walk "$c"; then
         status="absent — this walk CREATES it (needs publish-new)"
         repairing+=("${c}: absent -> ${ws}")
+      elif [[ $FLOOR -eq 1 ]]; then
+        # Severity floor engaged (release path). Absent AND in no walk is the
+        # strictly worst state there is: nothing will ever ship it. On the
+        # release path that is not a warning, it is a broken release.
+        status="ABSENT and in NO walk — severity floor"
+        fail+=("${c}: absent from crates.io and in no publish walk — nothing will ever ship it (workspace ${ws})")
       else
         # Publishable, never published, and in no publish walk. Not a hard
         # failure (a freshly added crate legitimately looks like this for one
@@ -286,6 +424,13 @@ for c in "${crates[@]}"; do
         if in_walk "$c"; then
           status="LAGS ${rv} -> this walk repairs it"
           repairing+=("${c}: ${rv} -> ${ws}")
+        elif [[ $FLOOR -eq 1 ]] && minor_level_behind "$ws" "$rv"; then
+          # Severity floor engaged (release path). A crate a whole minor behind,
+          # that this walk does not repair, is not a "warning" — it is the #140
+          # state, and the only reason it lasted 87 days is that it produced a
+          # warning every time and a failure never. Stop the release.
+          status="LAGS ${rv} — MINOR-level, in NO walk — severity floor"
+          fail+=("${c}: crates.io=${rv} is a whole minor behind workspace=${ws} and this walk does not repair it — this is issue #140's exact shape (mnemo-mcp-server sat one minor behind for 87 days while every run reported success)")
         else
           # Lagging, and this walk is not responsible for it.
           #
@@ -399,7 +544,11 @@ if [[ ${#fail[@]} -gt 0 ]]; then
   if [[ "$MODE" == "assert" ]]; then
     echo "::error::release parity FAILED — ${#fail[@]} artifact(s) did not reach ${ws}. A publish that reports success while leaving a member behind is the exact silent failure that stranded mnemo-mcp-server at 0.4.4 for 87 days (issue #140)."
   else
-    echo "::error::publish preflight FAILED — ${#fail[@]} artifact(s) lag the workspace and this walk does not repair them. Add them to the walk or fix the registry state before publishing (issue #140)."
+    if [[ $FLOOR -eq 1 ]]; then
+      echo "::error::publish preflight FAILED (severity floor ON) — ${#fail[@]} artifact(s) are a whole minor behind or absent, and this walk does not repair them. Add each to the WALK in release-crate.yml, or set publish = false so the intent is explicit. This gate exists because #140's 87-day drift only ever produced warnings."
+    else
+      echo "::error::publish preflight FAILED — ${#fail[@]} artifact(s) lag the workspace and this walk does not repair them. Add them to the walk or fix the registry state before publishing (issue #140)."
+    fi
   fi
   for f in "${fail[@]}"; do echo "::error::  ${f}"; done
   {
@@ -410,7 +559,7 @@ if [[ ${#fail[@]} -gt 0 ]]; then
     if [[ $unreachable -eq 1 ]]; then
       echo "At least one failure is an UNREACHABLE registry, not a version lag. Re-run before concluding anything about the published state."
     fi
-    echo "Rotating \`CARGO_REGISTRY_TOKEN\` is an **operator action** and cannot be done from CI — see [issue #140](https://github.com/sattyamjjain/mnemo/issues/140)."
+    echo "**Triage in order: [\`docs/release/registry-token-runbook.md\`](https://github.com/sattyamjjain/mnemo/blob/main/docs/release/registry-token-runbook.md).** Do NOT rotate the token first — during [#140](https://github.com/sattyamjjain/mnemo/issues/140) the token was never the blocker, and the \`/api/v1/me\` 403 that anchored that diagnosis was advisory. Check walk membership and the tag/CHANGELOG gates before touching credentials."
   } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
   exit 1
 fi
