@@ -67,6 +67,13 @@ const KNOWN_NON_CRATE: &[(&str, &str)] = &[
          'has not been built — it is not a workspace member' context. Tracked in \
          docs/roadmap/planned-crates.md (#74).",
     ),
+    (
+        "mnemo-actually-lands",
+        "token-extraction artifact from the URL fragment #where-mnemo-actually-lands, \
+         the anchor of the 'Where mnemo actually lands' heading in \
+         docs/research/governed-persistent-memory-2608.12476.md. A link fragment, not \
+         a crate claim.",
+    ),
 ];
 
 fn repo_root() -> PathBuf {
