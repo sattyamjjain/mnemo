@@ -87,13 +87,24 @@ jobs:
     name: Gate (fmt + clippy + tests, publish closure)
     if: github.repository == 'sattyamjjain/mnemo'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 90, not 30. The v0.5.24 tag run died here: on a COLD cache the closure
+    # needs ~12m for clippy alone (duckdb-bundled, tantivy, sqlx, tonic all
+    # compile from source), and `Test` was still running at 17m41s when the 30m
+    # cap cancelled the job — so `publish` skipped and the release silently did
+    # not happen. This is a budget problem, not a hang: no step was stuck.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # `cache-on-failure` is what makes a retry cheaper than the first attempt.
+      # By default rust-cache saves only on success, and the post-step is SKIPPED
+      # outright when a job is cancelled — so the timed-out v0.5.24 run persisted
+      # nothing and a plain re-run would have started cold and hit the same wall.
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       # `mnemo-grpc` (in the publish closure since v0.5.20) has a prost build
       # script that shells out to `protoc`; without it clippy/test fail before
       # any publish.
