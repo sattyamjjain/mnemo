@@ -302,3 +302,39 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p mnemo-mcp-server --test workspace_version_fence
+
+  # Offline documentation guards. Deliberately NOT in docs.yml: that workflow is
+  # path-filtered to docs/** and only runs when documentation changes, but both
+  # guards below protect against text reappearing *anywhere*, including in a PR
+  # that touches no doc path directly.
+  doc-guards:
+    name: Doc guards (crate names, GPM clause table)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Two crates.io names collide with this project and belong to other
+      # people: `mnemo` (aayushadhikari7/mnemo) and `mnemo-cli` (watzon/mnemo).
+      # This project publishes only under `mnemo-*`, and the server binary
+      # publishes as `mnemo-mcp-server` even though its crate directory is
+      # `crates/mnemo-cli` — which is what makes `cargo install mnemo-cli` such
+      # an easy line to write. It resolves, it installs someone else's program,
+      # and without this gate nothing anywhere goes red.
+      #
+      # This was verified by hand once (CHANGELOG, 2026-08-12) and then had no
+      # way to stay verified. The self-test runs first so a matcher that can no
+      # longer fire fails loudly instead of passing as clean coverage.
+      - name: Crate-name reference guard self-test
+        run: bash scripts/check_crate_name_refs.sh --self-test
+      - name: Crate-name reference guard
+        run: bash scripts/check_crate_name_refs.sh
+
+      # The GPM gap table is generated from
+      # docs/research/governed-persistent-memory-clauses.toml. This fails if the
+      # committed markdown has drifted from the manifest. The *content* of the
+      # manifest — that a shipped clause points at a real symbol and an absent
+      # one points at nothing — is asserted separately by
+      # `cargo test -p mnemo-compliance --test gpm_clause_manifest` in the main
+      # test job.
+      - name: GPM clause table is generated, not hand-edited
+        run: python3 scripts/gen_gpm_clause_table.py --check

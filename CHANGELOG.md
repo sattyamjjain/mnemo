@@ -12,6 +12,82 @@ The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with 
 points at the cut commit directly above it, which is where the `## [0.5.23]` heading the
 publish gate requires first exists.
 
+### Added (2026-08-17) - the crate-name collision, stated; the GPM table, generated
+
+Three things that were true but unenforced, or true but written down twice.
+
+- **Crate-name collision, in the README rather than in a maintainer's head.** New
+  `### Naming` section under *Install from crates.io*: this project does not own the
+  `mnemo` name on crates.io and publishes only under `mnemo-*`. **Two** foreign crates sit
+  on names a reader would reach for — [`mnemo`](https://crates.io/crates/mnemo) @ 1.0.0
+  (`aayushadhikari7/mnemo`, "a personal knowledge vault for your terminal") and
+  [`mnemo-cli`](https://crates.io/crates/mnemo-cli) @ 0.1.0 (`watzon/mnemo`, "CLI
+  management tool for the Mnemo LLM memory proxy"). `mnemo-cli` is the sharper trap and was
+  previously undocumented: this repo's server binary lives in the directory
+  `crates/mnemo-cli` but **publishes as `mnemo-mcp-server`**, so `cargo install mnemo-cli`
+  resolves, installs someone else's program, and nothing goes red. Verified live
+  2026-08-17 against the crates.io API; ownership determined from each crate's
+  `repository` field, not from the name.
+- **[`scripts/check_crate_name_refs.sh`](scripts/check_crate_name_refs.sh) + a `doc-guards`
+  CI job.** The 2026-08-12 entry below records "Verified no doc tells a user to
+  `cargo add mnemo`" — a **one-time manual check with no way to stay verified**. This
+  converts it into a gate over every tracked markdown file. It flags the wrong crate only
+  inside fenced code blocks, so prose may name the trap in order to warn about it (the
+  README `Naming` section has to). `CHANGELOG.md` is excluded: it quotes the wrong command
+  on purpose and rewriting history to please a linter is the wrong repair. `--self-test`
+  runs 17 cases — including a fenced-vs-prose fixture — and fails if the matcher stops
+  separating the crates we publish from the two we do not own, on the
+  `registry_parity.sh --self-test` principle that a guard never shown to fire is
+  indistinguishable from one that cannot. **Audited at the same time:** all 21 publishable
+  workspace crates are on crates.io under `mnemo-*`; `mnemo-golem-host`,
+  `mnemo-golem-wit` and `mnemo-python` are unpublished, and the eight `bench/*` crates
+  other than `mnemo-embeddings-bench` are `publish = false`. **No doc needed correcting** —
+  every existing reference was already right. The guard is what keeps that true.
+- **The GPM clause table is now generated, not prose.**
+  [`docs/research/governed-persistent-memory-clauses.toml`](docs/research/governed-persistent-memory-clauses.toml)
+  is the source of truth for all five Governed Persistent Memory clauses
+  ([arXiv:2608.12476](https://arxiv.org/abs/2608.12476)); the markdown table is rendered by
+  [`scripts/gen_gpm_clause_table.py`](scripts/gen_gpm_clause_table.py) (same
+  `--write`/`--print`/`--check` interface as `gen_published_versions.py`), and CI fails if
+  the committed table has drifted. `mnemo-compliance` owns the correctness test
+  ([`tests/gpm_clause_manifest.rs`](crates/mnemo-compliance/tests/gpm_clause_manifest.rs)):
+  a `ships`/`partial` clause must point at a symbol that **exists**, an `absent` clause must
+  point at **nothing** — the direction that protects honesty rather than marketing, since it
+  fires when an implementation appears while the doc still claims a gap — and the
+  `conflicts` clause must name a shipped feature that is **still shipped**, so the
+  non-revival-vs-`as_of` conflict cannot be silently resolved while the page keeps asserting
+  it. All four assertions were verified in the failing direction by mutation before landing.
+  The table's restatements in `README.md` and [POSITIONING](docs/POSITIONING.md) are replaced
+  by links to the one generated copy; the fix also corrected a `WriteProvenance` link that
+  pointed at `provenance.rs` rather than `model/write_provenance.rs`.
+
+### Verified (2026-08-17) - Postgres semantic recall does not return empty
+
+The long-standing "semantic recall on PostgreSQL returns an empty result instead of
+failing" concern is **already fixed** — no behaviour changed here. Verified at
+[`6f0ffb7`](https://github.com/sattyamjjain/mnemo/commit/6f0ffb7). Recorded so this stops
+being re-investigated.
+
+- Fail-loud landed in [`686bcd1`](https://github.com/sattyamjjain/mnemo/commit/686bcd1),
+  became the structured `Error::BackendUnsupported { backend, capability, detail }` in
+  [`cce82ed`](https://github.com/sattyamjjain/mnemo/commit/cce82ed), and the path became a
+  real pgvector ANN query in
+  [`665e319`](https://github.com/sattyamjjain/mnemo/commit/665e319) / async in
+  [`74c43bc`](https://github.com/sattyamjjain/mnemo/commit/74c43bc) (#99). All four
+  `filtered_search` call sites in `query/recall.rs` (`semantic`, `auto`, `graph`,
+  `domain_scoped`) propagate with `.await?`.
+- **The claim was nonetheless untested in ordinary CI.** The only end-to-end coverage was
+  `tests/pgvector_ann.rs`, which **skips** when `MNEMO_TEST_POSTGRES_URL` is unset — the
+  same "a skip is indistinguishable from a pass" hole that let `mnemo-mcp-server` strand for
+  87 days. New
+  [`crates/mnemo-postgres/tests/semantic_recall_fails_loud.rs`](crates/mnemo-postgres/tests/semantic_recall_fails_loud.rs)
+  needs no database, runs on every `cargo test --workspace`, and asserts through the
+  **engine** rather than the index that all four strategies return `BackendUnsupported`
+  instead of `Ok(empty)`. The fixture store provably holds a record — checked by a control
+  test reading storage directly, not via any recall strategy — so "no matches" and "not
+  implemented" cannot be confused. Confirmed to fail in the right direction: injecting a
+  single `.unwrap_or_default()` on the `semantic` call site turns it red with `Ok(0)`.
+
 ### Added (2026-08-16) - prior-art citation and a release check with teeth
 
 Cited the governed-persistent-memory paper in prior art, including the part mnemo does not do.

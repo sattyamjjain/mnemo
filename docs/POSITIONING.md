@@ -92,13 +92,13 @@ Stated plainly, because the honesty is the credibility:
   agent's outgoing claim. **Governed Persistent Memory**
   ([arXiv:2608.12476](https://arxiv.org/abs/2608.12476)) is the academic
   statement of exactly this gap, and mnemo does **not** implement its bitemporal
-  derived-lifecycle-state model. Of its five clauses mnemo ships ledger integrity
-  outright, source binding and conflict isolation in weaker partial forms, and
-  neither non-revival after retraction nor claim closure over a verified head —
-  non-revival is in direct conflict with a shipped feature, since `as_of` recall
-  deliberately surfaces deleted records. An unforgeable ledger of a bad release
-  is still a bad release. Clause-by-clause table:
-  [`docs/research/governed-persistent-memory-2608.12476.md`](research/governed-persistent-memory-2608.12476.md).
+  derived-lifecycle-state model. Of its five clauses mnemo ships one outright,
+  two in weaker partial forms, and does not implement the other two — one of
+  which is in direct conflict with a shipped feature. An unforgeable ledger of a
+  bad release is still a bad release. Which clause is in which state is stated
+  once, in the generated, test-asserted
+  [clause-by-clause table](research/governed-persistent-memory-2608.12476.md#where-mnemo-actually-lands),
+  and deliberately not repeated here.
 
 If your bar is "highest LoCoMo QA," mnemo is the wrong tool. If your bar is "I
 can hand an auditor a memory log they can verify offline, on my own

@@ -134,9 +134,11 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.23`.** The whole line is on crates.io at `0.5.23` —
-> libraries *and* the `mnemo-mcp-server` binary. `cargo install mnemo-mcp-server`
-> resolves `0.5.23`. This closes
+> **Current release: `0.5.24`** — the workspace version, cut but **not yet
+> published**. crates.io still serves the previous release; the generated table
+> below is the authority on what is actually installable today, and
+> `cargo install mnemo-mcp-server` resolves whatever that table shows. The whole
+> line publishes together — libraries *and* the `mnemo-mcp-server` binary. This closes
 > [#140](https://github.com/sattyamjjain/mnemo/issues/140): the server had been
 > stranded at `0.4.4` (2026-05-18) for 87 days behind the never-created
 > `mnemo-embeddings-bench`, which now publishes as part of the release walk. Two guards keep
@@ -165,12 +167,37 @@ Workspace `[workspace.package].version` (released): **`v0.5.23`**. The Rust libr
 _Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
 <!-- END generated: published-versions -->
 
-> **Which crate?** There is no single `mnemo` crate — the unqualified `mnemo`
-> name on crates.io is an unrelated project. Install `mnemo-core` +
-> `mnemo-mcp` as above. The [`mnemo-db`](https://crates.io/crates/mnemo-db)
-> crate on crates.io is a defensive **name-reservation pointer** that ships no
-> code and simply redirects here (distinct from the PyPI `mnemo-db` package,
-> which *is* the real Python SDK — see [Python](#python) below).
+### Naming
+
+This project does not own the `mnemo` name on crates.io, and does not publish a
+crate called `mnemo`. Everything it publishes carries the `mnemo-*` prefix.
+
+Two unrelated crates sit on names you might otherwise reach for:
+
+| crates.io name | Who owns it | What it is |
+|---|---|---|
+| [`mnemo`](https://crates.io/crates/mnemo) | [aayushadhikari7/mnemo](https://github.com/aayushadhikari7/mnemo) | "A personal knowledge vault for your terminal" — not this project |
+| [`mnemo-cli`](https://crates.io/crates/mnemo-cli) | [watzon/mnemo](https://github.com/watzon/mnemo) | "CLI management tool for the Mnemo LLM memory proxy" — not this project |
+
+`mnemo-cli` is the easier mistake: this repo's server binary lives in the
+directory `crates/mnemo-cli`, but it **publishes as `mnemo-mcp-server`**. The
+directory name is not the crate name.
+
+The server binary is:
+
+```bash
+cargo install mnemo-mcp-server   # installs the `mnemo` executable
+```
+
+The `mnemo` **command** this installs is ours; the `mnemo` **crate** is not.
+[`mnemo-db`](https://crates.io/crates/mnemo-db) on crates.io is a defensive
+name-reservation pointer that ships no code and redirects here — distinct from
+the PyPI `mnemo-db` package, which *is* the real Python SDK (see
+[Python](#python) below).
+
+`scripts/check_crate_name_refs.sh` fails CI if a bare `cargo install mnemo` or
+`cargo add mnemo` (or the `mnemo-cli` equivalents) reappears anywhere in the
+docs.
 
 The wedge — a memory-write log an auditor can verify **offline, without trusting
 the store** — is the [`mnemo-core`](https://crates.io/crates/mnemo-core)
@@ -416,8 +443,8 @@ pip install mnemo-db
 
 > **Version line & wire compatibility.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**. That gap is expected, not skew — and here is exactly what `0.5.12` is compatible with, stated rather than left implicit:
 >
-> - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.23 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
-> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — install it with `cargo install mnemo-mcp-server` (0.5.23 as of 2026-08-14 — the 0.4.4 strand tracked by [#140](https://github.com/sattyamjjain/mnemo/issues/140) is repaired and that issue is closed), or build from source with `cargo build --release -p mnemo-mcp-server`. The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
+> - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.24 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
+> - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — install it with `cargo install mnemo-mcp-server` (see the [published-versions table](#install-from-cratesio) for what that resolves to today — the 0.4.4 strand tracked by [#140](https://github.com/sattyamjjain/mnemo/issues/140) is repaired and that issue is closed), or build from source with `cargo build --release -p mnemo-mcp-server`. The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
 
 ```python
 from mnemo import MnemoClient
@@ -547,6 +574,17 @@ empty result. Verified end-to-end against a live pgvector Postgres by the
 nearest-in-rank-order + permission filter under a multi-threaded runtime, **and**
 a `current_thread`-runtime regression test that the old bridge would have
 panicked on.
+
+That integration test **skips** when `MNEMO_TEST_POSTGRES_URL` is unset, so on an
+ordinary CI run it proved nothing about the fail-loud claim.
+[`crates/mnemo-postgres/tests/semantic_recall_fails_loud.rs`](crates/mnemo-postgres/tests/semantic_recall_fails_loud.rs)
+closes that hole: it needs no database, runs on every `cargo test --workspace`,
+and asserts through the **engine** (not just the index) that `semantic`, `auto`,
+`graph` and `domain_scoped` recall each return `BackendUnsupported` rather than
+`Ok(empty)` — against a store that provably contains a record, so "no matches"
+and "not implemented" cannot be confused. Re-introducing a single
+`.unwrap_or_default()` on any of the four `filtered_search` call sites in
+`recall.rs` turns it red.
 
 ### Embedder support matrix — which embedders actually produce semantic results
 
@@ -831,21 +869,15 @@ not a claim about model accuracy.
 **Where mnemo lands, stated plainly.** mnemo ships two of the five clauses in
 recognisable form and does not ship the model:
 
-- **Ledger integrity — shipped.** SHA-256 hash-chained `agent_events` with an
-  offline verifier; 100% single-byte-mutation detection over 256 trials, with two
-  disclosed 0% gaps (payload-only forge, tail truncation).
-- **Source binding — partial, and weaker than the clause.** `WriteProvenance`
-  binds writes to a principal / capability / session, but `source_type` is
-  optional, defaults to `Agent`, is outside the content hash and absent from the
-  read receipt — so a tool return is not provably separable from user input.
-- **Conflict isolation — partial.** Conflicts are *resolved* at read time and
-  superseded versions de-ranked; the loser is not made unreleasable.
-- **Non-revival after retraction or deletion — not implemented**, and in direct
-  conflict with a shipped feature: point-in-time `as_of` recall deliberately
-  surfaces deleted records.
-- **Exact claim closure over a verified head — not implemented.** There is no
-  release step. `RECALL` returns ranked records and mnemo's involvement ends;
-  mnemo's release posture is fail-open.
+Of the paper's five clauses, mnemo ships **one** outright (ledger integrity),
+**two** in weaker partial forms (source binding, conflict isolation), and does
+not implement the remaining **two** (non-revival after retraction, claim closure
+over a verified head) — one of which is in direct conflict with a shipped
+feature.
+
+Which is which is deliberately **not** restated here. It lives in one place, is
+generated from a manifest, and is asserted against the tree by a test:
+[**the clause-by-clause table**](docs/research/governed-persistent-memory-2608.12476.md#where-mnemo-actually-lands).
 
 **mnemo does not implement GPM's bitemporal derived-lifecycle-state model.**
 There is bitemporal machinery in [`mnemo-graph`](crates/mnemo-graph) and `as_of`

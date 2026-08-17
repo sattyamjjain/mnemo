@@ -1,0 +1,147 @@
+##
+# Governed Persistent Memory (arXiv:2608.12476) — clause-by-clause status.
+#
+# THIS FILE IS THE SOURCE OF TRUTH for the gap table in
+# `governed-persistent-memory-2608.12476.md`. The markdown table is GENERATED
+# from this file:
+#
+#     python3 scripts/gen_gpm_clause_table.py
+#
+# Do not hand-edit the table between the `<!-- BEGIN generated: gpm-clauses -->`
+# / `<!-- END generated: gpm-clauses -->` markers — the generator overwrites it
+# and `scripts/gen_gpm_clause_table.py --check` fails in CI if it has drifted.
+#
+# Every `path`/`symbol` pair below is asserted by
+# `crates/mnemo-compliance/tests/gpm_clause_manifest.rs`:
+#
+#   status = "ships" | "partial"  -> MUST name at least one implementation, and
+#                                    every named symbol must exist in the file.
+#   status = "absent"             -> MUST name NO implementation. A clause we do
+#                                    not implement cannot quietly acquire one
+#                                    without the test going red.
+#   status = "conflicts"          -> MUST name no implementation, AND must name
+#                                    the shipped feature it conflicts with, whose
+#                                    symbol must exist. If that feature is ever
+#                                    removed the conflict claim is stale, and the
+#                                    test says so.
+#
+# The point of the manifest is that the five statuses cannot drift silently:
+# prose drifts, a test does not.
+##
+
+[paper]
+arxiv = "2608.12476"
+url = "https://arxiv.org/abs/2608.12476"
+title = "Governed Persistent Memory: Source-Bound State Semantics and Fail-Closed Release for Long-Horizon Agents"
+author = "Guodong Xu"
+submitted = "2026-08-12"
+surfaced = "2026-08-16"
+
+# ---------------------------------------------------------------------------
+
+[[clause]]
+id = "ledger-integrity"
+name = "Ledger integrity"
+status = "ships"
+statement = "The write log is append-only and tamper-evident, verifiable without trusting the store."
+notes = """
+SHA-256 hash-chained `agent_events` with an offline verifier that needs no trust \
+in the store. Measured: **100% single-byte-mutation detection over 256 trials** \
+([`bench/audit_conformance`](../../bench/audit_conformance)), and delete / reorder / \
+forge-integrity-field each 100% over 200 trials \
+([`bench/audit_tamper`](../../bench/audit_tamper)), with two **disclosed 0% gaps** — \
+payload-only forge and tail truncation. This is the one clause where mnemo is on \
+comparable ground.\
+"""
+implementation = [
+  { path = "crates/mnemo-core/src/hash.rs", symbol = "verify_event_chain" },
+  { path = "crates/mnemo-core/src/query/mod.rs", symbol = "verify_event_integrity" },
+]
+
+[[clause]]
+id = "source-binding"
+name = "Source binding"
+status = "partial"
+statement = "A record's admission is bound to the source that produced it, rather than accepted as undifferentiated content."
+weakness = "not admission-controlling, and not tamper-proof in the way the clause requires"
+notes = """
+[`WriteProvenance`](../../crates/mnemo-core/src/model/write_provenance.rs) binds every \
+`REMEMBER` / `SHARE` to a principal, capability and session over a SHA-256 chain, and \
+`SourceType` records an origin. **But the binding is not admission-controlling and not \
+tamper-proof in the way the clause requires**: `source_type` is optional, defaults to \
+`Agent`, is not covered by the content hash, and does not appear in the read receipt — \
+so a tool return is **not provably separable from user input**. That limitation is \
+already written down in \
+[`docs/security/read-time-provenance.md`](../security/read-time-provenance.md); GPM is \
+the paper that says why it matters.\
+"""
+implementation = [
+  { path = "crates/mnemo-core/src/model/write_provenance.rs", symbol = "WriteProvenance" },
+  { path = "crates/mnemo-core/src/provenance.rs", symbol = "ProvenanceSigner" },
+]
+
+[[clause]]
+id = "conflict-isolation"
+name = "Conflict isolation"
+status = "partial"
+statement = "A record in conflict with another is isolated behind a state barrier, not merely ranked lower."
+weakness = "resolution at read time, not isolation as a state barrier"
+notes = """
+[`query/conflict.rs`](../../crates/mnemo-core/src/query/conflict.rs) resolves conflicts \
+(including `EvidenceWeighted`) and \
+[`current_fact_resolver`](../../crates/mnemo-core/src/query/current_fact_resolver.rs) \
+drops superseded versions with an optional supersession chain. This is **resolution at \
+read time, not isolation as a state barrier** — the loser is de-ranked, not made \
+unreleasable.\
+"""
+implementation = [
+  { path = "crates/mnemo-core/src/query/conflict.rs", symbol = "detect_conflicts" },
+  { path = "crates/mnemo-core/src/query/current_fact_resolver.rs", symbol = "CurrentFactResolverConfig" },
+]
+
+[[clause]]
+id = "non-revival"
+name = "Non-revival after retraction or deletion"
+status = "conflicts"
+statement = "Once retracted or deleted, a record can never again support an outgoing claim."
+why_absent = """
+mnemo has soft delete, `forget_subject` redact / hard-delete, and TTL sweeps, but no \
+non-revival guarantee.\
+"""
+notes = """
+mnemo has soft delete, `forget_subject` redact / hard-delete, and TTL sweeps. It has \
+**no non-revival guarantee**: point-in-time `as_of` recall deliberately skips the \
+deleted check (`passes_filters` in \
+[`query/recall.rs`](../../crates/mnemo-core/src/query/recall.rs) reads \
+`if request.as_of.is_none() && record.is_deleted()`), so a deleted record is reachable \
+again by design. That is a defensible audit feature and a direct violation of this \
+clause.\
+"""
+implementation = []
+
+# The clause is not merely unimplemented — it is in direct conflict with a
+# shipped, deliberate feature. If `as_of` recall ever stops surfacing deleted
+# records, this entry is wrong and the test must fail rather than let the
+# markdown keep asserting a conflict that no longer exists.
+[clause.conflicts_with]
+feature = "`as_of` point-in-time recall"
+path = "crates/mnemo-core/src/query/recall.rs"
+symbol = "request.as_of.is_none() && record.is_deleted()"
+detail = "`as_of` recall deliberately surfaces deleted records, which is exactly what non-revival forbids. One of the two has to give."
+
+[[clause]]
+id = "claim-closure"
+name = "Exact claim closure over a fresh view at one verified head"
+status = "absent"
+statement = "An outgoing claim is closed over a fresh view pinned to a single verified head."
+why_absent = """
+There is no release step to close over. `RECALL` returns ranked records; nothing decides \
+whether a record may support an outgoing claim, and nothing pins the read to a verified \
+head.\
+"""
+notes = """
+There is no release step to close over. `RECALL` returns ranked records; nothing decides \
+whether a record may support an outgoing claim, and nothing pins the read to a verified \
+head.\
+"""
+implementation = []

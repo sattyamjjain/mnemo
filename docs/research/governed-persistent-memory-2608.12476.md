@@ -82,13 +82,27 @@ any store, including this one, that treats retrieval as the last checkpoint.
 Clause by clause, honestly. `✅` = shipped and reproducible here; `➖` = a weaker
 or partial form, with the weakness named; `❌` = not implemented.
 
+The table below is **generated** from
+[`governed-persistent-memory-clauses.toml`](governed-persistent-memory-clauses.toml),
+and each row's implementation claim is asserted against the tree by
+`crates/mnemo-compliance/tests/gpm_clause_manifest.rs` — a `ships` or `partial`
+row must point at a symbol that exists, an absent row must point at nothing, and
+the non-revival row must name a conflicting feature that is still shipped. Edit
+the manifest, not the table.
+
+<!-- BEGIN generated: gpm-clauses -->
+<!-- Generated from governed-persistent-memory-clauses.toml — do not hand-edit. Regenerate with: python3 scripts/gen_gpm_clause_table.py -->
+
 | GPM clause | mnemo | what is actually there, and what is missing |
 |---|---|---|
 | **Ledger integrity** | ✅ | SHA-256 hash-chained `agent_events` with an offline verifier that needs no trust in the store. Measured: **100% single-byte-mutation detection over 256 trials** ([`bench/audit_conformance`](../../bench/audit_conformance)), and delete / reorder / forge-integrity-field each 100% over 200 trials ([`bench/audit_tamper`](../../bench/audit_tamper)), with two **disclosed 0% gaps** — payload-only forge and tail truncation. This is the one clause where mnemo is on comparable ground. |
-| **Source binding** | ➖ | [`WriteProvenance`](../../crates/mnemo-core/src/provenance.rs) binds every `REMEMBER` / `SHARE` to a principal, capability and session over a SHA-256 chain, and `SourceType` records an origin. **But the binding is not admission-controlling and not tamper-proof in the way the clause requires**: `source_type` is optional, defaults to `Agent`, is not covered by the content hash, and does not appear in the read receipt — so a tool return is **not provably separable from user input**. That limitation is already written down in [`docs/security/read-time-provenance.md`](../security/read-time-provenance.md); GPM is the paper that says why it matters. |
+| **Source binding** | ➖ | [`WriteProvenance`](../../crates/mnemo-core/src/model/write_provenance.rs) binds every `REMEMBER` / `SHARE` to a principal, capability and session over a SHA-256 chain, and `SourceType` records an origin. **But the binding is not admission-controlling and not tamper-proof in the way the clause requires**: `source_type` is optional, defaults to `Agent`, is not covered by the content hash, and does not appear in the read receipt — so a tool return is **not provably separable from user input**. That limitation is already written down in [`docs/security/read-time-provenance.md`](../security/read-time-provenance.md); GPM is the paper that says why it matters. |
 | **Conflict isolation** | ➖ | [`query/conflict.rs`](../../crates/mnemo-core/src/query/conflict.rs) resolves conflicts (including `EvidenceWeighted`) and [`current_fact_resolver`](../../crates/mnemo-core/src/query/current_fact_resolver.rs) drops superseded versions with an optional supersession chain. This is **resolution at read time, not isolation as a state barrier** — the loser is de-ranked, not made unreleasable. |
-| **Non-revival after retraction or deletion** | ❌ | mnemo has soft delete, `forget_subject` redact / hard-delete, and TTL sweeps. It has **no non-revival guarantee**: point-in-time `as_of` recall deliberately skips the deleted check (`passes_filters` in [`query/recall.rs`](../../crates/mnemo-core/src/query/recall.rs) reads `if request.as_of.is_none() && record.is_deleted()`), so a deleted record is reachable again by design. That is a defensible audit feature and a direct violation of this clause. |
+| **Non-revival after retraction or deletion** | ❌ | mnemo has soft delete, `forget_subject` redact / hard-delete, and TTL sweeps. It has **no non-revival guarantee**: point-in-time `as_of` recall deliberately skips the deleted check (`passes_filters` in [`query/recall.rs`](../../crates/mnemo-core/src/query/recall.rs) reads `if request.as_of.is_none() && record.is_deleted()`), so a deleted record is reachable again by design. That is a defensible audit feature and a direct violation of this clause. **Conflicts with `as_of` point-in-time recall:** `as_of` recall deliberately surfaces deleted records, which is exactly what non-revival forbids. One of the two has to give. |
 | **Exact claim closure over a fresh view at one verified head** | ❌ | There is no release step to close over. `RECALL` returns ranked records; nothing decides whether a record may support an outgoing claim, and nothing pins the read to a verified head. |
+
+_1 of 5 clauses shipped, 2 partial, 2 not implemented. Table generated from [`governed-persistent-memory-clauses.toml`](governed-persistent-memory-clauses.toml) by [`scripts/gen_gpm_clause_table.py`](../../scripts/gen_gpm_clause_table.py); the symbol each row points at is asserted to exist (or not to exist) by `crates/mnemo-compliance/tests/gpm_clause_manifest.rs`._
+<!-- END generated: gpm-clauses -->
 
 And the structural gap underneath all five:
 

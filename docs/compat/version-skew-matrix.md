@@ -1,5 +1,15 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-08-17 for the **v0.5.24** cut — a **docs + test-coverage** change with
+> **no public API, wire, or storage change**. It states the crates.io name collision in
+> the README (`mnemo` and `mnemo-cli` both belong to other projects; this workspace
+> publishes only under `mnemo-*`, and the server binary publishes as `mnemo-mcp-server`
+> from the `crates/mnemo-cli` directory), adds a CI guard so a bare `cargo install mnemo`
+> cannot reappear in the docs, turns the GPM clause table into a generated artifact with
+> a manifest test behind it, and adds a database-free regression test pinning Postgres
+> semantic recall's fail-loud behaviour. No runtime behaviour changed. Version pins move
+> 0.5.23 → 0.5.24 in lockstep. **Not breaking for any consumer.**
+>
 > Updated 2026-08-10 for the **v0.5.23** cut — a **release-engineering + docs**
 > change with **no public API, wire, or storage change**. It retroactively cuts the
 > `## [0.5.22]` CHANGELOG section, adds a CHANGELOG-heading release gate + npm
