@@ -51,7 +51,10 @@ cargo bench -p mnemo-core
 cargo build -p mnemo-core --features onnx            # ONNX local embeddings
 cargo build -p mnemo-core --features s3              # S3 cold storage
 cargo build -p mnemo-mcp-server --features postgres  # PostgreSQL backend
-# mnemo-cli feature flags: rest (default), admin, pgwire, grpc, postgres
+# mnemo-cli feature flags: rest (default), http-transport, admin, pgwire, grpc,
+# postgres. `http-transport` adds authenticated Streamable HTTP for MCP via
+# `--http-port` (ADR 0002); stdio remains the default transport. --http-port
+# without the feature is a hard error, and with it still requires a capability key.
 
 # mnemo-golem-wit lives in crates/ but is in `[workspace] exclude`, NOT members:
 # its WASM-only host imports have no native definition, so a native cdylib link
@@ -75,7 +78,9 @@ cd sdks/go && go test ./...
 # Release / publish helpers (see scripts/)
 ./scripts/check_version_drift.sh     # crates.io vs workspace version guard
 ./scripts/registry_parity.sh --mode preflight  # registry triple + lag gate
+./scripts/registry_parity.sh --self-test       # pins the lag table in CI
 python3 scripts/check_docs_links.py  # mdBook link check
+python3 scripts/gen_published_versions.py  # regenerate the published-version table
 ```
 
 **Environment variables for CLI** (each also has a `--flag` equivalent unless noted):
@@ -88,6 +93,9 @@ python3 scripts/check_docs_links.py  # mdBook link check
 - `MNEMO_ONNX_MODEL_PATH` — enables local ONNX embeddings (takes priority over OpenAI)
 - `MNEMO_POSTGRES_URL` — enables PostgreSQL backend instead of DuckDB
 - `MNEMO_REST_PORT` — starts REST API alongside MCP stdio
+- `MNEMO_HTTP_PORT` — serves MCP over authenticated Streamable HTTP instead of stdio; needs the `http-transport` feature AND a capability key
+- `MNEMO_CAPABILITY_KEY` / `MNEMO_CAPABILITY_KEY_ID` — HMAC secret + key id for per-request caller identity (ADR 0002); required by `--http-port`
+- `MNEMO_LEASE_TTL_SECONDS` — lifetime of a capability lease minted by a recall (ADR 0001)
 - `MNEMO_ENCRYPTION_KEY` — AES-256-GCM key (64-char hex)
 - `MNEMO_IDLE_TIMEOUT` — auto-shutdown after N seconds idle (0 = disabled)
 - `MNEMO_TTL_SWEEP_INTERVAL` — seconds between TTL sweeps; a sweep hard-deletes expired memories and emits `MemoryExpired` audit events (0 = disabled)
@@ -106,9 +114,11 @@ python3 scripts/check_docs_links.py  # mdBook link check
 <!-- AUTO-MANAGED: architecture -->
 ## Architecture
 
-Cargo workspace with **31 members**: 21 crates under `crates/`, 9 bench crates under
-`bench/`, and `python/`. A 22nd directory, `crates/mnemo-golem-wit`, sits in
-`[workspace] exclude` and builds standalone (see Build Commands).
+Cargo workspace whose members are the crates under `crates/`, the bench crates under
+`bench/`, and `python/` (see `[workspace] members` in the root `Cargo.toml` for the
+live list). One directory, `crates/mnemo-golem-wit`, sits in `[workspace] exclude`
+and builds standalone (see Build Commands). Under `bench/`, `state_bench/` is a
+Python harness and `results/` holds committed output — neither is a cargo crate.
 
 ```
 mnemo/
@@ -139,20 +149,24 @@ mnemo/
 │   │       ├── encryption.rs# AES-256-GCM at-rest encryption
 │   │       ├── hash.rs      # Content hash chains + verification
 │   │       └── error.rs     # Error enum + Result type alias
-│   ├── mnemo-mcp/           # MCP server (rmcp 3.0, stdio transport) — 23 tools
+│   ├── mnemo-mcp/           # MCP server (rmcp, stdio + Streamable HTTP transports)
 │   │   └── src/
 │   │       ├── server.rs        # ServerHandler + tool_router + tool_handler
+│   │       ├── identity.rs      # Per-REQUEST caller identity from capability in `_meta` (ADR 0002)
+│   │       ├── lease.rs         # LeaseScope/LeaseToken/LeaseStore — capability-leased reads (ADR 0001)
 │   │       ├── role_filter.rs   # Per-role tool gating (denied tool → -32601)
 │   │       └── tools/           # One file per tool: remember, recall, forget, forget_subject,
 │   │                            #   share, checkpoint, branch, merge, replay, delegate, verify,
 │   │                            #   consolidate, experience, provenance, agent_managed,
 │   │                            #   attention_state, trajectory_audit
+│   │   # The registered tool set is pinned against `docs/src/tools/README.md` by
+│   │   # crates/mnemo-mcp/tests/mcp_test.rs — that doc is the source of truth, not this file.
 │   ├── mnemo-cli/           # CLI binary (clap) — entry point; published as `mnemo-mcp-server`
 │   ├── mnemo-postgres/      # PostgreSQL storage + pgvector index backend
 │   ├── mnemo-rest/          # Axum 0.8 REST API (feature-gated, default-on in CLI)
 │   ├── mnemo-admin/         # Admin dashboard API handlers
 │   ├── mnemo-pgwire/        # PostgreSQL wire protocol (SQL-over-pgwire)
-│   ├── mnemo-grpc/          # tonic gRPC service (14 RPCs; build script needs protoc)
+│   ├── mnemo-grpc/          # tonic gRPC service (RPCs defined in proto/; build script needs protoc)
 │   ├── mnemo-graph/         # Bitemporal graph layer (Graphiti-style temporal edges)
 │   ├── mnemo-compliance/    # DPDPA consent-manager + EU AI Act audit-log primitives
 │   ├── mnemo-mesh/          # SPIFFE-style identity + per-namespace ACL
@@ -167,7 +181,7 @@ mnemo/
 │   ├── mnemo-golem-host/    # Wasmtime host runner for the golem:vector WASM component
 │   ├── mnemo-db/            # Name-reservation pointer crate — intentionally empty
 │   └── mnemo-golem-wit/     # EXCLUDED from workspace — WASM component (cargo-component)
-├── bench/                   # 9 cargo bench crates (most `publish = false`)
+├── bench/                   # cargo bench crates (most `publish = false`)
 │   ├── locomo/              # LoCoMo authenticated nightly runner + cross-judge variance bands
 │   ├── embeddings/          # Embedding-backend selection: recall@10/nDCG@10 + p50/p95 latency
 │   ├── audit_conformance/   # Deterministic proof of the SHA-256 hash-chained write log
@@ -179,8 +193,9 @@ mnemo/
 │   ├── forged_reasoning/    # Forged-chain-of-thought injection ASR, trust filter OFF vs ON
 │   ├── state_bench/         # Python harness (NOT a cargo crate)
 │   └── results/             # Committed dated JSON bench results
-├── python/                  # PyO3 bindings + ~20 framework adapters (OpenAI Agents, CrewAI,
-│                            #   LangGraph, AutoGen, DSPy, Agno, CAMEL, Letta, Mem0, ADK, …)
+├── python/                  # PyO3 bindings + framework adapters (OpenAI Agents, CrewAI,
+│                            #   LangGraph, AutoGen, DSPy, Agno, CAMEL, Letta, Mem0, ADK,
+│                            #   Pydantic AI, Semantic Kernel, smolagents, Strands, …)
 ├── sdks/
 │   ├── typescript/          # TypeScript REST client SDK
 │   └── go/                  # Go REST client SDK
@@ -189,7 +204,9 @@ mnemo/
 ├── deploy/helm/mnemo/       # Helm chart for Kubernetes
 ├── dashboards/              # Observability dashboards
 ├── docs/                    # mdBook (docs/book, docs/src) + adr, benchmarks, compliance,
-│                            #   security, research, roadmap, comparisons, compat, release
+│                            #   security, research, roadmap, comparisons, compat, release, tests
+│                            #   ADRs: 0001 capability-leased reads, 0002 request-identity
+│                            #   model, 0003 MINJA procedure harness
 └── .github/workflows/       # ci, security, docs, cargo-publish, release-crate, npm-publish,
                              #   pypi-publish, benchmarks-nightly, locomo-nightly, dco
 ```
@@ -202,6 +219,8 @@ mnemo/
 - DuckDB connection: `Arc<Mutex<Connection>>` with `spawn_blocking` (not Send)
 - `VectorIndex::search` / `filtered_search` are `async` (no `block_on` bridge — it panicked on a current_thread runtime); filter bound is `+ Send + Sync`
 - `#[async_trait]` required for all async trait impls (Rust 2024 dyn-compat limitation)
+- Caller identity is resolved **per request**, not per connection (ADR 0002) — from an HMAC capability in the MCP `_meta`, with one identity source in `server.rs`. A per-connection/session identity would defeat ADR 0001's threat model
+- Capability leases (ADR 0001) scope to what a recall **returned**, not what it asked for: a lease covers subject `S` iff a record tagged `subject:S` was in the recall response, so an empty result set authorises nothing. Only a `recall` mints a lease; it expires, and validates for the minting principal alone
 - Error handling: `thiserror` enum in `error.rs`, `Result<T> = std::result::Result<T, Error>`
 - Satellite crates (`mnemo-graph`, `mnemo-mesh`, `mnemo-cma`, `mnemo-amp`, `mnemo-letta`, …) layer over a `MnemoEngine` rather than reaching into storage directly
 
@@ -219,7 +238,8 @@ mnemo/
 - **Feature gates**: `#[cfg(feature = "onnx")]`, `#[cfg(feature = "s3")]` for optional deps
 - **Dependencies**: Workspace-level dep management in root `Cargo.toml`, crates reference with `{ workspace = true }`
 - **Testing**: `#[tokio::test]` with `tempfile` for isolated DB instances, tests at bottom of source files
-- **MCP tools**: Use `Parameters<T>` wrapper for rmcp 0.14 inputs, `#[tool_handler]` on bare impl, `#[tool_router]` on method impl
+- **MCP tools**: Use the `Parameters<T>` wrapper for rmcp tool inputs, `#[tool_handler]` on the bare impl, `#[tool_router]` on the method impl
+- **Dep versions live in Cargo.toml, not here** — pin/read them there so this file cannot go stale
 - **CI**: `RUSTFLAGS="-Dwarnings"` — all warnings are errors
 
 <!-- END AUTO-MANAGED -->
@@ -235,16 +255,30 @@ mnemo/
 - **UUID v7**: All IDs use UUID v7 (time-sortable)
 - **Permission-safe search**: ANN queries use iterative oversampling (3x → double) with post-filtering for ACL compliance
 - **Feature-gated crates**: `mnemo-rest`, `mnemo-postgres` are optional deps in CLI; ONNX/S3 are features in core
+- **Fail-closed security defaults**: gRPC auth engages only when `MNEMO_AUTH_TOKEN` is non-empty, REST CORS defaults to localhost, and read-time trust filtering treats missing `reasoning_provenance` as untrusted
+- **Docs pinned by tests, not by convention**: the MCP tool set, the README version band, and every crate version are asserted in CI (`mcp_test.rs`, `readme_crates_version_matches_workspace.rs`, `workspace_version_fence.rs`) — update the doc the test names
 
 <!-- END AUTO-MANAGED -->
 
 <!-- AUTO-MANAGED: git-insights -->
 ## Git Insights
 
-- Monorepo structure established from initial release
-- Recent: dependency update (tonic 0.14, pyo3 0.28, reqwest 0.13, rand 0.9) + security hardening (30 fixes)
-- CI enforces (see `.github/workflows/ci.yml`): `cargo fmt --all -- --check`, `cargo clippy --all-targets --workspace --exclude mnemo-python`, `cargo test --workspace --exclude mnemo-python`, `cargo build --workspace --exclude mnemo-python`, `cargo audit`, plus a live-pgvector Postgres job and a crates.io version-drift guard
-- Apache-2.0 license
+- Monorepo structure established from initial release; Apache-2.0, DCO-gated (`dco.yml`)
+- CI jobs (see `.github/workflows/ci.yml`): `fmt`, `clippy`, `test`, `build`, `security`
+  (`cargo audit`), `onnx-feature` (builds + tests `-p mnemo-core --features onnx` on its
+  own so the feature cannot silently rot), `postgres` (live pgvector), `version-drift`
+  (crates.io vs workspace), `python-tests` (pytest), and `version-fence` (every crate's
+  version vs the tag + CHANGELOG)
+- `python-tests` must run pytest **from the repo root**: running it from `python/` puts the
+  source package ahead of the installed wheel on `sys.path`, and since a wheel install does
+  not copy the native `.so` into `python/mnemo/` the way `maturin develop` does, the
+  native-gated tests silently skip while the job stays green. Keep the import guard in the
+  same step as pytest, and keep `-rs` on so skips are visible
+- Release path is tag-driven and deliberately manual: `release-crate.yml` is the golem-safe
+  publish walk, and a bare tag push aborts unless `confirm_publish_new=true` is passed
+- Recent direction: write-provenance chains, per-request identity + capability-leased reads
+  (ADRs 0001/0002), and adversarial memory-poisoning benches (`bench/*_poisoning`,
+  `bench/forged_reasoning`) with committed dated results
 
 <!-- END AUTO-MANAGED -->
 
