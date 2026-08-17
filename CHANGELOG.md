@@ -57,9 +57,23 @@ Three things that were true but unenforced, or true but written down twice.
   `conflicts` clause must name a shipped feature that is **still shipped**, so the
   non-revival-vs-`as_of` conflict cannot be silently resolved while the page keeps asserting
   it. All four assertions were verified in the failing direction by mutation before landing.
-  The table's restatements in `README.md` and [POSITIONING](docs/POSITIONING.md) are replaced
-  by links to the one generated copy; the fix also corrected a `WriteProvenance` link that
-  pointed at `provenance.rs` rather than `model/write_provenance.rs`.
+  Every restatement of the per-clause status is replaced by a link to the one generated copy
+  — in `README.md`, in [POSITIONING](docs/POSITIONING.md), and in the research page's **own**
+  header and "What this page is NOT" section, which had drifted furthest: the header claimed
+  mnemo "ships two of the paper's five clauses in recognisable form (ledger integrity, and a
+  weaker source binding)", silently omitting conflict isolation, which is also partial.
+  Counts went with them — a count drifts the moment a clause moves. The fix also corrected a
+  `WriteProvenance` link that pointed at `provenance.rs` rather than
+  `model/write_provenance.rs`.
+- **Registry smoke test of the install commands.** A `Naming` section is only worth having if
+  the commands it gives resolve to *our* crates, so they were run for real: in a scratch
+  project outside the workspace, `cargo add mnemo-core mnemo-compliance` resolves from
+  `registry+https://github.com/rust-lang/crates.io-index` with checksums — not a path
+  dependency — and the published `mnemo-core` hash-chain verifier detects **both** tampering
+  modes offline: an altered record (`content hash mismatch`) and the harder forgery where the
+  attacker also recomputes the content hash, which only the chain linkage catches
+  (`chain hash mismatch`). That is the wedge the README leads with, exercised against the
+  registry rather than the local path dep.
 
 ### Verified (2026-08-17) - Postgres semantic recall does not return empty
 

@@ -1,12 +1,13 @@
 # Governed Persistent Memory (arXiv 2608.12476) — prior art on the release decision
 
 > **Prior-art citation, not a parity claim.** Recorded 2026-08-16. GPM is the
-> academic statement of a problem mnemo has only partly solved. mnemo ships two
-> of the paper's five clauses in recognisable form (ledger integrity, and a
-> weaker source binding), does **not** implement its bitemporal derived-lifecycle
-> -state model, and has **no release gate at all** — mnemo's `RECALL` returns
-> records and the agent does what it likes with them. Read the
-> [gap table](#where-mnemo-actually-lands) before citing this page anywhere.
+> academic statement of a problem mnemo has only partly solved. mnemo implements
+> some of the paper's five clauses in recognisable form and others not at all,
+> does **not** implement its bitemporal derived-lifecycle-state model, and has
+> **no release gate at all** — mnemo's `RECALL` returns records and the agent
+> does what it likes with them. The per-clause status is stated once, in the
+> generated [gap table](#where-mnemo-actually-lands) — read it before citing this
+> page anywhere, and do not re-summarise it here or elsewhere.
 
 ## Citation
 
@@ -148,7 +149,10 @@ an unbuilt design rather than letting a capability matrix imply it shipped.
 ## What this page is NOT
 
 - **NOT a claim that mnemo implements GPM**, or any of its five clauses in full.
-  Two are partial and named as partial; two are absent.
+  The partial ones are named as partial and the absent ones as absent, in the
+  [gap table](#where-mnemo-actually-lands) — which is generated from
+  [`governed-persistent-memory-clauses.toml`](governed-persistent-memory-clauses.toml),
+  so the counts cannot drift out of step with it the way a sentence here would.
 - **NOT a benchmark comparison.** mnemo has not been run against
   GPM-ReleaseBench, and no mnemo number on this page is comparable to a GPM
   number. The audit-chain figures measure tamper detection, not release

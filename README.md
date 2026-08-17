@@ -866,26 +866,22 @@ Qwen2.5-7B. Those are bounded contract-conformance results by the paper's own
 framing, not open-world accuracy — the 7B figure is the ungoverned comparison,
 not a claim about model accuracy.
 
-**Where mnemo lands, stated plainly.** mnemo ships two of the five clauses in
-recognisable form and does not ship the model:
+**Where mnemo lands.** Some of the five clauses ship, some ship in weaker partial
+forms, and some are not implemented at all — one of them in direct conflict with
+a shipped feature. Which clause is in which state is deliberately **not** restated
+here, because a second copy is a copy that drifts. It lives in exactly one place,
+is generated from a manifest, and every row is asserted against this tree by
+`crates/mnemo-compliance/tests/gpm_clause_manifest.rs`:
 
-Of the paper's five clauses, mnemo ships **one** outright (ledger integrity),
-**two** in weaker partial forms (source binding, conflict isolation), and does
-not implement the remaining **two** (non-revival after retraction, claim closure
-over a verified head) — one of which is in direct conflict with a shipped
-feature.
+> **[The clause-by-clause table →](docs/research/governed-persistent-memory-2608.12476.md#where-mnemo-actually-lands)**
 
-Which is which is deliberately **not** restated here. It lives in one place, is
-generated from a manifest, and is asserted against the tree by a test:
-[**the clause-by-clause table**](docs/research/governed-persistent-memory-2608.12476.md#where-mnemo-actually-lands).
-
-**mnemo does not implement GPM's bitemporal derived-lifecycle-state model.**
-There is bitemporal machinery in [`mnemo-graph`](crates/mnemo-graph) and `as_of`
-in core, but no state machine derives per-record releasability from transitions.
-An unforgeable ledger of a bad release is still a bad release — that is the gap,
-and it is not scheduled. See
-[`docs/research/governed-persistent-memory-2608.12476.md`](docs/research/governed-persistent-memory-2608.12476.md)
-for the clause-by-clause table and what adoption would actually cost.
+The structural gap underneath all five: **mnemo does not implement GPM's
+bitemporal derived-lifecycle-state model.** There is bitemporal machinery in
+[`mnemo-graph`](crates/mnemo-graph) and `as_of` in core, but no state machine
+derives per-record releasability from transitions, and mnemo's release posture is
+fail-open — `RECALL` returns records and mnemo's involvement ends. An unforgeable
+ledger of a bad release is still a bad release. That is the gap, and it is not
+scheduled; the page above says what adoption would actually cost.
 
 ### Project Think — loop vs. ledger
 
