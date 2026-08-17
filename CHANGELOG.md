@@ -4,6 +4,15 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-08-17)
+
+The 0.5.25 window opens on the **v0.5.24** cut. The release content landed on `main` at
+[`cb9243d`](https://github.com/sattyamjjain/mnemo/commit/cb9243d), and the `v0.5.24` tag
+points at the cut commit directly above it, which is where the `## [0.5.24]` heading the
+publish gate requires first exists.
+
+## [0.5.24] - 2026-08-17
+
 ### Landing trace (2026-08-14)
 
 The 0.5.24 window opens on the **v0.5.23** cut. The release content landed with the
