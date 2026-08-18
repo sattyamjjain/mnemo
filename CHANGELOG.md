@@ -12,6 +12,48 @@ The 0.5.26 window opens on the **v0.5.25** cut. The release content landed on `m
 points at the resulting commit on `main`, which is where the `## [0.5.25]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-19) - the publish closure was written down three times
+
+`v0.5.25` failed twice with the same error the `v0.5.24` fix was meant to cure:
+`failed to select a version for the requirement mnemo-admin`. The gate passed, the
+packaging dry-run died, publish skipped, nothing uploaded.
+
+- **Cause: one closure, three hand-written copies.** `WALK`, the gate's clippy and
+  test lists, and the coordinated dry-run each carried their own list of crates. The
+  first fix updated two of the three and missed the dry-run, so it kept packaging the
+  old twelve crates without `mnemo-admin` or `mnemo-pgwire`. A list duplicated three
+  ways drifts, and it cost two releases.
+- **Fix:** `WALK` is workflow-level env and the only definition. The gate, the
+  dry-run and the publish loop all expand it. Verified mechanically rather than by
+  eye: zero hand-written `-p mnemo-*` lists remain, the walk carries all 14 crates in
+  topological order, every `mnemo-mcp-server` dependency is present, and none is
+  ordered after it.
+- **Result: `mnemo-mcp-server` is current again at `0.5.25`.** It had stranded at
+  `0.5.23`, skipping `0.5.24` outright; its crates.io history still reads
+  `0.5.25, 0.5.23, 0.4.4`. `mnemo-embeddings-bench` recovered with it. Confirmed
+  against the registry, not the workflow log: `cargo add mnemo-mcp-server` resolves
+  `0.5.25`, and the published `mnemo-core` verifier still detects both tampering
+  modes offline in a scratch project.
+
+### Fixed (2026-08-19) - the drift guard claimed parity it did not have
+
+`check_version_drift.sh` printed "every published crate matches workspace 0.5.25"
+while seven crates resolved a patch lower, and labelled each of those rows
+`ok (matches workspace)`.
+
+- The gate logic is correct and unchanged: `behind()` tolerates one patch as a
+  release in flight, so those crates are legitimately not a failure.
+- The **output** was false. A reader would conclude `cargo add mnemo-letta` gives the
+  workspace version; it gives one patch lower. A guard that reports green over a real
+  lag is the failure mode this repo keeps paying for.
+- Rows now read `ok (one patch behind X, publish in flight)` when that is the case,
+  and the summary names the crates instead of asserting universal parity. Still
+  green, still the same gate, no longer a false statement.
+- The seven are `mnemo-letta`, `mnemo-mesh`, `mnemo-codemode`, `mnemo-deal`,
+  `mnemo-md-sync`, `mnemo-cma` and `mnemo-baseline`. They are not in the tag walk and
+  publish on the push-to-main lane, which stopped partway through this release. Stated
+  in the README Naming section with the real numbers.
+
 ## [0.5.25] - 2026-08-18
 
 ### Landing trace (2026-08-17)

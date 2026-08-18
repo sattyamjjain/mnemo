@@ -154,11 +154,11 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.25`** — the workspace version, cut but **not yet
-> published**. crates.io serves earlier versions, and **not all at the same one**:
-> see [Naming](#naming) for which crates lag and by how much. The generated table
-> below is the authority on what is actually installable today, and
-> `cargo install mnemo-mcp-server` resolves whatever that table shows. Two guards keep
+> **Current release: `0.5.25`, published.** The 14 release-walk crates are on
+> crates.io at that version, including `mnemo-mcp-server`, so
+> `cargo install mnemo-mcp-server` resolves it. Seven satellite crates are one patch
+> lower while their lane catches up: see [Naming](#naming) for exactly which. The
+> generated table below is the authority on what is installable today. Two guards keep
 > this honest instead of stale: the test
 > [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
 > fails if the stated release — or any bare current-band `0.5.2x` release literal
@@ -171,14 +171,14 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (unreleased target): **`v0.5.25`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
+Workspace `[workspace.package].version` (released): **`v0.5.25`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
-| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.24` | 2026-08-17 |
-| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.23` | 2026-08-14 |
-| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.23` | 2026-08-14 |
-| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.24` | 2026-08-17 |
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.25` | 2026-08-18 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.25` | 2026-08-18 |
+| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.25` | 2026-08-18 |
+| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.25` | 2026-08-18 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
 _Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
@@ -218,26 +218,28 @@ docs.
 
 #### Not every `mnemo-*` crate is at the same version
 
-Installing the right *name* is only half of it. As of **2026-08-18** the published
-line is **split**, and `cargo install` resolves whatever crates.io actually has:
+Installing the right *name* is only half of it. `cargo install` resolves whatever
+crates.io actually has, and as of **2026-08-19** that is not one number:
 
 | crate | crates.io | workspace | gap |
 |---|---|---|---|
-| the 19 library crates (`mnemo-core`, `mnemo-mcp`, `mnemo-compliance`, ...) | `v0.5.24` | `v0.5.25` | one patch, normal pre-publish |
-| **`mnemo-mcp-server`** (the `mnemo` binary) | **`v0.5.23`** | `v0.5.25` | **two patches, never received `v0.5.24`** |
-| **`mnemo-embeddings-bench`** | **`v0.5.23`** | `v0.5.25` | **two patches, never received `v0.5.24`** |
+| the 14 release-walk crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.25` | `v0.5.25` | none |
+| 7 satellite crates (`mnemo-letta`, `mnemo-mesh`, `mnemo-codemode`, `mnemo-deal`, `mnemo-md-sync`, `mnemo-cma`, `mnemo-baseline`) | `v0.5.24` | `v0.5.25` | one patch, publish in flight |
 
-Cause, so it is not mistaken for a stalled release: the `v0.5.24` publish ran down two
-lanes. The push-to-main lane carried the 19 library crates and finished. The tag lane,
-which is the only one that publishes `mnemo-mcp-server` and `mnemo-embeddings-bench`,
-failed its packaging dry-run because it could not select a version for its
-`mnemo-admin` requirement: `mnemo-admin` was not in that lane's walk, so nothing had
-published it at the new version yet. It is published now, so the walk can resolve on
-the next run.
+**`mnemo-mcp-server` is current again.** It had stranded at `v0.5.23`, skipping
+`v0.5.24` entirely, because the tag lane that publishes it could not resolve
+`mnemo-admin`: the publish closure was written down three times and the copies
+drifted apart. There is now one `WALK` definition that the gate, the packaging
+dry-run and the publish loop all expand, so those lists cannot disagree again.
+Its version history on crates.io still shows the gap: `v0.5.25`, `v0.5.23`, `v0.4.4`.
 
-Practical effect: `cargo install mnemo-mcp-server` currently gives you `v0.5.23`. That
-binary is a working server; it simply predates the `v0.5.24` documentation and
-test-coverage changes, which are docs-only and change no runtime behaviour.
+The 7 satellite crates are not in the tag walk; they publish on the push-to-main
+lane, which stopped partway through this release. One patch behind is a publish in
+flight rather than a strand, and
+[`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) treats it that
+way: green, but it now *names* the crates that are behind instead of reporting
+"every published crate matches workspace", which it used to say while seven of
+them did not.
 
 This table is not hand-maintained. The version column is regenerated from the live
 registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py),

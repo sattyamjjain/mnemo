@@ -281,7 +281,13 @@ def row(name, ver, upd, status):
     bv = base_crates.get(name, "-")
     print(f"  {name:24} {workspace_version:10} {ver:11} {bv:10} {fmt_age(upd):8} {status}")
 for n, v, u in resolved:
-    row(n, v, u, "ok (matches workspace)")
+    # `behind()` deliberately tolerates <= 1 patch as "a release in flight", so
+    # this bucket is NOT all exact matches. Saying "matches workspace" for a
+    # crate that is a patch behind is a false statement in a guard's own output:
+    # a reader concludes `cargo add <crate>` gives the workspace version when it
+    # does not. Distinguish the two rather than flatten them.
+    row(n, v, u, "ok (matches workspace)" if parse(v) >= parse(workspace_version)
+        else f"ok (one patch behind {workspace_version}, publish in flight)")
 for n, v, u in acknowledged:
     row(n, v, u, "drift (acknowledged in baseline)")
 for n, v, u, why in new_div:
@@ -347,9 +353,22 @@ if acknowledged:
 elif unpublished and not resolved:
     print("OK: nothing published yet; no drift to report.")
 else:
-    print(f"OK: every published crate matches workspace {workspace_version}. "
-          f"Drift resolved — refresh the baseline: "
-          f"bash scripts/check_version_drift.sh --update-baseline")
+    trailing = [(n, v) for n, v, _ in resolved
+                if parse(v) < parse(workspace_version)]
+    if trailing:
+        # Green, but do not claim parity that does not exist.
+        print(f"OK: no crate is more than one patch behind workspace "
+              f"{workspace_version}, so nothing is stranded. "
+              f"{len(trailing)} crate(s) are NOT yet at {workspace_version} and "
+              f"resolve one patch lower today:")
+        for n, v in trailing:
+            print(f"     {n}: crates.io {v}")
+        print("     That is a publish in flight, not drift. It becomes drift if "
+              "the workspace advances again before they publish.")
+    else:
+        print(f"OK: every published crate matches workspace {workspace_version}. "
+              f"Drift resolved — refresh the baseline: "
+              f"bash scripts/check_version_drift.sh --update-baseline")
 if npm_name and npm_status and ("acknowledged" in npm_status or "predates" in npm_status):
     print()
     print(f"OK (npm): {npm_name} {npm_reg or 'absent'} on npm trails package.json {npm_src} — "
