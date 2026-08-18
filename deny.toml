@@ -20,6 +20,10 @@ ignore = [
     "RUSTSEC-2026-0049",   # rustls-webpki CRL authoritative check
     "RUSTSEC-2026-0104",   # rustls-webpki CRL parsing panic
 
+    # h2 0.3.x ONLY (aws-sdk-s3 -> hyper 0.14 -> h2 0.3.27, optional `s3`
+    # feature). The 0.4.x line resolves to the fixed 0.4.16 and is not covered.
+    "RUSTSEC-2026-0258",   # h2 unbounded empty DATA frames (fix: >=0.4.16)
+
     # AWS-LC (transitive via aws-sdk-s3, optional `s3` feature)
     "RUSTSEC-2026-0044",   # name-constraint bypass
     "RUSTSEC-2026-0045",   # AES-CCM tag timing
