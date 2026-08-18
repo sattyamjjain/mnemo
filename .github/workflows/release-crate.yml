@@ -122,6 +122,7 @@ jobs:
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
             -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
+            -p mnemo-admin -p mnemo-pgwire \
             -p mnemo-embeddings-bench -p mnemo-mcp-server -- -D warnings
       # Full closure test suite. The recall-QUALITY benchmark
       # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
@@ -135,6 +136,7 @@ jobs:
             -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
             -p mnemo-compliance -p mnemo-mcp \
             -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
+            -p mnemo-admin -p mnemo-pgwire \
             -p mnemo-embeddings-bench -p mnemo-mcp-server
 
   publish:
@@ -155,7 +157,14 @@ jobs:
       # dependent never precedes a crate it needs). Used by BOTH the new-crate
       # preflight and the real publish loop below, so they can never disagree
       # about what the walk contains.
-      WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
+      # mnemo-admin and mnemo-pgwire are OPTIONAL dependencies of mnemo-mcp-server,
+      # and cargo still has to resolve an optional dep to PACKAGE the crate. Leaving
+      # them out is what broke the v0.5.24 release: the dry-run died with "failed to
+      # select a version for the requirement mnemo-admin = ^0.5.24", the publish job
+      # skipped, and mnemo-mcp-server + mnemo-embeddings-bench stranded a version
+      # behind while the other 19 crates went out via the push-to-main lane. Any crate
+      # mnemo-mcp-server depends on, optional or not, must be in this walk AHEAD of it.
+      WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
     steps:
       # fetch-depth: 0 so the registry-parity preflight can report a real
       # "newest git tag" column (the default shallow checkout fetches no tags).

@@ -4,12 +4,98 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-08-18)
+
+The 0.5.26 window opens on the **v0.5.25** cut. The release content landed on `main` via
+[#162](https://github.com/sattyamjjain/mnemo/pull/162), whose branch head was
+[`a8363e6`](https://github.com/sattyamjjain/mnemo/commit/a8363e6), and the `v0.5.25` tag
+points at the resulting commit on `main`, which is where the `## [0.5.25]` heading the
+publish gate requires first exists.
+
+## [0.5.25] - 2026-08-18
+
 ### Landing trace (2026-08-17)
 
 The 0.5.25 window opens on the **v0.5.24** cut. The release content landed on `main` at
 [`cb9243d`](https://github.com/sattyamjjain/mnemo/commit/cb9243d), and the `v0.5.24` tag
 points at the cut commit directly above it, which is where the `## [0.5.24]` heading the
 publish gate requires first exists.
+
+### Decided (2026-08-18) - issue #37 scoped down rather than left open
+
+#37 had been open 116 days and was the repo's only open issue, so its status was
+standing in for the roadmap. Decided in writing today, and kept rather than closed.
+
+- **Kept, because nothing replaced it.** ADR 0003 shows all four existing poisoning
+  benches measure something else, and none models an interactive query-only attacker.
+  Closing it as superseded by a retrieval-quality number would be a category error,
+  since poisoning defense and recall quality are different measurements.
+- **What was actually blocking it was budget, not engineering.** A faithful harness
+  needs a model in the loop as the attacker, because MINJA Phase 2 is generative and
+  adaptive. There has been no LLM budget for four months. An issue whose blocker is
+  funding, filed as though its blocker were code, does not move.
+- **Reduced to one session of work** and retitled to match: Phase 3 exploitation only,
+  against a pre-registered fixed corpus of already-shortened records, one dataset, one
+  real embedder, ASR with the detector off and on, Wilson 95% intervals, and a
+  topic-matched benign control. Phases 1 and 2, the adaptive loop, and the ROC sweep
+  stay explicitly out of scope until a budget exists.
+- The reduced result will **not** be a MINJA number and the retitle says so. Removing
+  the adaptive shortening step is exactly what ADR 0003 says makes a result stop being
+  MINJA.
+
+### Added (2026-08-18) - one real-embedder recall number, generated into the README
+
+The number itself is not new. What is new is that it is now reproducible from the
+artifact rather than typed into prose, and that the artifact says what it was measured
+on.
+
+- **The result file now identifies its own inputs.** `bench/results/locomo_v1.json`
+  previously recorded the embedder as `"minilm"`, a string scraped from the parent
+  directory name, which does not identify a checkpoint. It now records `model_id`,
+  the **sha256 of the weights actually loaded**
+  (`759c3cd2b7fe...`), the source URL, the storage backend the number was measured on,
+  the UTC date, and the commit. Two different checkpoints can sit in directories with
+  the same name, so the hash is the only field that pins the number.
+- **Measured:** gold-document **recall@1 0.689, Wilson 95% [0.543, 0.805]**, recall@5
+  0.889, recall@10 0.911, MRR 0.770. Embedder `Xenova/all-MiniLM-L6-v2` (384-dim, ONNX),
+  storage DuckDB in-memory, n=45 queries, mean of 5 seeds, on arm64/darwin Apple M4.
+  **Control:** the same corpus and harness with the vector lane off gives lexical
+  recall@1 0.422 [0.290, 0.567]. The gap between those two rows is what the embedder
+  buys.
+- **The README now reads the number instead of asserting it.**
+  `scripts/gen_recall_number.py` renders the block from the JSON, and `doc-guards` runs
+  it with `--check`. The old text hardcoded 0.689 with nothing tying it to the bench
+  output. This repo already learned that lesson twice: the crate-name check was
+  verified once by hand, and the published-versions table sat stale for four days.
+- **What the number is not.** Not a LoCoMo leaderboard score and not comparable to one,
+  since the corpus is the bundled LongMemEval_M slice. Retrieval quality only, with no
+  LLM in the loop and no answer-correctness judge. Silent about poisoning resistance
+  and audit integrity, which are measured separately. n=45 is under 100, so the bench
+  marks it preliminary and the interval is the claim, not the point estimate.
+- Postgres semantic recall already hard-errors with
+  `BackendUnsupported { backend: "postgres", capability: "semantic_recall" }` rather
+  than returning an empty set, and `crates/mnemo-postgres/tests/semantic_recall_fails_loud.rs`
+  pins it through the engine, not just the index. Verified, unchanged.
+
+### Fixed (2026-08-18) - the published crates do not all agree, and now the README says so
+
+The 0.5.24 publish split, and nothing in CI would have reported it.
+
+- **Measured state:** 19 library crates reached `0.5.24`. `mnemo-mcp-server` and
+  `mnemo-embeddings-bench` are still at `0.5.23` and never received `0.5.24`, so
+  `cargo install mnemo-mcp-server` currently resolves `0.5.23`.
+- **Cause:** the release ran down two lanes. The push-to-main lane carried the 19
+  library crates. The tag lane, the only one that publishes those two crates, failed
+  its packaging dry-run with
+  `failed to select a version for the requirement mnemo-admin = "^0.5.24"`, because
+  `mnemo-admin` was not in that lane's walk and could not resolve. Both are published
+  now, so the walk can resolve on the next run.
+- **Stated in the README Naming section**, beside the crate-name collision warning,
+  with the real per-crate numbers and the cause, so a reader who installs the binary
+  knows what they are getting.
+- **Guarded.** The published-versions table had been stale since 2026-08-14 and nothing
+  caught it: `gen_published_versions.py --check` existed but ran in no job. It runs in
+  `doc-guards` now, along with the new recall-number check.
 
 ## [0.5.24] - 2026-08-17
 

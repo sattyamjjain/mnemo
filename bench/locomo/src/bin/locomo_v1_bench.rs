@@ -180,6 +180,14 @@ struct Cli {
     /// Seeds averaged over to absorb UUID/HNSW run-to-run variance.
     #[arg(long, default_value_t = 3)]
     repeats: usize,
+    /// Exact model identity recorded verbatim in the result, e.g.
+    /// `Xenova/all-MiniLM-L6-v2`. Without it the result records only a
+    /// directory name, which does not identify a checkpoint.
+    #[arg(long)]
+    model_id: Option<String>,
+    /// Where the weights came from, recorded so the sha256 is re-checkable.
+    #[arg(long)]
+    model_source: Option<String>,
     /// Hardware label recorded in the result (defaults to `<arch>/<os>`).
     #[arg(long)]
     hardware: Option<String>,
@@ -193,6 +201,14 @@ struct EmbedderMeta {
     backend: String,
     model: String,
     dim: usize,
+    /// Exact, citable model identity. `model` above is a short label scraped
+    /// from the path and is NOT sufficient to reproduce a number: two different
+    /// checkpoints can sit in directories with the same name. This is the field
+    /// a reader re-fetches from.
+    model_id: Option<String>,
+    /// SHA-256 of the weights actually loaded. The only thing that pins the
+    /// number to a specific checkpoint rather than to a filename.
+    model_sha256: Option<String>,
 }
 
 async fn resolve_embedder(cli: &Cli) -> Result<(Arc<dyn EmbeddingProvider>, EmbedderMeta), BoxErr> {
@@ -210,12 +226,15 @@ async fn resolve_embedder(cli: &Cli) -> Result<(Arc<dyn EmbeddingProvider>, Embe
                     .and_then(|p| p.file_name())
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_else(|| "onnx".to_string());
+                let model_sha = mnemo_locomo_bench::dataset::dataset_sha(&path);
                 Ok((
                     Arc::new(e),
                     EmbedderMeta {
                         backend: "onnx".into(),
                         model: model_name,
                         dim: cli.onnx_dim,
+                        model_id: cli.model_id.clone(),
+                        model_sha256: Some(model_sha),
                     },
                 ))
             }
@@ -242,6 +261,14 @@ async fn resolve_embedder(cli: &Cli) -> Result<(Arc<dyn EmbeddingProvider>, Embe
                     backend: "openai".into(),
                     model: cli.openai_model.clone(),
                     dim: cli.openai_dim,
+                    // A hosted model has no local checkpoint to hash; the served
+                    // model name is the only identity available, and it is not
+                    // pinned to a revision. Stated rather than implied.
+                    model_id: cli
+                        .model_id
+                        .clone()
+                        .or_else(|| Some(cli.openai_model.clone())),
+                    model_sha256: None,
                 },
             ))
         }
@@ -255,6 +282,14 @@ async fn resolve_embedder(cli: &Cli) -> Result<(Arc<dyn EmbeddingProvider>, Embe
                     backend: "ollama".into(),
                     model: cli.ollama_model.clone(),
                     dim,
+                    // A served model has no local checkpoint to hash; the served
+                    // model name is the only identity available, and it is not
+                    // pinned to a revision. Stated rather than implied.
+                    model_id: cli
+                        .model_id
+                        .clone()
+                        .or_else(|| Some(cli.ollama_model.clone())),
+                    model_sha256: None,
                 },
             ))
         }
@@ -474,7 +509,25 @@ async fn main() -> Result<(), BoxErr> {
             "records": dataset.len(),
             "sha256": sha,
         },
-        "embedder": { "backend": meta.backend, "dim": meta.dim, "model": meta.model },
+        "embedder": {
+            "backend": meta.backend,
+            "dim": meta.dim,
+            "model": meta.model,
+            "model_id": meta.model_id,
+            "model_sha256": meta.model_sha256,
+            "model_source": cli.model_source,
+        },
+        // Which storage backend the number was actually measured on. DuckDB is
+        // the supported backend for semantic recall; Postgres hard-errors with
+        // `BackendUnsupported` rather than returning an empty result set.
+        "storage_backend": "duckdb (in-memory)",
+        "generated_at_utc": chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        "commit": std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()),
         "hardware": hardware,
         "limit": cli.limit,
         "metric": "gold-document recall@k (each query's source record is its gold doc, matched by lme_id)",
