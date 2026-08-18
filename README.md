@@ -55,22 +55,42 @@ results file, and a "what this does **not** show" column:
 entry point). Full per-mode tables and the different-axes caveat vs. Mem0/Letta
 are in the benchmark tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
 
-> **A second real-embedder number — ONNX MiniLM — is not part of the CI-reproducible
-> headline set.** An earlier measurement used a **different** embedder and slice: **ONNX
-> `all-MiniLM-L6-v2` (384-dim), n=45**, reporting **recall@1 0.689 [Wilson 95% 0.543,
-> 0.805]** / recall@10 0.911 (MRR 0.770). It runs behind `--features onnx`, which now
-> **builds and tests cleanly** against the pinned `ort 2.0.0-rc.11` / `ndarray 0.17` /
-> `tokenizers 0.23` API (the migration that repaired the old ndarray-0.16 drift), and CI
-> guards that with a dedicated `onnx feature` job. What CI does **not** do is *run* this
-> number: reproducing 0.689 needs a downloaded `all-MiniLM-L6-v2` ONNX model on disk
-> (`MNEMO_ONNX_MODEL_PATH`), which the build+test job does not fetch — so the headline
-> stays the credential-free Ollama nomic number. Do **not** conflate 0.689 with the 0.739
-> headline: **different embedder (MiniLM 384-dim vs nomic 768-dim), different slice (n=45
-> vs n=23)**. Reproduce locally: `MNEMO_ONNX_MODEL_PATH=… cargo run --release --features
-> onnx -p mnemo-locomo-bench --bin locomo_v1_bench`; caveats + raw JSON:
-> [`docs/benchmarks/locomo-v1.md`](docs/benchmarks/locomo-v1.md). Making 0.689 itself
-> CI-reproducible (a model-fetch bench job) is the remaining item on
-> [#125](https://github.com/sattyamjjain/mnemo/issues/125).
+<!-- BEGIN generated: recall-number -->
+<!-- Generated from bench/results/locomo_v1.json by scripts/gen_recall_number.py — do not hand-edit. -->
+
+**Real-embedder recall, measured on the supported backend.** Gold-document **recall@1 = 0.689** [Wilson 95% 0.543, 0.805], recall@5 0.889, recall@10 0.911, MRR 0.770.
+
+| | |
+|---|---|
+| embedder | `Xenova/all-MiniLM-L6-v2 (onnx/model.onnx)` (384-dim, backend `onnx`) |
+| weights sha256 | `759c3cd2b7fe…` |
+| weights source | https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx |
+| storage backend | `duckdb (in-memory)` |
+| corpus | `crates/mnemo-core/benches/data/longmemeval_m.jsonl`, n=45 queries, mean of 5 seeds |
+| **control (lexical)** | recall@1 0.422 [0.290, 0.567] |
+| hardware | arm64/darwin Apple M4 |
+| measured | 2026-08-18 at `a258238` |
+
+The lexical row is the control, not a second headline: it is the same corpus and the same harness with the vector lane switched off, so the gap between the two rows is what the embedder is actually buying.
+
+Reproduce:
+
+```bash
+# fetch the exact weights the sha256 above pins
+curl -sSL --fail -o model.onnx https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx
+MNEMO_ONNX_MODEL_PATH=./model.onnx cargo run --release --features onnx \
+  -p mnemo-locomo-bench --bin locomo_v1_bench
+```
+
+**What this number is not.** It is not a LoCoMo leaderboard score and is not comparable to one: the corpus is the bundled LongMemEval_M slice, not full LoCoMo. It is retrieval quality only, with no LLM in the loop and no answer-correctness judge. It says nothing about poisoning resistance or audit integrity, which are measured separately. **n=45 is below 100, so the bench marks it `preliminary`;** treat the interval, not the point estimate, as the claim.
+<!-- END generated: recall-number -->
+
+This block is generated from [`bench/results/locomo_v1.json`](bench/results/locomo_v1.json) by
+[`scripts/gen_recall_number.py`](scripts/gen_recall_number.py); the `doc-guards` CI job runs it
+with `--check`, so the README cannot drift from the measured result. It is a **different**
+embedder and slice from the Ollama nomic headline above (MiniLM 384-dim / n=45 vs nomic
+768-dim / n=23) and the two must not be conflated. Making it CI-*reproducible* (a model-fetch
+bench job) remains [#125](https://github.com/sattyamjjain/mnemo/issues/125).
 
 And the **memory-poisoning defense is measured on a real embedder, not asserted.**
 Through a real ONNX MiniLM embedder (not a hash stand-in), mnemo's always-on
@@ -134,14 +154,11 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.24`** — the workspace version, cut but **not yet
-> published**. crates.io still serves the previous release; the generated table
+> **Current release: `0.5.25`** — the workspace version, cut but **not yet
+> published**. crates.io serves earlier versions, and **not all at the same one**:
+> see [Naming](#naming) for which crates lag and by how much. The generated table
 > below is the authority on what is actually installable today, and
-> `cargo install mnemo-mcp-server` resolves whatever that table shows. The whole
-> line publishes together — libraries *and* the `mnemo-mcp-server` binary. This closes
-> [#140](https://github.com/sattyamjjain/mnemo/issues/140): the server had been
-> stranded at `0.4.4` (2026-05-18) for 87 days behind the never-created
-> `mnemo-embeddings-bench`, which now publishes as part of the release walk. Two guards keep
+> `cargo install mnemo-mcp-server` resolves whatever that table shows. Two guards keep
 > this honest instead of stale: the test
 > [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
 > fails if the stated release — or any bare current-band `0.5.2x` release literal
@@ -154,14 +171,14 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (released): **`v0.5.23`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
+Workspace `[workspace.package].version` (unreleased target): **`v0.5.25`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
-| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.23` | 2026-08-14 |
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.24` | 2026-08-17 |
 | crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.23` | 2026-08-14 |
 | crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.23` | 2026-08-14 |
-| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.12` | 2026-07-13 |
+| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.24` | 2026-08-17 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
 _Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
@@ -198,6 +215,34 @@ the PyPI `mnemo-db` package, which *is* the real Python SDK (see
 `scripts/check_crate_name_refs.sh` fails CI if a bare `cargo install mnemo` or
 `cargo add mnemo` (or the `mnemo-cli` equivalents) reappears anywhere in the
 docs.
+
+#### Not every `mnemo-*` crate is at the same version
+
+Installing the right *name* is only half of it. As of **2026-08-18** the published
+line is **split**, and `cargo install` resolves whatever crates.io actually has:
+
+| crate | crates.io | workspace | gap |
+|---|---|---|---|
+| the 19 library crates (`mnemo-core`, `mnemo-mcp`, `mnemo-compliance`, ...) | `v0.5.24` | `v0.5.25` | one patch, normal pre-publish |
+| **`mnemo-mcp-server`** (the `mnemo` binary) | **`v0.5.23`** | `v0.5.25` | **two patches, never received `v0.5.24`** |
+| **`mnemo-embeddings-bench`** | **`v0.5.23`** | `v0.5.25` | **two patches, never received `v0.5.24`** |
+
+Cause, so it is not mistaken for a stalled release: the `v0.5.24` publish ran down two
+lanes. The push-to-main lane carried the 19 library crates and finished. The tag lane,
+which is the only one that publishes `mnemo-mcp-server` and `mnemo-embeddings-bench`,
+failed its packaging dry-run because it could not select a version for its
+`mnemo-admin` requirement: `mnemo-admin` was not in that lane's walk, so nothing had
+published it at the new version yet. It is published now, so the walk can resolve on
+the next run.
+
+Practical effect: `cargo install mnemo-mcp-server` currently gives you `v0.5.23`. That
+binary is a working server; it simply predates the `v0.5.24` documentation and
+test-coverage changes, which are docs-only and change no runtime behaviour.
+
+This table is not hand-maintained. The version column is regenerated from the live
+registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py),
+and the `doc-guards` CI job runs it with `--check` so a stale table fails the build
+rather than quietly misinforming a reader.
 
 The wedge — a memory-write log an auditor can verify **offline, without trusting
 the store** — is the [`mnemo-core`](https://crates.io/crates/mnemo-core)
@@ -443,7 +488,7 @@ pip install mnemo-db
 
 > **Version line & wire compatibility.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**. That gap is expected, not skew — and here is exactly what `0.5.12` is compatible with, stated rather than left implicit:
 >
-> - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.24 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
+> - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.25 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
 > - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — install it with `cargo install mnemo-mcp-server` (see the [published-versions table](#install-from-cratesio) for what that resolves to today — the 0.4.4 strand tracked by [#140](https://github.com/sattyamjjain/mnemo/issues/140) is repaired and that issue is closed), or build from source with `cargo build --release -p mnemo-mcp-server`. The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
 
 ```python

@@ -308,7 +308,7 @@ jobs:
   # guards below protect against text reappearing *anywhere*, including in a PR
   # that touches no doc path directly.
   doc-guards:
-    name: Doc guards (crate names, GPM clause table)
+    name: Doc guards (crate names, GPM table, published versions, recall number)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -338,3 +338,26 @@ jobs:
       # test job.
       - name: GPM clause table is generated, not hand-edited
         run: python3 scripts/gen_gpm_clause_table.py --check
+
+      # The README's published-versions table is the only place a reader can see
+      # WHICH crates are installable at WHICH version, and the 0.5.24 release
+      # proved it can split: 19 library crates landed while `mnemo-mcp-server`
+      # and `mnemo-embeddings-bench` stayed a release behind, because the tag
+      # lane's dry-run could not resolve `mnemo-admin = "^0.5.24"`. The table had
+      # been stale since 2026-08-14 and nothing caught it, since `--check`
+      # existed but ran nowhere. It runs here now.
+      #
+      # This step queries the live registries, so it fails when reality moves and
+      # the committed table does not. That is the intended failure: regenerate
+      # with `python3 scripts/gen_published_versions.py` and commit.
+      - name: Published-versions table matches the live registries
+        run: python3 scripts/gen_published_versions.py --check
+
+      # The recall number is the most load-bearing claim in the README. It used
+      # to be typed in as prose, which is how it would rot: nothing tied the
+      # 0.689 in the README to the JSON the bench actually wrote. Now the README
+      # block is rendered from bench/results/locomo_v1.json and this fails if the
+      # two disagree. Offline — it reads the committed result, it does not re-run
+      # the bench (that needs a downloaded ONNX model; see #125).
+      - name: README recall number matches the committed bench result
+        run: python3 scripts/gen_recall_number.py --check
