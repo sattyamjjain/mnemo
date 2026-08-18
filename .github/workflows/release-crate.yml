@@ -81,6 +81,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # THE publish closure, in dependency order. Workflow-level on purpose: the
+  # gate compiles it, the dry-run packages it and the publish loop walks it,
+  # and every previous copy of this list drifted from the others. v0.5.24
+  # stranded two crates because WALK gained mnemo-admin/mnemo-pgwire while the
+  # dry-run kept an older hand-written copy. One definition, three consumers.
+  WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
 
 jobs:
   gate:
@@ -118,12 +124,9 @@ jobs:
       # release of this compliance line. `-D warnings` matches CI.
       - name: Clippy (publish closure)
         run: |
-          cargo clippy --all-targets \
-            -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
-            -p mnemo-admin -p mnemo-pgwire \
-            -p mnemo-embeddings-bench -p mnemo-mcp-server -- -D warnings
+          pkgs=""; for c in $WALK; do pkgs="$pkgs -p $c"; done
+          echo "gating:$pkgs"
+          cargo clippy --all-targets $pkgs -- -D warnings
       # Full closure test suite. The recall-QUALITY benchmark
       # `domain_scoped_dilution` was made platform-robust (its "flat P@10 should
       # degrade" assertion now accepts the floor case where the approximate HNSW
@@ -132,12 +135,8 @@ jobs:
       # still asserted), so the gate runs the whole suite with no skips.
       - name: Test (publish closure)
         run: |
-          cargo test \
-            -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
-            -p mnemo-admin -p mnemo-pgwire \
-            -p mnemo-embeddings-bench -p mnemo-mcp-server
+          pkgs=""; for c in $WALK; do pkgs="$pkgs -p $c"; done
+          cargo test $pkgs
 
   publish:
     name: Publish to crates.io
@@ -152,19 +151,6 @@ jobs:
     environment:
       name: crates-io
       url: https://crates.io/crates/mnemo-core
-    env:
-      # Single source of truth for the publish walk (topological order: a
-      # dependent never precedes a crate it needs). Used by BOTH the new-crate
-      # preflight and the real publish loop below, so they can never disagree
-      # about what the walk contains.
-      # mnemo-admin and mnemo-pgwire are OPTIONAL dependencies of mnemo-mcp-server,
-      # and cargo still has to resolve an optional dep to PACKAGE the crate. Leaving
-      # them out is what broke the v0.5.24 release: the dry-run died with "failed to
-      # select a version for the requirement mnemo-admin = ^0.5.24", the publish job
-      # skipped, and mnemo-mcp-server + mnemo-embeddings-bench stranded a version
-      # behind while the other 19 crates went out via the push-to-main lane. Any crate
-      # mnemo-mcp-server depends on, optional or not, must be in this walk AHEAD of it.
-      WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
     steps:
       # fetch-depth: 0 so the registry-parity preflight can report a real
       # "newest git tag" column (the default shallow checkout fetches no tags).
@@ -350,11 +336,16 @@ jobs:
       # packaging AND verify-building all four before any upload.
       - name: Dry-run (coordinated packaging + verify)
         run: |
-          cargo publish --dry-run \
-            -p mnemo-core -p mnemo-graph -p mnemo-attention-state \
-            -p mnemo-compliance -p mnemo-mcp \
-            -p mnemo-postgres -p mnemo-rest -p mnemo-grpc -p mnemo-amp -p mnemo-db \
-            -p mnemo-embeddings-bench -p mnemo-mcp-server
+          # DERIVED FROM $WALK, never hand-listed. This list used to be a
+          # hardcoded copy of the walk, and it drifted: v0.5.25 added
+          # mnemo-admin/mnemo-pgwire to WALK to repair the v0.5.24 strand, but
+          # this copy still had the old 12 crates, so the dry-run failed with the
+          # SAME "failed to select a version for the requirement mnemo-admin"
+          # error the walk fix was meant to cure. One source of truth now.
+          pkgs=""
+          for c in $WALK; do pkgs="$pkgs -p $c"; done
+          echo "dry-run closure:$pkgs"
+          cargo publish --dry-run $pkgs
 
       # --- Real publish, dependency order -----------------------------------
       - name: Publish (dependency order, idempotent)
