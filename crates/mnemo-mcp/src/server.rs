@@ -1964,6 +1964,42 @@ impl ServerHandler for MnemoServer {
         ))
     }
 
+    /// The protocol revisions mnemo actually implements.
+    ///
+    /// Narrowed deliberately. rmcp's default is
+    /// [`ProtocolVersion::KNOWN_VERSIONS`], which is every revision *the SDK*
+    /// knows - as of rmcp 3.1.3 that includes `2026-07-28`. rmcp derives
+    /// `server/discover` from this list, so taking the default made mnemo
+    /// advertise a revision it does not serve: it answers `initialize` with
+    /// `2025-11-25` (rmcp's `ProtocolVersion::LATEST`) while telling a
+    /// discovering client it also speaks `2026-07-28`.
+    ///
+    /// That is a machine-readable claim that was not true, and it is the same
+    /// claimed-but-not-wired shape this repo has repaired before (`role_filter`
+    /// #124, tool-catalog attestation v0.5.20, `LeaseStore` → ADR 0001). A
+    /// client entitled to believe it could send `2026-07-28` would get a server
+    /// that still expects the `initialize` handshake that revision removes, and
+    /// list results with neither `ttlMs` nor `cacheScope`.
+    ///
+    /// Narrowing is rmcp's own supported mechanism, not a workaround - its
+    /// `negotiate_protocol_version` documents that "a server that narrows that
+    /// list is never made to answer `initialize` with a version it cannot
+    /// serve", and a client asking for an unlisted revision negotiates down to
+    /// the server fallback rather than failing.
+    ///
+    /// `2026-07-28` goes back in when mnemo implements it, not when rmcp does.
+    /// See `docs/src/integrations/mcp-2026-07-28.md` for the row-by-row state.
+    fn supported_protocol_versions(
+        &self,
+    ) -> std::borrow::Cow<'static, [rmcp::model::ProtocolVersion]> {
+        std::borrow::Cow::Borrowed(&[
+            rmcp::model::ProtocolVersion::V_2024_11_05,
+            rmcp::model::ProtocolVersion::V_2025_03_26,
+            rmcp::model::ProtocolVersion::V_2025_06_18,
+            rmcp::model::ProtocolVersion::V_2025_11_25,
+        ])
+    }
+
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
         info.instructions = Some(

@@ -30,3 +30,9 @@ base64 = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 mnemo-attention-state = { workspace = true }
+# `client` is dev-only: `explicit_handle_roundtrip` drives the real
+# `tools/call` wire path with an in-process rmcp client rather than reaching
+# into the crate, because the `#[tool]` macro generates private methods and a
+# test that called them would not prove anything about the surface a client
+# actually sees. Consumers of `mnemo-mcp` do not get this feature.
+rmcp = { workspace = true, features = ["client"] }

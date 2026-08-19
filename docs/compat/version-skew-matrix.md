@@ -1,5 +1,27 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-08-19 for the **v0.5.26** cut - a **conformance-documentation and
+> release-engineering** change with **one wire-visible behaviour change**, described
+> below. It adds `docs/src/integrations/mcp-2026-07-28.md`, a row-by-row conformance
+> table against the 2026-07-28 MCP specification, and retires the README's stale
+> pointer at the March 2026 roadmap.
+>
+> **The one behaviour change:** `MnemoServer` now overrides
+> `supported_protocol_versions()` to advertise only the four revisions it implements
+> (`2024-11-05`, `2025-03-26`, `2025-06-18`, `2025-11-25`). It previously took rmcp's
+> default, which advertised `2026-07-28` as well - a revision mnemo does not serve.
+> rmcp derives `server/discover` from that list, so the advertisement was visible to
+> clients. **Not breaking:** the negotiated version is unchanged at `2025-11-25`, and
+> rmcp's `negotiate_protocol_version` falls a client asking for an unlisted revision
+> back to the server default rather than failing. A client that was told `2026-07-28`
+> and acted on it was already going to be disappointed; it now gets an accurate answer
+> up front.
+>
+> Also: the release publish closure now covers every publishable crate in one lane
+> (seven satellite crates folded into `WALK`), with `scripts/check_publish_closure.sh`
+> asserting that in CI. No storage-format or API change. Version pins move
+> 0.5.25 -> 0.5.26 in lockstep. **Not breaking for any consumer.**
+>
 > Updated 2026-08-17 for the **v0.5.24** cut — a **docs + test-coverage** change with
 > **no public API, wire, or storage change**. It states the crates.io name collision in
 > the README (`mnemo` and `mnemo-cli` both belong to other projects; this workspace

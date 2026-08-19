@@ -308,7 +308,7 @@ jobs:
   # guards below protect against text reappearing *anywhere*, including in a PR
   # that touches no doc path directly.
   doc-guards:
-    name: Doc guards (crate names, GPM table, published versions, recall number)
+    name: Doc guards (crate names, publish closure, GPM table, published versions, recall number)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -328,6 +328,23 @@ jobs:
         run: bash scripts/check_crate_name_refs.sh --self-test
       - name: Crate-name reference guard
         run: bash scripts/check_crate_name_refs.sh
+
+      # The publish closure must cover every crate that is supposed to ship.
+      # Two releases died because the list of crates to publish was written
+      # down more than once and the copies drifted (v0.5.24, v0.5.25), and a
+      # third variant went unnoticed entirely: seven crates published only on
+      # the push-to-main lane, that lane stopped partway through v0.5.25, and
+      # they sat a patch behind with nothing red. This asserts the general form
+      # — a crate that should ship is in the list that ships crates — so a new
+      # crate cannot be orphaned by being forgotten.
+      #
+      # Self-test first, same reasoning as above: a guard that can no longer
+      # fail must not pass as coverage. One of its fixtures reproduces the exact
+      # v0.5.24 regression.
+      - name: Publish-closure guard self-test
+        run: bash scripts/check_publish_closure.sh --self-test
+      - name: Publish closure covers every publishable crate
+        run: bash scripts/check_publish_closure.sh
 
       # The GPM gap table is generated from
       # docs/research/governed-persistent-memory-clauses.toml. This fails if the
