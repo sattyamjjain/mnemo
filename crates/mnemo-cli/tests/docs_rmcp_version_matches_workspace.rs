@@ -14,6 +14,21 @@
 //! `ALLOWLIST` exempts genuinely historical/dated version mentions with a stated reason
 //! (same idiom as `KNOWN_NON_CRATE` in `readme_crate_claims_are_real.rs`). It is empty on
 //! purpose: every rmcp version claim in live docs must track the workspace dep.
+//!
+//! # Requirement vs resolved version
+//!
+//! `rmcp = "3.0"` is a caret requirement, so it *resolves* upward: today it resolves to
+//! rmcp 3.1.3. A doc describing what the runtime actually does may need to name the
+//! resolved version rather than the requirement, because the behaviour is patch-specific
+//! (`docs/src/integrations/mcp-2026-07-28.md` turns on `ProtocolVersion::LATEST` still
+//! being `2025-11-25`, which is a property of 3.1.3 and could change in 3.2).
+//!
+//! So a claim is accepted when it *satisfies* the requirement: same major, and minor at
+//! or above the pinned minor. This is deliberately not an allowlist entry, which would
+//! exempt a whole file forever, including after the workspace moved to a different major.
+//! Under this rule a doc saying `rmcp 3.1.3` still fails the moment the workspace pins
+//! `rmcp = "4.0"`, and a doc left at `rmcp 3.1` fails once the workspace pins `3.2` -
+//! which is exactly the drift this fence exists to catch.
 
 use std::path::{Path, PathBuf};
 
@@ -107,6 +122,26 @@ fn is_allowlisted(rel_path: &str) -> bool {
     ALLOWLIST.iter().any(|(file, _reason)| *file == rel_path)
 }
 
+/// Split a `MAJOR.MINOR` string into its numeric parts.
+fn parts(major_minor: &str) -> Option<(u64, u64)> {
+    let mut it = major_minor.split('.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor))
+}
+
+/// Does a documented version satisfy the workspace's caret requirement?
+///
+/// Same major, and minor at or above the pinned minor. See the module docs for why
+/// this is not plain equality.
+fn satisfies_requirement(claim: &str, pinned: &str) -> bool {
+    match (parts(claim), parts(pinned)) {
+        (Some((cmaj, cmin)), Some((pmaj, pmin))) => cmaj == pmaj && cmin >= pmin,
+        // Unparseable on either side: fall back to exact match rather than passing.
+        _ => claim == pinned,
+    }
+}
+
 #[test]
 fn docs_rmcp_version_matches_workspace() {
     let expected = workspace_rmcp_major_minor();
@@ -122,9 +157,10 @@ fn docs_rmcp_version_matches_workspace() {
             .replace('\\', "/");
         for (idx, line) in content.lines().enumerate() {
             for claim in rmcp_claims_in_line(line) {
-                if claim != expected && !is_allowlisted(&rel) {
+                if !satisfies_requirement(&claim, &expected) && !is_allowlisted(&rel) {
                     violations.push(format!(
-                        "{rel}:{}: claims `rmcp {claim}` but the workspace pins `rmcp {expected}`",
+                        "{rel}:{}: claims `rmcp {claim}`, which does not satisfy the \
+                         workspace requirement `rmcp {expected}` (same major, minor >= pinned)",
                         idx + 1
                     ));
                 }
@@ -150,4 +186,54 @@ fn workspace_rmcp_version_is_parseable() {
         mm.contains('.') && mm.chars().next().is_some_and(|c| c.is_ascii_digit()),
         "parsed rmcp workspace version looks wrong: {mm:?}"
     );
+}
+
+/// The satisfaction rule must stay tight in both directions. Loosening equality to
+/// "satisfies the requirement" is only defensible if it still fails on real drift,
+/// so the cases that must fail are asserted, not just the ones that must pass.
+#[test]
+fn requirement_satisfaction_still_rejects_real_drift() {
+    // Accepted: the resolved version of a caret requirement.
+    assert!(
+        satisfies_requirement("3.1", "3.0"),
+        "3.1.x resolves from `rmcp = \"3.0\"`"
+    );
+    assert!(
+        satisfies_requirement("3.0", "3.0"),
+        "the pinned version itself"
+    );
+    assert!(
+        satisfies_requirement("3.7", "3.0"),
+        "any later minor in the same major"
+    );
+
+    // Rejected: a different major line. This is the original bug the fence was
+    // written for (docs saying rmcp 1.3 / 0.14 while the workspace pinned 2.2).
+    assert!(
+        !satisfies_requirement("2.2", "3.0"),
+        "an older major must still fail"
+    );
+    assert!(
+        !satisfies_requirement("1.3", "3.0"),
+        "a much older major must still fail"
+    );
+    assert!(
+        !satisfies_requirement("0.14", "3.0"),
+        "a 0.x claim must still fail"
+    );
+    assert!(
+        !satisfies_requirement("3.1", "4.0"),
+        "a doc left behind after the workspace moves major must fail; this is what an \
+         ALLOWLIST entry would have silently permitted forever"
+    );
+
+    // Rejected: a stale minor after the workspace pin advances.
+    assert!(
+        !satisfies_requirement("3.1", "3.2"),
+        "a doc naming a minor BELOW the pin is stale and must fail"
+    );
+
+    // Unparseable input falls back to exact match rather than passing.
+    assert!(!satisfies_requirement("three", "3.0"));
+    assert!(satisfies_requirement("three", "three"));
 }

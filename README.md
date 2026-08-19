@@ -154,24 +154,31 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.25`, published.** The 14 release-walk crates are on
-> crates.io at that version, including `mnemo-mcp-server`, so
-> `cargo install mnemo-mcp-server` resolves it. Seven satellite crates are one patch
-> lower while their lane catches up: see [Naming](#naming) for exactly which. The
-> generated table below is the authority on what is installable today. Two guards keep
-> this honest instead of stale: the test
+> **Current release: `0.5.26`, cut but not yet published.** The commands above
+> resolve **`v0.5.25`**, which is what every published `mnemo-*` crate is on today,
+> `mnemo-mcp-server` included. The generated table below shows published crates one
+> patch behind the workspace; that is the open release window, not drift, and that
+> table is the authority on what is installable right now.
+>
+> The seven satellite crates that trailed a patch during the `v0.5.25` window have
+> caught up, and they are in the tag walk as of `0.5.26`, so the split that caused it
+> cannot recur: see [Naming](#naming).
+>
+> Three guards keep this honest instead of stale: the test
 > [`crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs)
-> fails if the stated release — or any bare current-band `0.5.2x` release literal
-> anywhere in this README (the `v`-prefixed feature history is exempt) — drifts
-> from the workspace `[workspace.package].version`, and
+> fails if the stated release, or any bare current-band `0.5.2x` release literal
+> anywhere in this README (the `v`-prefixed feature history is exempt), drifts from
+> the workspace `[workspace.package].version`;
 > [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) fails if
-> crates.io drifts from the workspace — including the `mnemo-mcp-server` parity gap
-> above, which it flags today.
+> crates.io falls more than one patch behind the workspace; and
+> [`scripts/check_publish_closure.sh`](scripts/check_publish_closure.sh) fails if a
+> publishable crate is missing from the release closure, which is what let a crate
+> fall behind silently in the first place.
 
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (released): **`v0.5.25`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
+Workspace `[workspace.package].version` (unreleased target): **`v0.5.26`**. The Rust library line tracks the workspace; the Python and TypeScript SDKs version independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
@@ -216,34 +223,53 @@ the PyPI `mnemo-db` package, which *is* the real Python SDK (see
 `cargo add mnemo` (or the `mnemo-cli` equivalents) reappears anywhere in the
 docs.
 
-#### Not every `mnemo-*` crate is at the same version
+#### All published `mnemo-*` crates are at one version
 
-Installing the right *name* is only half of it. `cargo install` resolves whatever
-crates.io actually has, and as of **2026-08-19** that is not one number:
+Installing the right *name* is only half of it: `cargo install` resolves whatever
+crates.io actually has. As of **2026-08-19** that is one number for every crate.
 
-| crate | crates.io | workspace | gap |
-|---|---|---|---|
-| the 14 release-walk crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.25` | `v0.5.25` | none |
-| 7 satellite crates (`mnemo-letta`, `mnemo-mesh`, `mnemo-codemode`, `mnemo-deal`, `mnemo-md-sync`, `mnemo-cma`, `mnemo-baseline`) | `v0.5.24` | `v0.5.25` | one patch, publish in flight |
+| crates.io | workspace | gap |
+|---|---|---|
+| all 20 published `mnemo-*` crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.25` | `v0.5.26` (unreleased) | one patch, the open release window |
 
-**`mnemo-mcp-server` is current again.** It had stranded at `v0.5.23`, skipping
-`v0.5.24` entirely, because the tag lane that publishes it could not resolve
-`mnemo-admin`: the publish closure was written down three times and the copies
-drifted apart. There is now one `WALK` definition that the gate, the packaging
-dry-run and the publish loop all expand, so those lists cannot disagree again.
-Its version history on crates.io still shows the gap: `v0.5.25`, `v0.5.23`, `v0.4.4`.
+This was not true a day earlier, and the history is worth keeping because two
+guards were changed on account of it.
 
-The 7 satellite crates are not in the tag walk; they publish on the push-to-main
-lane, which stopped partway through this release. One patch behind is a publish in
-flight rather than a strand, and
-[`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) treats it that
-way: green, but it now *names* the crates that are behind instead of reporting
-"every published crate matches workspace", which it used to say while seven of
-them did not.
+**`mnemo-mcp-server` had stranded at `v0.5.23`**, skipping `v0.5.24` entirely,
+because the tag lane that publishes it could not resolve `mnemo-admin`: the
+publish closure was written down three times and the copies drifted apart. There
+is now one `WALK` definition that the gate, the packaging dry-run and the publish
+loop all expand. Its version history on crates.io still shows the gap:
+`v0.5.25`, `v0.5.23`, `v0.4.4`.
 
-This table is not hand-maintained. The version column is regenerated from the live
-registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py),
-and the `doc-guards` CI job runs it with `--check` so a stale table fails the build
+**Seven satellite crates** (`mnemo-letta`, `mnemo-mesh`, `mnemo-codemode`,
+`mnemo-deal`, `mnemo-md-sync`, `mnemo-cma`, `mnemo-baseline`) then sat a patch
+behind, because they were not in the tag walk at all and published only on the
+push-to-main lane, which had stopped partway through the release. They have since
+caught up, but "it resolved itself" is not a fix: two lanes with different
+contents is the condition that lets a crate fall behind with **nothing going
+red**, which is the confusion the drift guard exists to prevent rather than
+describe.
+
+So the split is closed rather than waited out. All seven are in `WALK` as of
+`v0.5.26` (they depend on `mnemo-core` alone and nothing depends on them, so
+folding them in reorders nothing), and
+[`scripts/check_publish_closure.sh`](scripts/check_publish_closure.sh) now
+asserts the general form in CI: every publishable workspace member must appear in
+the closure or carry a written exemption. A new crate cannot be orphaned by being
+left out of a list.
+
+[`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) treats one
+patch behind an unreleased workspace as a publish in flight: green, but it
+*names* the crates rather than reporting "every published crate matches
+workspace", which it used to say while seven of them did not.
+
+The summary table above is written by hand and is a narrative of one moment. The
+authoritative, per-registry numbers are in
+the generated table under [Install from crates.io](#install-from-cratesio), which *is*
+generated from the live registries by
+[`scripts/gen_published_versions.py`](scripts/gen_published_versions.py) and
+re-checked by the `doc-guards` CI job, so a stale table there fails the build
 rather than quietly misinforming a reader.
 
 The wedge — a memory-write log an auditor can verify **offline, without trusting
@@ -472,11 +498,53 @@ Run via `mnemo bench embeddings --slo-ms <N>` (built into the `mnemo` binary) or
 
 mnemo v0.4.6 ships a vertical-slice WASM-component implementation of the [`golem:vector@1.0.0`](https://github.com/golemcloud/golem-ai/issues/21) WIT interface — three load-bearing functions (`upsert-vector` / `search-vectors` / `delete-vectors`) — split across two crates: [`crates/mnemo-golem-wit`](crates/mnemo-golem-wit) (the WASM component, compiled to `wasm32-wasip2` via `cargo component build`) and [`crates/mnemo-golem-host`](crates/mnemo-golem-host) (the Rust host that owns an `Arc<MnemoEngine>` and supplies the WIT host imports). The two-crate split is forced by mnemo-core's C++ deps (DuckDB + USearch) which cannot compile to WASM — see [`docs/research/golem-vector-wit-provider.md`](docs/research/golem-vector-wit-provider.md) for the layering rationale, the per-function gap list (27 of 30 deferred to v0.5.x), and the wasmtime-component-loader wiring step explicitly deferred. The vertical-slice integration is functionally complete as a Rust trait surface today (`MnemoGolemProvider` + `MnemoGolemHost`) with 5 integration tests + an end-to-end example showing REMEMBER → RECALL → DELETE through a real `MnemoEngine`.
 
-### mnemo and the MCP 2026 Roadmap
+### Which parts of the MCP spec mnemo implements
 
-The [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/) (published 2026-03-09 by lead maintainer David Soria Parra) reorganises the protocol's direction around four priority areas: **Transport Evolution and Scalability**, **Agent Communication**, **Governance Maturation**, and **Enterprise Readiness**. mnemo's existing surfaces — operator-held HMAC keystore, AES-256-GCM at-rest content encryption, dual DuckDB / PostgreSQL backends, and the `mnemo-compliance` crate — sit under the **Enterprise Readiness** priority area as an *attestable memory* layer regulated-workflow buyers can defend today.
+The current spec revision is [**2026-07-28**][spec2026], which removes
+protocol-level sessions and the `initialize` handshake, adds `server/discover`,
+requires `Mcp-Method` / `Mcp-Name` headers and `ttlMs` / `cacheScope` on list
+results, and deprecates Roots, Sampling, Logging and the HTTP+SSE transport.
 
-This is a spec-context anchor, not a compliance claim. The roadmap's Transport Evolution work (stateless Streamable HTTP + `.well-known` server discovery) is upstream of mnemo and tracked via the `rmcp = "3.0"` workspace dep — mnemo follows `rmcp`'s SEP implementation as it lands rather than racing the spec. See [`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md) §"MCP 2026 Roadmap alignment" for the four-priority-area mapping table.
+**mnemo negotiates `2025-11-25`, not `2026-07-28`.** mnemo speaks MCP through
+the [`rmcp = "3.0"`][rmcp] workspace dep (resolving to 3.1.3), and follows
+rmcp's implementation as it lands rather than racing the spec. rmcp knows the
+newer revision but its `ProtocolVersion::LATEST` is still `2025-11-25`, so that
+is what a handshake settles on.
+
+Where mnemo already satisfies the new revision it is because of decisions taken
+earlier, not because it tracked the spec. Cross-call state has always travelled
+through **explicit, server-minted handles passed as ordinary tool arguments**
+(`checkpoint_id`, `lease_token`), which [SEP-2567] makes the sanctioned
+replacement for sessions; mnemo implements none of the deprecated features; and
+tool listings are already deterministically ordered.
+
+Row by row, with what is still open and what waits on rmcp:
+**[docs/src/integrations/mcp-2026-07-28.md](docs/src/integrations/mcp-2026-07-28.md)**.
+It is not a marketing page: it records four open rows, two of which mnemo could
+close today, and the machine-readable claim that page's own writing found to be
+false and fixed.
+
+<details>
+<summary>Earlier anchor: the March 2026 MCP Roadmap</summary>
+
+The [MCP 2026 Roadmap][roadmap] (published 2026-03-09) organised the protocol's
+direction around four priority areas: Transport Evolution and Scalability, Agent
+Communication, Governance Maturation, and Enterprise Readiness. mnemo's
+operator-held HMAC keystore, AES-256-GCM at-rest encryption, dual DuckDB /
+PostgreSQL backends and `mnemo-compliance` crate sit under **Enterprise
+Readiness** as an *attestable memory* layer.
+
+This is kept as history. The July spec release superseded the roadmap as the
+statement of current direction, and the conformance table above is where mnemo's
+actual state is recorded. The four-priority-area mapping is preserved in
+[`docs/src/integrations/mcp-server.md`](docs/src/integrations/mcp-server.md).
+
+</details>
+
+[spec2026]: https://modelcontextprotocol.io/specification/2026-07-28/changelog
+[roadmap]: https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/
+[rmcp]: https://crates.io/crates/rmcp
+[SEP-2567]: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2567
 
 ## SDKs
 
@@ -490,7 +558,7 @@ pip install mnemo-db
 
 > **Version line & wire compatibility.** The Python SDK **versions independently** of the Rust workspace — [`pypi-publish.yml`](.github/workflows/pypi-publish.yml) reads `python/pyproject.toml` (not the workspace `Cargo.toml`) and ships via PyPI trusted-publisher. Its current release is **`mnemo-db` 0.5.12**. That gap is expected, not skew — and here is exactly what `0.5.12` is compatible with, stated rather than left implicit:
 >
-> - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.25 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
+> - **In-process — `MnemoClient` (the PyO3 extension)** embeds the engine, so `mnemo-db` 0.5.12 *is* **`mnemo-core` 0.5.12**, a month behind the 0.5.26 workspace. It does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17 forged-reasoning recall defense).
 > - **Over MCP — the `agno` / `camel` / `agno-memory` adapters** do **not** embed a server; they spawn the external `mnemo mcp-server` binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a specific `mnemo-core` version. So they are wire-compatible with any **0.5.x** `mnemo-mcp-server` — install it with `cargo install mnemo-mcp-server` (see the [published-versions table](#install-from-cratesio) for what that resolves to today — the 0.4.4 strand tracked by [#140](https://github.com/sattyamjjain/mnemo/issues/140) is repaired and that issue is closed), or build from source with `cargo build --release -p mnemo-mcp-server`. The rmcp 3.0 transport migration (`v0.5.22`, up from the prior 2.2 line) and the v0.5.20 tool-catalog attestation are properties of **that server binary**, not of the SDK; run a current server to get them.
 
 ```python

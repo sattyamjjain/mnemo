@@ -12,6 +12,158 @@ The 0.5.26 window opens on the **v0.5.25** cut. The release content landed on `m
 points at the resulting commit on `main`, which is where the `## [0.5.25]` heading the
 publish gate requires first exists.
 
+### Added (2026-08-19) - a conformance table for the 2026-07-28 MCP spec
+
+The README pointed at the March 2026 MCP *roadmap* as mnemo's current spec anchor. A
+July spec release superseded it, and nothing said which parts of it mnemo implements.
+"We follow rmcp rather than racing the spec" is a defensible posture and remains the
+posture; it is only defensible with a document behind it, otherwise it reads the same
+as not having looked.
+
+- **New: `docs/src/integrations/mcp-2026-07-28.md`.** One row per spec change, with
+  what the spec requires, what mnemo does at this commit, what rmcp 3.1.3 provides,
+  and a status of CONFORMS / GAP / UPSTREAM-BLOCKED. It covers the changes the brief
+  named and the ones it did not, including the largest: the removal of the
+  `initialize` handshake.
+- **The headline: mnemo negotiates `2025-11-25`, not `2026-07-28`.** rmcp 3.1.3
+  carries the newer revision's types, but `ProtocolVersion::LATEST` is still
+  `2025-11-25`, so that is what a handshake settles on. Most rows follow from that.
+- **Four rows are open.** `ttlMs` and `cacheScope` on list results are mnemo's to
+  close today. The stateless lifecycle and the SEP-2243 headers wait on rmcp moving
+  `LATEST`; no fork of rmcp. The resource-not-found error code stays `-32002` on
+  purpose, because that is what the revision mnemo actually speaks specifies, and
+  changing it early would trade real conformance for imaginary conformance.
+- **A trap recorded for whoever closes the caching rows:** mnemo's `tools/list` is
+  role-filtered per caller, so `cacheScope` must be `private`. `CacheScope::default()`
+  is `Public`, which would let a shared intermediary serve one caller's catalog to
+  another.
+- README's MCP section now names the July release and links the table; the March
+  roadmap is kept as history in a collapsed block rather than presented as current
+  direction. The same stale framing in `docs/src/integrations/mcp-server.md` is marked
+  superseded.
+
+### Fixed (2026-08-19) - mnemo advertised a protocol revision it does not implement
+
+Writing the conformance table surfaced a live defect rather than only recording known
+ones.
+
+- `MnemoServer` did not override `supported_protocol_versions()`, so it took rmcp's
+  default of `ProtocolVersion::KNOWN_VERSIONS` - every revision *the SDK* knows,
+  `2026-07-28` included. rmcp derives `server/discover` from that list. Confirmed
+  against a running server: advertised `protocol_version = 2025-11-25`, but
+  `supported_protocol_versions = [2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25,
+  2026-07-28]`.
+- A client entitled to believe that advertisement would have sent `2026-07-28`
+  requests to a server that still expects the handshake that revision removes, and
+  received list results with neither `ttlMs` nor `cacheScope`. A machine-readable
+  claim that was not true, which is the same claimed-but-not-wired shape repaired
+  before in `role_filter` #124, tool-catalog attestation v0.5.20 and `LeaseStore`
+  under ADR 0001.
+- **Fix:** narrow the list to the four revisions mnemo serves. This is rmcp's own
+  supported mechanism, not a workaround - its `negotiate_protocol_version` documents
+  that a server narrowing the list "is never made to answer `initialize` with a
+  version it cannot serve", and a client asking for an unlisted revision negotiates
+  down instead of failing. No client breaks. `2026-07-28` goes back when mnemo
+  implements it, not when rmcp does.
+- Pinned by `crates/mnemo-mcp/tests/mcp_2026_07_28_conformance.rs`, which also asserts
+  the doc's version list *equals* the server's, so the page and the code cannot drift
+  apart. Both directions were verified by mutation.
+
+### Added (2026-08-19) - the explicit-handle pattern is now a tested property
+
+The 2026-07-28 revision removes protocol sessions and names the replacement: servers
+needing cross-call state use explicit, server-minted handles passed as ordinary tool
+arguments ([SEP-2567]). mnemo already worked this way. Being on the right side of a
+change by accident is not the same as being on it on purpose.
+
+- **New: `crates/mnemo-mcp/tests/explicit_handle_roundtrip.rs`.** Drives
+  `checkpoint` -> `branch` -> `replay` end to end over real JSON-RPC `tools/call` on
+  an in-memory duplex transport, which carries no session identifier of any kind. It
+  asserts `branch` forks from the handle it was given and `replay` returns that
+  handle's own snapshot - with a *newer* checkpoint deliberately present, so
+  "resolved the handle" and "returned the only checkpoint there was" are
+  distinguishable observations. A handle the server never minted is rejected.
+- **Audit of all 23 tools for connection-scoped identity.** 19 take `Parameters<T>`
+  and nothing else, so connection state is unrepresentable in their signatures. 4
+  (`recall`, `forget_subject`, `delegate`, `trajectory_audit`) take a `CallerContext`
+  resolved *per request* from that request's `_meta` (ADR 0002), which is not
+  connection state and survives the revision unchanged, since `_meta` remains a
+  per-request carrier under `2026-07-28`.
+- **One deliberate deviation, documented rather than removed:** with no capability
+  presented, `resolve_caller` falls back to a boot-derived identity. On stdio one
+  process is one peer and the operator is the caller, so requiring a capability there
+  would break every existing deployment to buy nothing. The deviation is bounded - a
+  capability that is present but unverifiable is an error and never a downgrade, and
+  the fallback does not apply at all on the network-facing `http-transport`.
+- Documented in the `mnemo-mcp` README and in the conformance page.
+
+[SEP-2567]: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2567
+
+### Changed (2026-08-19) - one publish lane, and a guard so a crate cannot be orphaned
+
+`[Unreleased]` recorded for a second release that seven crates resolve a patch behind
+because they publish on a lane the tag walk does not include. Deciding it rather than
+carrying the note into a third.
+
+- **The seven are folded into `WALK`:** `mnemo-letta`, `mnemo-mesh`, `mnemo-codemode`,
+  `mnemo-deal`, `mnemo-md-sync`, `mnemo-cma`, `mnemo-baseline`. Each depends on
+  `mnemo-core` alone and nothing in the walk depends on them, so they are leaves and
+  folding them in reorders nothing. One lane now publishes everything in dependency
+  order.
+- **Why fold rather than add a second guard.** Two lanes with different contents is
+  the condition that lets a crate fall behind with nothing red - the confusion the
+  drift guard exists to prevent, which it had instead been taught to describe.
+  Removing the split removes the class.
+- **New: `scripts/check_publish_closure.sh`, wired into CI and into the release gate.**
+  It asserts the general form of a bug that has now cost two releases: every
+  publishable workspace member must appear in the closure or carry a written
+  exemption; every name in the closure must be a real member (a typo fails the publish
+  mid-release, after earlier crates have uploaded and cannot be recalled); and the
+  library lane can never ship a crate the tag lane does not. `--self-test` runs five
+  fixtures, one of which reproduces the exact `mnemo-admin` regression that killed
+  v0.5.24 and v0.5.25.
+- **Two exemptions, each with a recorded reason,** because an exemption without one is
+  how a real orphan gets parked and forgotten: `mnemo-python` ships to PyPI as
+  `mnemo-db` via maturin and is not a crates.io crate, and `mnemo-golem-host` is
+  excluded from the CI workspace build (rust-lld rejects its generated
+  `cabi_post_mnemo:golem-vector/...` symbol) so CI cannot build it, let alone publish
+  it. The second was found by writing this guard: it is publishable in `cargo
+  metadata`, in neither lane, and unpublished on crates.io.
+
+### Changed (2026-08-19) - a README guard was holding the docs at a stale anchor
+
+`readme_mcp_roadmap_link.rs` (v0.4.4 U1) pinned the README's link to the March 2026
+MCP roadmap so "a future README rewrite that drops the anchor will fail this test
+before it can land". The intent was right: an alignment claim with no primary source
+is unanchored marketing text. It pinned the wrong thing, though, asserting a specific
+*heading string*, so when the July spec superseded the roadmap the guard's only effect
+was to hold the README at the older anchor. A test that stops a doc being updated to
+the truth has inverted its own purpose.
+
+Renamed to `readme_mcp_spec_anchors.rs` and strengthened rather than dropped. It now
+asserts the current revision is cited by primary source, the conformance table is
+linked, the roadmap link survives (deleting history is the other way to make a claim
+unauditable), and the roadmap is *subordinate* to the current spec, checked by
+ordering. Verified by mutation: moving the roadmap URL ahead of the spec URL fails.
+
+Separately, `docs_rmcp_version_matches_workspace.rs` compared documented rmcp versions
+to the pin by exact `major.minor`, which made naming the *resolved* version a failure:
+`rmcp = "3.0"` is a caret requirement resolving to 3.1.3, and the conformance page
+turns on behaviour specific to that patch. It now accepts a version that *satisfies*
+the requirement (same major, minor at or above the pin) rather than only the literal.
+Deliberately not an `ALLOWLIST` entry, which would have exempted the file forever
+including across a major bump. Nine unit cases pin both directions: `3.1` satisfies
+`3.0`, while `2.2`, `1.3`, `0.14`, a `3.1` doc under a `4.0` pin, and a `3.1` doc
+under a `3.2` pin all still fail.
+
+### Changed (2026-08-19) - issue #37 labels now match its state
+
+`needs-design` had been on #37 since 2026-05-03, when the ask was a design doc before
+any code. [ADR 0003](docs/adr/0003-minja-procedure-harness.md) is that doc, and the
+2026-08-18 decision scoped the issue to one session's work. What remains outstanding
+is an LLM budget for the explicitly out-of-scope phases, which is not a design
+problem. Label removed and the state restated on the thread.
+
 ### Fixed (2026-08-19) - the publish closure was written down three times
 
 `v0.5.25` failed twice with the same error the `v0.5.24` fix was meant to cure:

@@ -29,6 +29,7 @@
   - [Cloudflare R2 workspace](./integrations/r2-workspace.md)
   - [Letta Conversations adapter](./integrations/letta-conversations.md)
   - [mnemo mcp-server (hardened)](./integrations/mcp-server.md)
+  - [MCP 2026-07-28 conformance](./integrations/mcp-2026-07-28.md)
 - [Deployment](./deployment/README.md)
   - [Docker](./deployment/docker.md)
   - [Kubernetes](./deployment/kubernetes.md)

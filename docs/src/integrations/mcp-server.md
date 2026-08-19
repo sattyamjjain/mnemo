@@ -206,6 +206,14 @@ cannot silently disappear ahead of an SDK-bump release.
 
 ## MCP 2026 Roadmap alignment (v0.4.4 — U1)
 
+> **Superseded as a statement of current direction.** This section maps mnemo
+> against the March 2026 roadmap. The [2026-07-28 spec release][spec2026] came
+> after it. For what mnemo actually implements today, revision by revision, see
+> [MCP 2026-07-28 conformance](./mcp-2026-07-28.md). The mapping below is kept
+> as history.
+>
+> [spec2026]: https://modelcontextprotocol.io/specification/2026-07-28/changelog
+
 The [MCP 2026 Roadmap](https://blog.modelcontextprotocol.io/posts/2026-mcp-roadmap/)
 (published 2026-03-09 by lead maintainer David Soria Parra)
 reorganises the protocol's direction around four priority areas. The

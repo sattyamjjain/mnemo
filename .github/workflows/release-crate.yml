@@ -86,7 +86,23 @@ env:
   # and every previous copy of this list drifted from the others. v0.5.24
   # stranded two crates because WALK gained mnemo-admin/mnemo-pgwire while the
   # dry-run kept an older hand-written copy. One definition, three consumers.
-  WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
+  #
+  # v0.5.26: this is now EVERY publishable workspace member, not a subset.
+  # Seven crates (mnemo-letta, mnemo-mesh, mnemo-codemode, mnemo-deal,
+  # mnemo-md-sync, mnemo-cma, mnemo-baseline) used to publish only on the
+  # push-to-main lane. That lane stopped partway through v0.5.25 and left them a
+  # patch behind, which the drift guard then had to be taught to describe. Two
+  # lanes with different contents is a standing source of exactly the confusion
+  # the guard exists to prevent, so there is now one closure.
+  #
+  # Those seven depend on mnemo-core alone and nothing in the walk depends on
+  # them, so they are leaves: they go after mnemo-core and their order among
+  # themselves is free.
+  #
+  # `scripts/check_publish_closure.sh` fails CI if a publishable member is
+  # missing from this list, so a NEW crate cannot be orphaned by being forgotten
+  # here. That is the general form of the bug that has now cost two releases.
+  WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire mnemo-letta mnemo-mesh mnemo-codemode mnemo-deal mnemo-md-sync mnemo-cma mnemo-baseline mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
 
 jobs:
   gate:
@@ -111,6 +127,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+      # Cheapest possible check, so it runs before the 60-plus minutes of
+      # compilation below. If WALK does not cover every publishable crate, this
+      # release would strand one — and stranding is only discoverable after the
+      # upload, when it cannot be undone.
+      - name: Publish closure covers every publishable crate
+        run: bash scripts/check_publish_closure.sh
       # `mnemo-grpc` (in the publish closure since v0.5.20) has a prost build
       # script that shells out to `protoc`; without it clippy/test fail before
       # any publish.
