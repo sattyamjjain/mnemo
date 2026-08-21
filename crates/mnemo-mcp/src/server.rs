@@ -95,6 +95,26 @@ pub struct MnemoServer {
 }
 
 impl MnemoServer {
+    /// Freshness hint for `tools/list` ([SEP-2549] `ttlMs`).
+    ///
+    /// The catalog a caller sees is the compiled-in tool router filtered by that
+    /// caller's roles, so for a fixed capability it does not change while the
+    /// process runs. It is still only a minute: the filter is driven by an
+    /// operator-supplied manifest, and a caller holding an hour-old catalog
+    /// across a manifest change would keep calling tools it can no longer see.
+    /// A short hint costs one extra listing; a long one costs correctness.
+    ///
+    /// [SEP-2549]: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2549
+    const TOOLS_LIST_TTL_MS: u64 = 60_000;
+
+    /// Freshness hint for `resources/list`.
+    ///
+    /// Zero, meaning immediately stale. Resources here are memory records, and
+    /// any `mnemo.remember` changes the set, so a listing is accurate only at
+    /// the moment it is produced. Advertising any positive TTL would invite a
+    /// client to serve a list that a write has already invalidated.
+    const RESOURCES_LIST_TTL_MS: u64 = 0;
+
     fn touch_activity(&self) {
         if let Some(ref t) = self.activity_tracker {
             let now = std::time::SystemTime::now()
@@ -1838,11 +1858,26 @@ impl ServerHandler for MnemoServer {
             .into_iter()
             .filter(|t| visible.contains(t.name.as_ref()))
             .collect();
-        // rmcp 3.0: `tools` is now `Option<Vec<Tool>>` and the struct gained
-        // caching fields (cache_scope / result_type / ttl_ms). `..Default::default()`
-        // leaves those unset so tool-listing keeps its pre-3.0 (uncached) semantics.
+        // SEP-2549 caching hints.
+        //
+        // `cache_scope` MUST be `Private` here and it is not a judgement call:
+        // this catalog is role-filtered per caller (ADR 0002), so two callers
+        // presenting different capabilities see different tool sets. `Public`
+        // would permit a shared intermediary to serve one caller's filtered
+        // catalog to another, which is a capability leak. `CacheScope::default()`
+        // is `Public`, so leaving the field unset is not the safe option it looks
+        // like once anything downstream starts reading it.
+        //
+        // These fields are defined by the 2026-07-28 revision and mnemo
+        // negotiates 2025-11-25, so no client is currently promised them. They
+        // are emitted anyway because an unknown JSON field is ignored by every
+        // client that does not know it, while an intermediary that DOES
+        // understand `cacheScope` gets told the truth today rather than after
+        // the eventual revision bump.
         Ok(rmcp::model::ListToolsResult {
             tools,
+            ttl_ms: Some(Self::TOOLS_LIST_TTL_MS),
+            cache_scope: Some(rmcp::model::CacheScope::Private),
             ..Default::default()
         })
     }
@@ -1923,8 +1958,15 @@ impl ServerHandler for MnemoServer {
                 res
             })
             .collect();
+        // SEP-2549, as above. `Private` is load-bearing here for a stronger
+        // reason than on `tools/list`: these resources are one agent's memory
+        // records, scoped by the caller's per-request identity, so a shared
+        // cache serving them to another caller would leak content and not just
+        // a catalog.
         Ok(rmcp::model::ListResourcesResult {
             resources,
+            ttl_ms: Some(Self::RESOURCES_LIST_TTL_MS),
+            cache_scope: Some(rmcp::model::CacheScope::Private),
             ..Default::default()
         })
     }
