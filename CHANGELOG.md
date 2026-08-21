@@ -12,6 +12,120 @@ The 0.5.26 window opens on the **v0.5.25** cut. The release content landed on `m
 points at the resulting commit on `main`, which is where the `## [0.5.25]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-21) - the README claimed a Python SDK version that was 14 releases stale
+
+README prose read *"Its current release is `mnemo-db` 0.5.12"* and then reasoned about wire
+compatibility from that premise. PyPI has served **0.5.26** since 2026-08-19.
+
+**The argument did not survive the correction; it had inverted.** The old text said the
+wheel "does **not** include engine changes from `v0.5.13` onward (for example, the v0.5.17
+forged-reasoning recall defense)". It includes all of them. Worse, the premise underneath
+was wrong in its own right: the paragraph asserted the Python SDK "versions
+independently", which `workspace_version_fence.rs::python_sdk_version_matches_the_workspace`
+has contradicted since it was written. That fence exists **because of this exact drift**,
+and its own comment says so: *"It had drifted exactly as you would predict from a comment
+claiming the opposite: `pyproject.toml` said 0.5.12 while the compiled core inside the same
+wheel was 0.5.23."* The fence was added; the README sentence that caused it was not.
+
+- **The paragraph is now generated**, not typed, from live PyPI plus the workspace version,
+  between `<!-- BEGIN generated: python-sdk-compat -->` markers. A number and the argument
+  that depends on it are produced together or they go stale together, so generating the
+  table while leaving the prose hand-written only moved the staleness somewhere less
+  visible.
+- **It states what is actually true:** `mnemo-db` is PyO3 bindings that compile
+  `mnemo-core` into the wheel, so the wheel version names the engine inside it and the
+  fence keeps them equal. `mnemo-db 0.5.26` *is* `mnemo-core 0.5.26`; there is no
+  version-skew question to answer.
+- **And a fact the old paragraph could not have carried:** `pip install mnemo-db` and
+  `cargo add mnemo-core` do not currently resolve the same version (PyPI `v0.5.26`,
+  crates.io `v0.5.25`), because the wheel publishes on merge to `main` while the crates
+  publish on a tag. Generated, so it corrects itself when the tag lands.
+- The generated table's own header carried the same false claim and is fixed with it. Only
+  the TypeScript SDK versions independently.
+
+### Added (2026-08-21) - the doc guards run on a schedule, because registries change without a push
+
+`gen_published_versions.py --check` only ran on push and pull_request, so a generated block
+was never fresher than the last commit. A publish landing minutes after a merge left the
+README wrong with nothing red until somebody happened to push. That is how `0.5.12` sat in
+the README while PyPI served `0.5.26`.
+
+CI now also runs on a daily `schedule`. The nine compile-heavy jobs carry
+`if: github.event_name != 'schedule'`, so the nightly runs only the two checks that read
+live registries, `doc-guards` and `version-drift`. Recompiling the workspace daily to
+re-read PyPI would be a lot of CI for no signal. The cron is at `17 7` rather than a round
+hour, since every scheduled workflow on the platform fires at `:00`.
+
+### Fixed (2026-08-21) - the published-crate count was wrong, and four crates disclosed nothing
+
+- **"all 20 published `mnemo-*` crates" was 21.** Enumerated from crates.io and now listed
+  by name, with the note that one of them, **`mnemo-db`, ships no code**: it is a defensive
+  name reservation whose entire contents are a doc comment. It is counted because it is a
+  real artifact someone can `cargo add`, and they should learn that from the count rather
+  than from an empty crate. That table also had a three-column header over a four-cell row;
+  fixed.
+- **`mnemo-mesh`, `mnemo-deal`, `mnemo-baseline` and `mnemo-cma` had no README at all**, so
+  a visitor to crates.io saw only the one-line description. All four are published at
+  `0.5.25` on a public registry while the workspace README's own enforcement table marks
+  them *"standalone adapter crates, not invoked by the running server"*. Somebody who finds
+  the crate on crates.io never sees that table. Each now carries that disclosure at the top
+  of its own README, plus `readme = "README.md"` in its manifest, verified present in
+  `cargo package --list`.
+- **`ConsentTokenGuard` documented the opposite of what it does.** Its doc comment said the
+  guard "refuses anything missing / expired / wrong-scope BEFORE the engine sees the data",
+  which reads as wired in. The enforcement table marks it *"library only, core engine never
+  calls it"*, and it is stronger than that: **`mnemo-core` does not depend on
+  `mnemo-compliance` at all**, so there is no code path by which a `remember` could reach
+  this guard. For a compliance control, a doc that implies enforcement it does not have is
+  the worst kind to leave. The type now says so, with the call pattern an operator must
+  write themselves.
+
+**These land on crates.io only at the next publish.** The four crates and
+`mnemo-compliance` are at `0.5.25` on the registry; the READMEs and the doc comment ship
+with `0.5.26`.
+
+### Changed (2026-08-21) - one headline recall number, and the older one keeps its interval
+
+The README carried two real-embedder recall figures about sixty lines apart, on different
+embedders and different corpora. It warned they must not be conflated, which does not help
+a reader skimming for a number: they take whichever they meet first.
+
+- **The MiniLM measurement is the single headline** (n=45, recall@1 **0.689**
+  [0.543, 0.805], lexical control 0.422 [0.290, 0.567] on the same corpus and harness). It
+  keeps its `preliminary (n<100)` marker.
+- **The nomic-embed-text measurement moves below it**, into a collapsed *"earlier
+  measurement, different embedder and corpus"* block, and **gains the Wilson 95% interval
+  it never had**: recall@1 0.739 **[0.535, 0.875]** at n=23, recall@5 0.826 [0.629, 0.930].
+- **Computing that interval is what makes the restructure worth doing.** [0.535, 0.875] is
+  wider than the headline's [0.543, 0.805] and *fully overlaps* it: the two runs are
+  statistically indistinguishable, so the higher point estimate is not evidence that the
+  768-dim embedder is better, only that n=23 buys very little resolution. Stated in the
+  block, because a reader comparing 0.739 against 0.689 will otherwise draw the wrong
+  conclusion from two numbers that do not support one.
+- A later section still called the nomic figure *"The canonical, reproducible number"*,
+  which directly contradicted the new headline. Corrected, and the bare point estimate in
+  the vendor-comparison table now carries its interval too.
+
+### Added (2026-08-21) - the MINJA gap is a documented limitation, and #37 is retargeted
+
+New **[`docs/security/known-limitations.md`](docs/security/known-limitations.md)**, linked
+from the README beside the benchmark index. It is the mirror of that page: things a reader
+might reasonably assume mnemo measures or enforces and it does not.
+
+It states that **mnemo has no measured resistance to MINJA-style progressive memory
+poisoning**, tabulates why each of the four existing poisoning benches measures something
+else, and repeats the uncomfortable adjacent result rather than leaving it in a JSON file:
+on a real dense embedder the z-score lane leaves ASR at **1.0 with the defense on**,
+unchanged from off.
+
+[#37](https://github.com/sattyamjjain/mnemo/issues/37) was labelled `target:v0.5.x` when
+filed on 2026-04-24; the project has since shipped `v0.5.22` through `v0.5.26`. The label
+was still technically true, which is the problem: it cannot become false, so it stopped
+carrying information. Retargeted to **`target:v1.0.0`** - not "next release", because five
+of those went past, but before 1.0, because a memory system making poisoning-resistance
+claims should measure this class before calling itself 1.0. Not closed: the scope, the
+design in ADR 0003, and the LLM-budget blocker on the full procedure are all unchanged.
+
 ### Fixed (2026-08-21) - three versions shipped with no GitHub Release, and nothing was going to fix that
 
 `v0.5.23`, `v0.5.24` and `v0.5.25` had tags but no Release object. The newest Release

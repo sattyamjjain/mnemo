@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Per-agent rolling behavioural baseline + OpenTelemetry/OCSF emitters with z-score+EWMA drift detection (v0.4.1 P0-3). Plugs straight into the agentic-SOC telemetry gap RSAC 2026 flagged."
+readme = "README.md"
 
 [dependencies]
 mnemo-core = { workspace = true }

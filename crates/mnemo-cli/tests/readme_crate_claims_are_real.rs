@@ -67,6 +67,26 @@ const KNOWN_NON_CRATE: &[(&str, &str)] = &[
          'has not been built — it is not a workspace member' context. Tracked in \
          docs/roadmap/planned-crates.md (#74).",
     ),
+    // The three below are REAL crates on crates.io that belong to OTHER
+    // projects. The README names them in the Naming section precisely so a
+    // reader does not `cargo add` one by mistake, which makes them the opposite
+    // of a phantom claim: omitting them would be the defect. They are not, and
+    // must never become, workspace members.
+    (
+        "mnemo-engine",
+        "a real crates.io crate owned by an unrelated project; named in the \
+         Naming section as a name NOT to install",
+    ),
+    (
+        "mnemo-rs",
+        "a real crates.io crate owned by an unrelated project; named in the \
+         Naming section as a name NOT to install",
+    ),
+    (
+        "mnemo-server",
+        "a real crates.io crate owned by an unrelated project; named in the \
+         Naming section as a name NOT to install",
+    ),
     (
         "mnemo-actually-lands",
         "token-extraction artifact from the URL fragment #where-mnemo-actually-lands, \
