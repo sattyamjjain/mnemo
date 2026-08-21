@@ -186,12 +186,35 @@ impl ConsentToken {
     }
 }
 
-/// Per-write guard: the operator presents a [`ConsentToken`] alongside
-/// every `remember` call, and the guard refuses anything missing /
-/// expired / wrong-scope BEFORE the engine sees the data.
+/// Per-write consent guard: validates a [`ConsentToken`] against the scope a
+/// write needs, refusing anything missing, expired, wrong-scope or revoked.
 ///
-/// Holds an optional set of currently-revoked token hashes — operators
-/// can plumb a webhook from Mannsetu's revocation feed to populate it.
+/// # This guard is not wired into the engine. You must call it yourself.
+///
+/// **`mnemo-core` never invokes this type, and cannot**: `mnemo-core` does not
+/// depend on `mnemo-compliance` at all, so there is no code path by which a
+/// `remember` reaches this guard on its own. Adding `mnemo-compliance` to a
+/// project does **not** put a consent check in front of writes.
+///
+/// This is stated here, at the type, because it is the kind of thing that is
+/// easy to assume from the name and expensive to assume wrongly: a control you
+/// believe is enforcing and is not is worse than one you know you have to build,
+/// and a reader who found this crate on crates.io never sees the enforcement
+/// table in the workspace README that marks it *"library only, core engine never
+/// calls it"*.
+///
+/// To actually enforce consent, call [`ConsentTokenGuard::authorize`] in your
+/// own write path and only proceed on `Ok`:
+///
+/// ```ignore
+/// // The guard sits in YOUR code, ahead of the engine call.
+/// guard.authorize(&token, "memory:write")?;
+/// engine.remember(request).await?;
+/// ```
+///
+/// What this type does give you is the validation logic and a revocation set:
+/// it holds currently-revoked token hashes, which an operator can populate from
+/// a revocation-feed webhook.
 pub struct ConsentTokenGuard {
     revoked: RwLock<HashSet<String>>,
 }

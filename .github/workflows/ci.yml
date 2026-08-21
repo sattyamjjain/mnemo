@@ -5,6 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Registry state changes without anyone pushing. The published-versions table
+  # and the Python SDK compatibility paragraph are generated from live PyPI,
+  # npm and crates.io, so on a push-only trigger they are only as fresh as the
+  # last commit: a publish that lands minutes after a merge leaves the README
+  # stating a version that is already wrong, and nothing goes red until someone
+  # happens to push. That is how the README sat claiming `mnemo-db 0.5.12`
+  # while PyPI served 0.5.26.
+  #
+  # 07:17 rather than a round hour: every scheduled workflow on the platform
+  # fires at :00, and this one is not urgent enough to join that queue.
+  schedule:
+    - cron: "17 7 * * *"
 
 env:
   CARGO_TERM_COLOR: always
@@ -35,6 +47,10 @@ env:
 jobs:
   fmt:
     name: Format
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -45,6 +61,10 @@ jobs:
 
   clippy:
     name: Clippy
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -58,6 +78,10 @@ jobs:
 
   test:
     name: Test
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -77,6 +101,10 @@ jobs:
   # the feature compiles, links the native runtime, and its test suite passes.
   onnx-feature:
     name: onnx feature (mnemo-core)
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -106,6 +134,10 @@ jobs:
 
   build:
     name: Build
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -120,6 +152,10 @@ jobs:
 
   security:
     name: Security Audit
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -130,6 +166,10 @@ jobs:
 
   postgres:
     name: Postgres integration (pgvector ANN)
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # Live pgvector database so the MNEMO_TEST_POSTGRES_URL-gated ANN test
     # (crates/mnemo-postgres/tests/pgvector_ann.rs) actually runs instead of
@@ -186,6 +226,10 @@ jobs:
   # mnemo-mcp-server strand for 87 days.
   python-tests:
     name: Python tests (pytest)
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -294,6 +338,10 @@ jobs:
   # job also runs these tests — it just cannot exercise the tag legs.
   version-fence:
     name: Workspace version fence (offline)
+    # Skipped on the nightly schedule: the cron exists to re-check the
+    # generated blocks against live registries, and recompiling the
+    # workspace daily to do that would be a lot of CI for no signal.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

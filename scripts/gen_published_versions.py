@@ -2,11 +2,22 @@
 """Generate the README "Published versions (per registry)" table from the live
 registries, so the numbers are *generated, not typed* (WI1).
 
-Three registries publish mnemo artifacts and they drift independently:
+Three registries publish mnemo artifacts:
   - crates.io: the Rust library line + the `mnemo` server binary.
-  - PyPI:      `mnemo-db`, the Python SDK (versioned independently — see
-               python/pyproject.toml).
-  - npm:       `@mndfreek/mnemo-sdk`, the TypeScript SDK (independent too).
+  - PyPI:      `mnemo-db`, the Python SDK. NOT independently versioned: it is
+               PyO3 bindings that compile `mnemo-core` into the wheel, so the
+               wheel version names the engine inside it, and
+               `workspace_version_fence.rs::python_sdk_version_matches_the_workspace`
+               fails CI if it drifts.
+  - npm:       `@mndfreek/mnemo-sdk`, the TypeScript SDK. Genuinely independent:
+               a thin MCP-over-STDIO client that embeds nothing.
+
+This script generates TWO blocks, because a hand-written version in prose is the
+root cause it exists to remove. The README used to carry "Its current release is
+`mnemo-db` 0.5.12" in prose and then reason about wire compatibility from that
+premise; PyPI was on 0.5.26 by then, and the reasoning had inverted along with
+the number. Generating the table and leaving the paragraph typed just moves the
+staleness somewhere less visible.
 
 This script queries each for the currently-published version and its publish
 date, then rewrites the block between the README markers:
@@ -43,6 +54,8 @@ REPO = Path(__file__).resolve().parent.parent
 README = REPO / "README.md"
 BEGIN = "<!-- BEGIN generated: published-versions -->"
 END = "<!-- END generated: published-versions -->"
+COMPAT_BEGIN = "<!-- BEGIN generated: python-sdk-compat -->"
+COMPAT_END = "<!-- END generated: python-sdk-compat -->"
 UA = "mnemo-gen-published-versions (https://github.com/sattyamjjain/mnemo)"
 
 # crates on crates.io worth surfacing: the entry libs, the server binary (the
@@ -134,7 +147,7 @@ def render() -> str:
             shipped = False
         rows.append((f"crates.io", f"`{name}` — {note}", vcell(ver), date))
     pv, pd = pypi("mnemo-db")
-    rows.append(("PyPI", "`mnemo-db` — Python SDK (independent)", vcell(pv), pd))
+    rows.append(("PyPI", "`mnemo-db` — Python SDK (tracks the workspace)", vcell(pv), pd))
     nv, nd = npm("@mndfreek/mnemo-sdk")
     rows.append(("npm", "`@mndfreek/mnemo-sdk` — TypeScript SDK (independent)", vcell(nv), nd))
 
@@ -143,8 +156,10 @@ def render() -> str:
     out.append("")
     state = "released" if shipped else "unreleased target"
     out.append(f"Workspace `[workspace.package].version` ({state}): **`v{ws}`**. "
-               "The Rust library line tracks the workspace; the Python and TypeScript SDKs "
-               "version independently. Published, per registry:")
+               "The Rust library line and the Python SDK both track the workspace (the "
+               "wheel compiles `mnemo-core` into itself, so its version names the engine "
+               "inside it). Only the TypeScript SDK versions independently. Published, "
+               "per registry:")
     out.append("")
     out.append("| Registry | Artifact | Published version | Published |")
     out.append("|---|---|---|---|")
@@ -159,29 +174,116 @@ def render() -> str:
     return "\n".join(out)
 
 
+def render_python_compat() -> str:
+    """Generate the Python SDK version-and-compatibility paragraph.
+
+    This paragraph reasons *from* a version number, so it cannot be half
+    generated: the number and the argument that depends on it are produced
+    together or they go stale together.
+    """
+    ws = workspace_version()
+    pv, _ = pypi("mnemo-db")
+    core, _ = crates_io("mnemo-core")
+
+    out = [COMPAT_BEGIN]
+    out.append("<!-- Regenerate with: python3 scripts/gen_published_versions.py -->")
+    out.append("")
+
+    if pv in ("absent", "unknown"):
+        out.append(
+            "> **Version line & wire compatibility.** PyPI could not be reached when this "
+            "block was generated, so no version is stated here rather than a stale one. "
+            "Re-run `python3 scripts/gen_published_versions.py`."
+        )
+        out.append(COMPAT_END)
+        return "\n".join(out)
+
+    tracks = pv == ws
+    lead = (
+        f"> **Version line & wire compatibility.** `pip install mnemo-db` gives "
+        f"**`v{pv}`**. The Python SDK is **not** independently versioned: `python/` is "
+        f"PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version "
+        f"names the engine inside it, and "
+        f"[`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) "
+        f"fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from "
+        f"`[workspace.package].version`."
+    )
+    if not tracks:
+        lead += (
+            f" **It is drifting right now: the workspace is `v{ws}` and PyPI is `v{pv}`.** "
+            f"That is a bug, not a design, and the fence above should have caught it."
+        )
+    out.append(lead)
+    out.append(">")
+    out.append(
+        f"> - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v{pv}` *is* "
+        f"`mnemo-core` `v{pv}`. There is no version-skew question to answer: the engine "
+        f"is the wheel."
+    )
+
+    if core not in ("absent", "unknown") and core != pv:
+        out.append(
+            f"> - **`pip install mnemo-db` and `cargo add mnemo-core` do not currently "
+            f"resolve the same version.** PyPI has `v{pv}`; crates.io has `v{core}`. The "
+            f"wheel publishes on merge to `main` while the crates publish on a tag, so "
+            f"the Python side leads inside an open release window. Pin deliberately if "
+            f"you embed both."
+        )
+
+    out.append(
+        "> - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no "
+        "engine; they spawn the external `mnemo` server binary you install and bind to "
+        "its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` "
+        "version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server "
+        "properties such as the rmcp 3.0 transport and the tool-catalog attestation come "
+        "from **that binary**, not from the SDK, so run a current one to get them."
+    )
+    out.append(COMPAT_END)
+    return "\n".join(out)
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "--write"
-    block = render()
+    blocks = [
+        ("published-versions", BEGIN, END, render()),
+        ("python-sdk-compat", COMPAT_BEGIN, COMPAT_END, render_python_compat()),
+    ]
     if mode == "--print":
-        print(block)
+        for _, _, _, block in blocks:
+            print(block)
+            print()
         return 0
+
     text = README.read_text()
-    if BEGIN not in text or END not in text:
-        raise SystemExit(
-            f"README.md is missing the markers {BEGIN} / {END}; add them where the "
-            "generated table should live."
-        )
-    pattern = re.compile(re.escape(BEGIN) + r".*?" + re.escape(END), re.DOTALL)
-    new = pattern.sub(lambda _: block, text)
+    new = text
+    for label, begin, end, block in blocks:
+        if begin not in new or end not in new:
+            raise SystemExit(
+                f"README.md is missing the markers {begin} / {end}; add them where the "
+                f"generated `{label}` block should live."
+            )
+        pattern = re.compile(re.escape(begin) + r".*?" + re.escape(end), re.DOTALL)
+        new = pattern.sub(lambda _, b=block: b, new)
+
     if mode == "--check":
         if new != text:
-            print("README published-versions block is STALE — run: "
-                  "python3 scripts/gen_published_versions.py", file=sys.stderr)
+            stale = [
+                label
+                for label, begin, end, block in blocks
+                if re.search(re.escape(begin) + r".*?" + re.escape(end), text, re.DOTALL).group(0)
+                != block
+            ]
+            print(
+                "README generated block(s) STALE: "
+                + ", ".join(stale)
+                + " — run: python3 scripts/gen_published_versions.py",
+                file=sys.stderr,
+            )
             return 1
-        print("README published-versions block is up to date.")
+        print("README generated blocks are up to date (published-versions, python-sdk-compat).")
         return 0
     README.write_text(new)
-    print("Rewrote README published-versions block.")
+    print("Rewrote README generated blocks (published-versions, python-sdk-compat).")
     return 0
 
 

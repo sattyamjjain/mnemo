@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Anthropic CMA-Memory drop-in compatibility shim — mount, mirror, export the Markdown-tree filesystem-of-memory beta announced 2026-04-23 (v0.4.1 P0-2)."
+readme = "README.md"
 
 [dependencies]
 mnemo-core = { workspace = true }
