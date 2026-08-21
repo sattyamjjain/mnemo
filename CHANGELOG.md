@@ -106,6 +106,29 @@ Confirmed against the built binary: `initialize` answers `2025-11-25`, `serverIn
 reports `0.5.26`, 23 tools are listed, and the listing carries `ttlMs: 60000` and
 `cacheScope: "private"` on the wire.
 
+### Fixed (2026-08-21) - clippy 1.98 reds `main`, not just this branch
+
+CI moved to clippy 1.98 (`dtolnay/rust-toolchain@stable` tracks latest stable) and the
+new `chunks_exact_to_as_chunks` lint fires on pre-existing code, so `-D warnings` fails.
+`origin/main` at `f70cf08` has the same line: this was inherited, not introduced, and
+the fix repairs main as well.
+
+- `deserialize_embedding` in both `mnemo-core` and `mnemo-postgres` moves from
+  `chunks_exact(4)` to `as_chunks::<4>()`. Both sites were fixed; CI had only reached
+  the first, since clippy stops at the first crate that fails.
+- The new form is better code independent of the lint: it yields `&[u8; 4]` so
+  `from_le_bytes` takes the array directly, dropping four indexed reads whose bounds
+  checks the type system can already prove unnecessary.
+- Verified against the version CI actually runs, not the one that happened to be
+  installed. The local toolchain was 1.97 and could not reproduce the lint at all, which
+  is why the first push went red; `rustup update stable` to 1.98 first, then re-verified.
+- **Added the round-trip test that did not exist.** `serialize_embedding` and
+  `deserialize_embedding` are the only thing between a stored blob and the vector the
+  index searches, and nothing asserted they were inverses. A silent corruption there
+  surfaces as degraded recall rather than as an error. Two tests now cover exact
+  round-trip, `None` handling, an empty blob, and a ragged trailing chunk being dropped
+  rather than panicking. Verified by mutation: flipping the read to big-endian fails it.
+
 ### Note on versioning (2026-08-21)
 
 No version bump. `0.5.26` is still **unreleased**: there is no `v0.5.26` tag and

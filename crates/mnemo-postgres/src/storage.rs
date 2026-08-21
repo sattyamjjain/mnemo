@@ -75,9 +75,16 @@ fn serialize_embedding(embedding: &Option<Vec<f32>>) -> Option<Vec<u8>> {
 
 fn deserialize_embedding(blob: Option<Vec<u8>>) -> Option<Vec<f32>> {
     blob.map(|bytes| {
+        // `as_chunks::<4>()` rather than `chunks_exact(4)`: it yields `&[u8; 4]`
+        // directly, so `from_le_bytes` takes the array instead of four indexed
+        // reads. Required by clippy 1.98's `chunks_exact_to_as_chunks`, and the
+        // result is the better code anyway - the indexing form carried four
+        // bounds checks the type system can prove unnecessary.
         bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect()
     })
 }
