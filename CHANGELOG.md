@@ -12,6 +12,131 @@ The 0.5.26 window opens on the **v0.5.25** cut. The release content landed on `m
 points at the resulting commit on `main`, which is where the `## [0.5.25]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-21) - three versions shipped with no GitHub Release, and nothing was going to fix that
+
+`v0.5.23`, `v0.5.24` and `v0.5.25` had tags but no Release object. The newest Release
+was `v0.5.22` for eleven days while three versions went out, so the releases feed said
+nothing was happening.
+
+- **The cause was not a broken automation. There was never any.** No workflow in this
+  repo has ever created a Release; every object up to `v0.5.22` was cut by hand until
+  the hand stopped. Backfilling the three would have been fixing the symptom for the
+  third time.
+- **`release-crate.yml` now creates the Release itself**, after `publish` succeeds so
+  a Release never advertises crates that are not on crates.io yet. Re-running a tag is
+  a no-op when the Release exists, matching how the publish walk 404-checks each crate.
+- **New `scripts/extract_release_notes.py`**, the part worth testing on its own: it
+  pulls the `## [X.Y.Z]` section out of `CHANGELOG.md` and **fails loudly** when the
+  section is missing or empty rather than shipping a Release with no notes, which looks
+  answered and is not. Nine self-test cases, wired into CI, including that it never
+  leaks `[Unreleased]` into a release body.
+- The three missing objects were backfilled from their CHANGELOG sections.
+- **Twelve tags still have no Release object**, the nine older ones being `v0.3.3`,
+  `v0.3.4`, `v0.4.0-rc1`, `v0.4.2`, `v0.4.3`, `v0.5.0`, `v0.5.1`, `v0.5.2` and `v0.5.3`.
+  Left alone deliberately: backfilling historical announcements is noise, and the
+  workflow now covers everything from here.
+
+### Changed (2026-08-21) - the TypeScript SDK says what it is
+
+`@mndfreek/mnemo-sdk` is at `0.4.4` on npm, published 2026-05-18, while the Rust line
+moved to 0.5.x. The repo already described the gap; what it did not do was state a
+maintenance position or a version the SDK is known to work against.
+
+- **Declared maintenance-only, not on the 0.5 train.** Stated in
+  `sdks/typescript/README.md` (which ships to npm) and in the repo README.
+- **Verified rather than asserted:** the **published 0.4.4** package was installed from
+  npm and run against a `mnemo-mcp-server` built from `0.5.26`. `remember`, `recall`
+  and `verify` all succeeded and the hash chain verified. That is the compatibility
+  claim and the whole of it.
+- **What the tests do not cover, said plainly:** the SDK's 21 tests are type-shape and
+  error-path only and not one spawns a server, so a green suite says nothing about wire
+  compatibility. The 0.5.26 check was by hand and is a point in time, not a CI gate.
+- **The caveat a user hits first:** `recall()` defaults to `auto`, which hard-errors on
+  a server with no embedder configured. Documented with the exact message and the
+  `strategy: "lexical"` workaround.
+- **Publishing a current SDK was not an option today.** `npm publish` fails with
+  `npm whoami -> 401 Unauthorized`: the `NPM_TOKEN` secret is expired or revoked. That
+  is an operator action, so option (b) was the only one available, not merely the
+  faster one.
+- Corrected a stale line claiming `cargo install mnemo-mcp-server` resolves `0.5.23`.
+
+### Added (2026-08-21) - the MCP conformance table closes what it can and states the rest
+
+Two of the open rows are now implemented, the authorization question the table never
+asked is answered, and every remaining open row tells a caller what to assume.
+
+- **`ttlMs` and `cacheScope` implemented** on `tools/list` and `resources/list`
+  (SEP-2549). `tools/list` advertises 60000; `resources/list` advertises 0, immediately
+  stale, because any `mnemo.remember` invalidates the listing.
+- **`cacheScope` is `private` on both, and that is correctness rather than tuning.**
+  Both listings are scoped to the caller's per-request identity (ADR 0002), so `public`
+  would let a shared intermediary serve one caller's tool catalog, or one agent's
+  memory records, to a different caller. `CacheScope::default()` is `Public`, so leaving
+  the field unset was never the safe option it looked like. Asserted on both surfaces
+  and verified by mutation.
+- **New authorization section: mnemo implements no OAuth.** No RFC 9728 Protected
+  Resource Metadata is served on any transport. This is a conformant position rather
+  than a gap: the spec makes authorization OPTIONAL and tells stdio servers they
+  **SHOULD NOT** follow it, retrieving credentials from the environment instead, which
+  is exactly what mnemo does with `MNEMO_CAPABILITY_KEY`. The RFC 8707 `resource`
+  parameter MUST binds **clients**, and mnemo ships a server, so it does not apply;
+  the server-side audience-validation MUST has no OAuth tokens to validate. Each row
+  says what a caller should assume, including that an OAuth bearer token will not be
+  accepted.
+- **New CI guard: an open row must say what a caller should assume.** A row that says
+  GAP and stops has told a reader something is missing without telling them how to
+  behave. A second guard fails if the table ever reports no open rows at all, since the
+  usual way that happens is a row being deleted rather than closed.
+- Corrected the page's own miscount of how many rows were open.
+
+### Added (2026-08-21) - a permanent handshake smoke test against the shipped binary
+
+The 0.5.26 defect was that a *derived advertisement* disagreed with *negotiated
+behaviour*. A library-level assertion on either one alone cannot catch a regression in
+the wiring between them, so this tests the binary a user actually installs.
+
+`crates/mnemo-cli/tests/handshake_version_smoke.rs` spawns `mnemo`, performs a real
+stdio JSON-RPC `initialize`, and asserts the advertised version is one the server will
+negotiate, that a client asking for `2026-07-28` is negotiated **down** rather than
+echoed, and that a supported older revision is still honoured so the narrowing did not
+become a blanket downgrade. Verified by mutation: restoring the original defect fails
+the middle test with the exact reason.
+
+Confirmed against the built binary: `initialize` answers `2025-11-25`, `serverInfo`
+reports `0.5.26`, 23 tools are listed, and the listing carries `ttlMs: 60000` and
+`cacheScope: "private"` on the wire.
+
+### Fixed (2026-08-21) - clippy 1.98 reds `main`, not just this branch
+
+CI moved to clippy 1.98 (`dtolnay/rust-toolchain@stable` tracks latest stable) and the
+new `chunks_exact_to_as_chunks` lint fires on pre-existing code, so `-D warnings` fails.
+`origin/main` at `f70cf08` has the same line: this was inherited, not introduced, and
+the fix repairs main as well.
+
+- `deserialize_embedding` in both `mnemo-core` and `mnemo-postgres` moves from
+  `chunks_exact(4)` to `as_chunks::<4>()`. Both sites were fixed; CI had only reached
+  the first, since clippy stops at the first crate that fails.
+- The new form is better code independent of the lint: it yields `&[u8; 4]` so
+  `from_le_bytes` takes the array directly, dropping four indexed reads whose bounds
+  checks the type system can already prove unnecessary.
+- Verified against the version CI actually runs, not the one that happened to be
+  installed. The local toolchain was 1.97 and could not reproduce the lint at all, which
+  is why the first push went red; `rustup update stable` to 1.98 first, then re-verified.
+- **Added the round-trip test that did not exist.** `serialize_embedding` and
+  `deserialize_embedding` are the only thing between a stored blob and the vector the
+  index searches, and nothing asserted they were inverses. A silent corruption there
+  surfaces as degraded recall rather than as an error. Two tests now cover exact
+  round-trip, `None` handling, an empty blob, and a ragged trailing chunk being dropped
+  rather than panicking. Verified by mutation: flipping the read to big-endian fails it.
+
+### Note on versioning (2026-08-21)
+
+No version bump. `0.5.26` is still **unreleased**: there is no `v0.5.26` tag and
+`mnemo-core@0.5.26` returns 404 on crates.io. This work lands *in* 0.5.26. Bumping to
+0.5.27 would burn a version number and leave a `## [0.5.26]` section describing a
+release that never existed, which is the kind of changelog entry this repo has spent
+three releases removing.
+
 ### Added (2026-08-19) - a conformance table for the 2026-07-28 MCP spec
 
 The README pointed at the March 2026 MCP *roadmap* as mnemo's current spec anchor. A

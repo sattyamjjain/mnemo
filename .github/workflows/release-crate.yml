@@ -508,3 +508,52 @@ jobs:
       - name: Assert release parity (every closure crate at the workspace version)
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: bash scripts/registry_parity.sh --mode assert $WALK
+
+  # --- GitHub Release --------------------------------------------------------
+  # v0.5.23, v0.5.24 and v0.5.25 all shipped with NO Release object. The newest
+  # was v0.5.22 for eleven days while three versions went out, so the releases
+  # feed said nothing was happening.
+  #
+  # The cause was not a broken automation. There was never any: no workflow in
+  # this repo had ever created a Release, and every object up to v0.5.22 was cut
+  # by hand until the hand stopped. Backfilling the three missing objects without
+  # this job is how it comes back on the next tag.
+  #
+  # `needs: publish` on purpose. A Release object announces a version people can
+  # install; publishing it before crates.io has the crates would advertise
+  # something that does not exist yet.
+  github_release:
+    name: GitHub Release
+    needs: publish
+    if: ${{ github.repository == 'sattyamjjain/mnemo' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create the Release from the CHANGELOG section
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+
+          # Idempotent: re-running a tag must not fail on an existing Release,
+          # for the same reason the publish walk 404-checks each crate.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            exit 0
+          fi
+
+          # Fails loudly when the section is missing or empty, rather than
+          # creating a Release with no notes, which looks answered and is not.
+          python3 scripts/extract_release_notes.py "$ver" > /tmp/notes.md
+          echo "release body: $(wc -c < /tmp/notes.md) bytes"
+
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes-file /tmp/notes.md \
+            --verify-tag \
+            --latest
+          echo "Created https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"

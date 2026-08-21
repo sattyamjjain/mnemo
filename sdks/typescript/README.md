@@ -6,22 +6,59 @@ TypeScript SDK for [Mnemo](https://github.com/sattyamjjain/mnemo) — an MCP-nat
 npm install @mndfreek/mnemo-sdk
 ```
 
-## Version & compatibility
+## Status: maintenance only
 
-This SDK is versioned **independently** of the Rust workspace. `npm install`
-currently gives you **0.4.4** (latest on npm); the Rust workspace is on the
-0.5.x line. The SDK is a thin **MCP-over-STDIO client** — it does not embed the
-engine — so it targets the `mnemo` / `mnemo-mcp-server` binary's MCP **tool
-surface** (the 23 registered tools) rather than a specific `mnemo-core`
-version. For the documented tool set you need a **0.5.x** `mnemo-mcp-server`;
-`cargo install mnemo-mcp-server` now resolves **0.5.23**.
+**This SDK is not being developed on the 0.5 train.** It works, it is not
+abandoned, and it is not gaining features alongside the Rust line.
 
-`package.json` is on **0.4.8**, ahead of npm's **0.4.4**: the automated `npm
-publish` (0.4.5–0.4.8) has been failing on an invalid `NPM_TOKEN` — an operator
-action, not a code bug. `npm-publish.yml` now fails fast with the exact fix
-instead of a cryptic 404, and `scripts/check_version_drift.sh` guards the
-`package.json` ↔ npm gap so a further bump-without-publish is caught. Once the
-token is rotated, the accumulated versions publish.
+| | |
+|---|---|
+| Latest on npm | **0.4.4**, published 2026-05-18 |
+| Last server version it is **verified** against | **0.5.26** |
+| In this repo | `package.json` is at 0.4.8 (0.4.5 through 0.4.8 are unpublished) |
+| Why the gap | `npm publish` fails with `npm whoami -> 401 Unauthorized`: the `NPM_TOKEN` secret is expired or revoked. That is an operator action, not a code change. |
+
+### What "verified against 0.5.26" means, exactly
+
+The published **0.4.4** package was installed from npm and run against a
+`mnemo-mcp-server` built from workspace `0.5.26`. `remember`, `recall`
+(`strategy: "lexical"`) and `verify` all succeeded, and `verify` returned a valid
+hash chain. That is the compatibility claim, and it is the whole of it.
+
+It works because the SDK is a thin **MCP-over-STDIO client**. It does not embed
+the engine, so it targets the server's **tool surface** (the 23 registered tools)
+rather than a `mnemo-core` version. Tools have been added to that surface since
+0.4.4 and none removed, so an older client keeps working against a newer server.
+
+### What is not covered
+
+Worth stating plainly, because the test count looks reassuring and is not:
+
+- The SDK's own suite is **21 tests of type shapes and error paths**. Not one of
+  them spawns a server. Passing tests here say nothing about wire compatibility;
+  the 0.5.26 verification above was done by hand and is a point-in-time check,
+  not a gate in CI.
+- Tools added to the server after 0.4.4 are absent from this client. You get the
+  subset 0.4.4 knows about.
+
+### One thing that will bite you immediately
+
+`recall()` defaults to the `auto` strategy, which requires the server to have a
+configured embedder. A stock `mnemo` server has none, and will return a hard
+error rather than an empty list, on purpose:
+
+```
+mnemo.recall: embedder not configured for 'auto' recall on backend 'duckdb'
+```
+
+Pass `strategy: "lexical"` for BM25 without an embedder, or configure one with
+`OPENAI_API_KEY` or `MNEMO_ONNX_MODEL_PATH`.
+
+### If you need the current line
+
+Use the Python SDK (`pip install mnemo-db`, versioned with the Rust workspace) or
+drive the MCP server directly over STDIO. Once the npm token is rotated the
+accumulated versions publish and this section gets rewritten.
 
 ## Quick start
 

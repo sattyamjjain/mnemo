@@ -346,6 +346,13 @@ jobs:
       - name: Publish closure covers every publishable crate
         run: bash scripts/check_publish_closure.sh
 
+      # v0.5.23/24/25 all shipped with no GitHub Release object because nothing
+      # ever created one. `release-crate.yml` now does, from the CHANGELOG
+      # section for the tag. This is the parsing half, tested separately so a
+      # release cannot ship an empty body or silently pick up `[Unreleased]`.
+      - name: Release-notes extractor self-test
+        run: python3 scripts/extract_release_notes.py --self-test
+
       # The GPM gap table is generated from
       # docs/research/governed-persistent-memory-clauses.toml. This fails if the
       # committed markdown has drifted from the manifest. The *content* of the

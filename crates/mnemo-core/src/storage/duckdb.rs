@@ -47,9 +47,16 @@ fn serialize_embedding(embedding: &Option<Vec<f32>>) -> Option<Vec<u8>> {
 
 fn deserialize_embedding(blob: Option<Vec<u8>>) -> Option<Vec<f32>> {
     blob.map(|bytes| {
+        // `as_chunks::<4>()` rather than `chunks_exact(4)`: it yields `&[u8; 4]`
+        // directly, so `from_le_bytes` takes the array instead of four indexed
+        // reads. Required by clippy 1.98's `chunks_exact_to_as_chunks`, and the
+        // result is the better code anyway - the indexing form carried four
+        // bounds checks the type system can prove unnecessary.
         bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect()
     })
 }
@@ -1849,5 +1856,53 @@ mod tests {
             .await
             .unwrap();
         assert!(none.is_none());
+    }
+
+    /// Embeddings must survive the byte round-trip exactly.
+    ///
+    /// Added when `deserialize_embedding` moved from `chunks_exact(4)` to
+    /// `as_chunks::<4>()` for clippy 1.98. The two have identical semantics,
+    /// including discarding a trailing partial chunk, but nothing in the suite
+    /// asserted that: this pair is the only thing standing between a stored blob
+    /// and a vector the index searches, and a silent corruption here would
+    /// surface as bad recall rather than as an error.
+    #[test]
+    fn embeddings_round_trip_through_the_blob_encoding() {
+        // Values chosen to catch byte-order and sign mistakes, which a
+        // symmetric bug in both directions would otherwise hide.
+        let original = vec![0.0_f32, 1.0, -1.0, 0.5, -0.25, f32::MIN, f32::MAX, 1e-30];
+        let blob = serialize_embedding(&Some(original.clone())).expect("serialises");
+        assert_eq!(
+            blob.len(),
+            original.len() * 4,
+            "each f32 must occupy exactly 4 bytes"
+        );
+        let restored = deserialize_embedding(Some(blob)).expect("deserialises");
+        assert_eq!(
+            restored, original,
+            "embedding did not survive the round-trip; stored vectors would no longer \
+             match what was written and recall would degrade silently"
+        );
+    }
+
+    /// `None` stays `None`, and a trailing partial chunk is discarded rather
+    /// than panicking on a short read.
+    #[test]
+    fn embedding_encoding_handles_absent_and_ragged_input() {
+        assert!(serialize_embedding(&None).is_none());
+        assert!(deserialize_embedding(None).is_none());
+        assert_eq!(
+            deserialize_embedding(Some(vec![])),
+            Some(vec![]),
+            "an empty blob is an empty embedding, not an error"
+        );
+        // 6 bytes is one whole f32 plus a 2-byte remainder.
+        let ragged = deserialize_embedding(Some(vec![0, 0, 128, 63, 1, 2])).expect("some");
+        assert_eq!(
+            ragged,
+            vec![1.0_f32],
+            "a trailing partial chunk must be dropped, matching the previous \
+             `chunks_exact` behaviour, rather than panicking or producing a value"
+        );
     }
 }

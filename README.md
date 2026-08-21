@@ -185,7 +185,7 @@ Workspace `[workspace.package].version` (unreleased target): **`v0.5.26`**. The 
 | crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.25` | 2026-08-18 |
 | crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.25` | 2026-08-18 |
 | crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.25` | 2026-08-18 |
-| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.25` | 2026-08-18 |
+| PyPI | `mnemo-db` — Python SDK (independent) | `v0.5.26` | 2026-08-19 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
 _Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
@@ -520,9 +520,14 @@ tool listings are already deterministically ordered.
 
 Row by row, with what is still open and what waits on rmcp:
 **[docs/src/integrations/mcp-2026-07-28.md](docs/src/integrations/mcp-2026-07-28.md)**.
-It is not a marketing page: it records four open rows, two of which mnemo could
-close today, and the machine-readable claim that page's own writing found to be
-false and fixed.
+It is not a marketing page. Four rows are still open, every one of them carrying a
+sentence saying what a caller should assume instead, and a CI test refuses to let
+an open row exist without one. It also states plainly that **mnemo implements no
+OAuth authorization**: no RFC 9728 Protected Resource Metadata document is served
+on any transport, which is a conformant position on stdio (the spec says stdio
+servers **SHOULD NOT** follow the authorization spec and should take credentials
+from the environment, which is what mnemo does) and a thing worth saying out loud
+rather than leaving a reader to infer from silence.
 
 <details>
 <summary>Earlier anchor: the March 2026 MCP Roadmap</summary>
@@ -616,6 +621,17 @@ All integrations are auto-imported via `from mnemo import <ClassName>` — depen
 | [Project-Deal counterparty discovery + reputation](crates/mnemo-deal/) (`mnemo-deal::discovery` + `::reputation`) | `AgentAdvertisement` + `compute_reputation` | `/.well-known/mnemo-deal-agent.json` advertisement (Ed25519-keyed, capability-tagged) plus an advisory reputation score with 90-day half-life decay and per-dispute 10% penalty. mnemo becomes not just the deal ledger but the directory of the agent-deal substrate. **Advisory only** — see `docs/deal-reputation-threats.md`. New in v0.4.1 (P1-5). |
 
 ### TypeScript
+
+> **Status: maintenance only, not on the 0.5 train.** `npm install
+> @mndfreek/mnemo-sdk` gives **0.4.4** (published 2026-05-18) while the Rust line
+> is on 0.5.x. It still works, because it is a thin MCP-over-STDIO client that
+> targets the server's **tool surface** rather than a `mnemo-core` version: the
+> published 0.4.4 package was run against a `mnemo-mcp-server` built from
+> **0.5.26**, and `remember`, `recall` and `verify` all succeeded with a valid
+> hash chain. Publishing newer versions (`package.json` is at 0.4.8) is blocked on
+> an expired `NPM_TOKEN`, an operator action rather than a code change. What that
+> verification does and does not cover, plus the `recall` default that will bite
+> you first, is in [`sdks/typescript/README.md`](sdks/typescript/README.md).
 
 ```typescript
 import { MnemoClient } from "@mndfreek/mnemo-sdk";
