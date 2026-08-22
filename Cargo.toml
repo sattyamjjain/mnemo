@@ -76,7 +76,7 @@ hex = "0.4"
 # per-request identity resolution (ADR 0002). Already in the tree via hyper.
 http = "1"
 # base64url for the bearer-token encoding of a `Capability`.
-base64 = "0.22"
+base64 = "0.23"
 
 # Storage
 # duckdb-rs re-versioned to a calendar-style scheme aligned with the
