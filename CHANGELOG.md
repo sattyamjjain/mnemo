@@ -12,6 +12,63 @@ The 0.5.26 window opens on the **v0.5.25** cut. The release content landed on `m
 points at the resulting commit on `main`, which is where the `## [0.5.25]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-22) - benchmarks-nightly could never have passed, and was failing into a void
+
+The nightly benchmark gate had failed every night since at least 2026-08-14, across five
+different commits. Nobody was reading it. Three separate defects, and the first was
+masking the other two.
+
+- **`maturin develop` needs a virtualenv and the runner has none.** The job died at step
+  four with *"Couldn't find a virtualenv or conda environment"* before reaching any
+  benchmark. Replaced with `maturin build` plus `pip install --no-index --find-links`,
+  which needs no venv.
+- **`pip install 'mnemo[benchmark]'` would have installed a stranger's package.** PyPI
+  `mnemo` is *"Notebook and assistant"* 0.0.2 by a different author; this project
+  publishes as `mnemo-db`, and `mnemo-db` defines no `benchmark` extra either. The only
+  reason nothing foreign was ever pulled into a credentialed CI job is that the maturin
+  failure above stopped the run first. Now installs the real dependencies by name.
+- **It needs three secrets the repository does not have.** `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY` and `HF_TOKEN` are all absent; the repo has exactly two secrets,
+  `CARGO_REGISTRY_TOKEN` and `NPM_TOKEN`. So even with the first two defects fixed the
+  job could not pass. It now **skips deliberately** with the reason in the run summary,
+  because a scheduled job incapable of succeeding trains everyone to ignore a red
+  nightly, which is the state that hides a real regression. `workflow_dispatch` still
+  runs unconditionally, so an operator who has just added the secrets can prove it.
+
+One trap worth recording: the credential check lives in job-level `env`, not job-level
+`if`. The `secrets` context is **not available** to `jobs.<job_id>.if` (only `github`,
+`needs`, `vars`, `inputs`), so a secrets test written there would silently never be true
+and the job would run and fail exactly as before.
+
+### Fixed (2026-08-22) - the name guard had a test that exercised a different regex engine
+
+Extending `check_crate_name_refs.sh` to cover PyPI and workflows exposed a defect in the
+guard itself, and it is the more important half of this entry.
+
+- **The scanner matched with `awk`; the self-test matched with `grep`.** macOS awk
+  (onetrue-awk 20200816) silently fails to match the new pip pattern on a line grep
+  matches without hesitation. The self-test reported **30 green assertions over a scanner
+  that could not see the very line it was written for**. A guard whose test runs a
+  different engine from the guard is not a tested guard, it is a guard with a decorative
+  test. Both scanners now match with `grep -E`; awk only tracks markdown fence state.
+- Fixing that immediately surfaced **two more real hits** the broken matcher had missed:
+  `docs/benchmarks/2026-04-21-mnemo-v0.3.0.md` and `2026-04-24-mnemo-v0.3.3.md` both told
+  a reader to `pip install "mnemo[benchmark]"` in a fenced *"how to run locally"* block.
+  Corrected, along with the `maturin develop` line in each, which had the same
+  missing-virtualenv problem the nightly did.
+
+The guard now covers **PyPI as well as crates.io**, and **workflows as well as docs**.
+Workflow lines are treated as live commands rather than prose, with `#` comment lines
+skipped for the same reason unfenced markdown is skipped: `ci.yml` has to be able to name
+the wrong command in a comment in order to explain the guard. Verified in the failing
+direction against the exact line that was live in CI.
+
+### Fixed (2026-08-22) - rustdoc emitted a broken intra-doc link
+
+`mnemo-compliance` generated one rustdoc warning: `[`bench/retention_conformance`]` is a
+repository path, not a resolvable item, so rustdoc rendered a broken link on a published
+crate's docs page. Now a plain code span. `cargo doc -p mnemo-compliance` is warning-free.
+
 ### Fixed (2026-08-21) - the README claimed a Python SDK version that was 14 releases stale
 
 README prose read *"Its current release is `mnemo-db` 0.5.12"* and then reasoned about wire
