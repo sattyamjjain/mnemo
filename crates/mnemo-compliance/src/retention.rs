@@ -19,7 +19,7 @@
 //! Like [`crate::audit`], this module is **pure**: it operates on exported
 //! `&[AgentEvent]` snapshots and a backend-capability flag, returning
 //! [`ComplianceError`] on failure — it never reaches into storage itself. A
-//! harness ([`bench/retention_conformance`]) drives the real deletion paths and
+//! harness (`bench/retention_conformance`) drives the real deletion paths and
 //! feeds the before/after snapshots in.
 //!
 //! # Fail-loud, never silent

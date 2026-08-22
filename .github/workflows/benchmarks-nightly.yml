@@ -18,9 +18,25 @@ on:
 
 jobs:
   bench:
-    # The gate keeps baseline.json honest but needs credentials that
-    # forks don't have. Skip on forks and when the secret isn't set —
-    # workflow_dispatch from the upstream repo still runs.
+    # The gate keeps baseline.json honest but needs three provider credentials.
+    # As of 2026-08-22 the repository has exactly two secrets, CARGO_REGISTRY_TOKEN
+    # and NPM_TOKEN, so ANTHROPIC_API_KEY / OPENAI_API_KEY / HF_TOKEN are absent
+    # and this job CANNOT succeed. It had been failing every night since at least
+    # 2026-08-14 with nobody reading the result.
+    #
+    # A scheduled job that is structurally incapable of passing is worse than no
+    # job: it trains everyone to ignore a red nightly, which is the state that
+    # hides a real regression. So the schedule now no-ops until the credentials
+    # exist, and says why in the run summary rather than dying at step 4.
+    #
+    # `workflow_dispatch` still runs unconditionally, so an operator who has just
+    # added the secrets can prove it works without waiting for 02:11 UTC.
+    #
+    # NOTE: the check is on the STEPS, not here. The `secrets` context is not
+    # available to `jobs.<job_id>.if` (only github, needs, vars, inputs), so a
+    # secrets test in this condition would silently never be true. It IS
+    # available in `jobs.<job_id>.env`, which is where HAS_CREDS below is
+    # computed.
     if: github.repository == 'sattyamjjain/mnemo'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -32,31 +48,74 @@ jobs:
 
     env:
       MNEMO_BENCH_REGRESSION_PP: "3.0"
+      # Computed here because `secrets` is reachable from job-level env and not
+      # from job-level `if`. Every real step below gates on this.
+      HAS_CREDS: ${{ secrets.ANTHROPIC_API_KEY != '' && secrets.OPENAI_API_KEY != '' && secrets.HF_TOKEN != '' }}
 
     steps:
+      - name: Credential preflight
+        run: |
+          if [ "${HAS_CREDS}" = "true" ]; then
+            echo "All three provider credentials present; running the benchmark."
+            exit 0
+          fi
+          {
+            echo "### benchmarks-nightly skipped: provider credentials are not set"
+            echo
+            echo "This gate needs \`ANTHROPIC_API_KEY\`, \`OPENAI_API_KEY\` and"
+            echo "\`HF_TOKEN\`. The repository has neither, so the run would fail at the"
+            echo "benchmark step no matter what happens before it."
+            echo
+            echo "Skipping deliberately rather than failing: a nightly that cannot"
+            echo "succeed teaches everyone to ignore a red nightly, which is the state"
+            echo "that hides a real regression."
+            echo
+            echo "Add the three secrets and this starts running on its own. To prove it"
+            echo "immediately, re-run via \`workflow_dispatch\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::benchmarks-nightly skipped — ANTHROPIC_API_KEY / OPENAI_API_KEY / HF_TOKEN not set"
+
       - uses: actions/checkout@v7
+        if: env.HAS_CREDS == 'true'
 
       - name: Set up Python
+        if: env.HAS_CREDS == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
       - name: Set up Rust
+        if: env.HAS_CREDS == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
+        if: env.HAS_CREDS == 'true'
         uses: Swatinem/rust-cache@v2
 
-      - name: Build Mnemo native extension
+      # `maturin develop` REQUIRES an activated virtualenv and the runner has
+      # none, so this step failed with "Couldn't find a virtualenv or conda
+      # environment" before the benchmark was ever reached. Build a wheel and
+      # install it instead: it needs no venv, and it is what CI does elsewhere.
+      - name: Build and install the Mnemo native extension
+        if: env.HAS_CREDS == 'true'
         run: |
-          pip install --upgrade pip
-          pip install maturin
-          cd python && maturin develop --release
+          python -m pip install --upgrade pip
+          python -m pip install maturin
+          maturin build --release --manifest-path python/Cargo.toml --out dist
+          python -m pip install --no-index --find-links dist mnemo-db
 
+      # The distribution is `mnemo-db`. `mnemo` on PyPI is an unrelated 2021
+      # project ("Notebook and assistant", by a different author), so the old
+      # `pip install 'mnemo[benchmark]'` here would have pulled a stranger's
+      # package into an authenticated CI job. It also named a `benchmark` extra
+      # that `mnemo-db` does not define. Both were masked by the maturin failure
+      # above, which is the only reason this never installed anything foreign.
       - name: Install bench deps
-        run: pip install 'mnemo[benchmark]' anthropic datasets
+        if: env.HAS_CREDS == 'true'
+        run: python -m pip install anthropic datasets
 
       - name: Run benchmark
+        if: env.HAS_CREDS == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -71,6 +130,7 @@ jobs:
             --report-dir docs/benchmarks
 
       - name: Check regression vs baseline
+        if: env.HAS_CREDS == 'true'
         run: |
           python .github/scripts/check_bench_regression.py \
             --dataset ${{ matrix.dataset }} \
@@ -79,7 +139,10 @@ jobs:
             --max-regression-pp "${MNEMO_BENCH_REGRESSION_PP}"
 
       - name: Upload run artefacts
-        if: always()
+        # `always()` alone re-ran this on a skipped run and logged "No files were
+        # found with the provided path", which is noise on a run that correctly
+        # produced nothing.
+        if: always() && env.HAS_CREDS == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: bench-${{ matrix.dataset }}-${{ github.run_id }}

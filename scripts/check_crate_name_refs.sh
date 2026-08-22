@@ -3,10 +3,23 @@
 # check_crate_name_refs.sh — fail if the docs tell anyone to install a crate
 # this project does not own.
 #
-# Two crates.io names collide with this project and belong to other people:
+# Names on public registries collide with this project and belong to other
+# people. On crates.io:
 #
 #   mnemo      -> github.com/aayushadhikari7/mnemo  ("personal knowledge vault")
 #   mnemo-cli  -> github.com/watzon/mnemo           ("Mnemo LLM memory proxy")
+#
+# And on PyPI:
+#
+#   mnemo      -> "Notebook and assistant" 0.0.2, by Gabriele Girelli (2021)
+#
+# This project publishes to PyPI as `mnemo-db`, so `pip install mnemo` installs
+# a stranger's package. That is not hypothetical: on 2026-08-22
+# `.github/workflows/benchmarks-nightly.yml` was found running
+# `pip install 'mnemo[benchmark]'` in an authenticated job. It never actually
+# pulled anything foreign only because an earlier step in that job had been
+# failing for over a week and masked it. A guard that scanned docs but not
+# workflows could not see it.
 #
 # Neither is ours. This workspace publishes only under the `mnemo-*` prefix, and
 # the server binary — whose crate *directory* is `crates/mnemo-cli` — publishes
@@ -42,6 +55,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # "not followed by another name character".
 FOREIGN_RE='cargo (install|add) (mnemo|mnemo-cli)([^a-zA-Z0-9_-]|$)'
 
+# The PyPI half. `mnemo-db` is ours and must NOT match; a bare `mnemo`, with or
+# without an extras bracket and with or without quotes, must. The leading
+# boundary stops `pip install some-mnemo` from matching, and the trailing one
+# stops `mnemo-db` from matching, since `-` is neither whitespace, a quote, nor
+# end-of-line.
+FOREIGN_PIP_RE='pip install ([[:alnum:]_./=-]+ )*['"'"'"]?mnemo(\[[^]]*\])?['"'"'"]?([[:space:]]|$)'
+
 # Files to scan: every tracked markdown file, minus the changelog.
 #
 # CHANGELOG.md is excluded deliberately. It is an append-only historical record
@@ -64,12 +84,41 @@ scan_targets() {
 # sentence in order to tell you not to run it; a fenced block is a thing readers
 # copy. Flagging both would make the guard unusable and it would be switched off,
 # which is the usual way a check like this dies.
+# MATCHING IS DONE BY `grep -E`, NOT BY awk's `~`.
+#
+# This is not a style preference. The two use different regex engines, and macOS
+# awk (onetrue-awk 20200816) silently fails to match
+# `...mnemo(\[[^]]*\])?['\"]?[[:space:]]` on a line grep matches without
+# hesitation. When awk did the matching and the self-test used grep, the
+# self-test passed a pattern the real scanner could not see: 30 green assertions
+# over a scanner that found nothing. A guard whose test exercises a different
+# engine from the guard is not a tested guard.
+#
+# awk now only tracks fence state and prints candidate lines; grep decides.
 scan_file() {
   local f="$1"
-  awk -v re="$FOREIGN_RE" -v fname="$f" '
-    /^[[:space:]]*```/ { fence = !fence; next }
-    fence && $0 ~ re   { printf "%s:%d:%s\n", fname, NR, $0 }
-  ' "$REPO_ROOT/$f"
+  awk '/^[[:space:]]*```/ { fence = !fence; next } fence { printf "%d:%s\n", NR, $0 }' \
+      "$REPO_ROOT/$f" \
+    | grep -E "$FOREIGN_RE|$FOREIGN_PIP_RE" \
+    | sed "s|^|$f:|" || true
+}
+
+# Workflows to scan. No fence logic here: every line of a workflow IS an
+# instruction, so a foreign install anywhere in one is a live command, not prose
+# about a command. This is the half that would have caught the nightly.
+scan_workflow_targets() {
+  git -C "$REPO_ROOT" ls-files -- '.github/workflows/*.yml' '.github/workflows/*.yaml' 2>/dev/null | sort -u
+}
+
+scan_workflow() {
+  local f="$1"
+  # Comment lines are skipped for the same reason unfenced markdown is: a `#`
+  # line is prose ABOUT a command, and ci.yml has to be able to name
+  # `cargo install mnemo-cli` in a comment in order to explain why this guard
+  # exists. A `run:` line is the command itself.
+  grep -nE "$FOREIGN_RE|$FOREIGN_PIP_RE" "$REPO_ROOT/$f" 2>/dev/null \
+    | grep -vE '^[0-9]+:[[:space:]]*#' \
+    | sed "s|^|$f:|" || true
 }
 
 self_test() {
@@ -84,6 +133,14 @@ self_test() {
     'run `cargo install mnemo` to get started'
     'cargo add mnemo --features foo'
     '$ cargo install mnemo-cli --force'
+    # PyPI half. The first is the exact line found live in
+    # benchmarks-nightly.yml on 2026-08-22.
+    "pip install 'mnemo[benchmark]' anthropic datasets"
+    'pip install mnemo'
+    'python -m pip install mnemo'
+    'pip install "mnemo[claude]"'
+    'pip install --upgrade mnemo'
+    'RUN pip install mnemo && echo done'
   )
   # MUST NOT match — these are ours, or are prose.
   local -a should_not_match=(
@@ -96,11 +153,20 @@ self_test() {
     'cargo build --release -p mnemo-mcp-server'
     'the mnemo crate on crates.io is unrelated'
     'cargo add mnemo-clippy-thing'
+    # `mnemo-db` is OURS on PyPI. The trailing hyphen boundary is what keeps
+    # these out, and getting it wrong would make the guard unusable.
+    'pip install mnemo-db'
+    'pip install mnemo-db[claude]'
+    "pip install 'mnemo-db[openai-sandbox-s3]'"
+    'python -m pip install --upgrade mnemo-db'
+    'python -m pip install anthropic datasets'
+    'pip install maturin'
+    'pip install --no-index --find-links dist mnemo-db'
   )
 
   local s
   for s in "${should_match[@]}"; do
-    if printf '%s\n' "$s" | grep -qE "$FOREIGN_RE"; then
+    if printf '%s\n' "$s" | grep -qE "$FOREIGN_RE" || printf '%s\n' "$s" | grep -qE "$FOREIGN_PIP_RE"; then
       printf '  ok    MATCH     %s\n' "$s"
     else
       printf '  FAIL  NO-MATCH  %s  (should have been caught)\n' "$s"
@@ -108,7 +174,7 @@ self_test() {
     fi
   done
   for s in "${should_not_match[@]}"; do
-    if printf '%s\n' "$s" | grep -qE "$FOREIGN_RE"; then
+    if printf '%s\n' "$s" | grep -qE "$FOREIGN_RE" || printf '%s\n' "$s" | grep -qE "$FOREIGN_PIP_RE"; then
       printf '  FAIL  MATCH     %s  (false positive — this is ours)\n' "$s"
       st_fail=1
     else
@@ -176,24 +242,38 @@ while IFS= read -r f; do
   done < <(scan_file "$f")
 done < <(scan_targets)
 
+while IFS= read -r f; do
+  [[ -n "$f" ]] || continue
+  [[ -f "$REPO_ROOT/$f" ]] || continue
+  while IFS= read -r line; do
+    printf '%s\n' "$line"
+    hits=$((hits + 1))
+  done < <(scan_workflow "$f")
+done < <(scan_workflow_targets)
+
 if [[ $hits -gt 0 ]]; then
   cat >&2 <<'EOF'
 ::error::check_crate_name_refs.sh: the docs above tell a reader to install a crate this project does not own.
 
   `mnemo`      on crates.io is github.com/aayushadhikari7/mnemo
   `mnemo-cli`  on crates.io is github.com/watzon/mnemo
+  `mnemo`      on PyPI      is "Notebook and assistant" by Gabriele Girelli
 
-Neither is this project. The server binary publishes as `mnemo-mcp-server`
-(its crate directory is `crates/mnemo-cli`, which is what makes this an easy
-mistake to make). Use one of:
+None is this project. The server binary publishes as `mnemo-mcp-server` (its
+crate directory is `crates/mnemo-cli`, which is what makes this an easy mistake
+to make), and the Python distribution publishes as `mnemo-db`. Use one of:
 
   cargo install mnemo-mcp-server
   cargo add mnemo-core mnemo-compliance
   cargo add mnemo-mcp
+  pip install mnemo-db
+
+Hits in `.github/workflows/` are live commands, not prose: a foreign package
+would actually be installed into a job that holds credentials.
 
 See the "Naming" section in README.md.
 EOF
   exit 1
 fi
 
-echo "check_crate_name_refs.sh OK (no doc installs a crate we do not own)"
+echo "check_crate_name_refs.sh OK (no doc or workflow installs a package we do not own)"
