@@ -40,17 +40,42 @@ embedder it found. A silently-noop benchmark is worse than no benchmark. A unit 
 | **Metric** | gold-document recall@k (each query's source record is its gold doc, matched by `lme_id` metadata) + MRR |
 | **Queries (n)** | 45 |
 | **Top-K** | 10 |
-| **Seeds** | mean of **3** (absorbs UUID-v7 + approximate-HNSW run-to-run variance) |
+| **Seeds** | mean of **5** (absorbs UUID-v7 + approximate-HNSW run-to-run variance) |
 | **CI** | Wilson 95% on recall, computed on `round(mean_recall × n)` successes over n=45 |
-| **Hardware** | `aarch64/macos` (Apple Silicon) |
+| **Paired CI** | percentile bootstrap over queries (10 000 resamples, fixed seed) + exact McNemar |
+| **Hardware** | `arm64/darwin` (Apple M4) |
 
-## Results (mean of 3 seeds, n=45 — **preliminary**)
+## Results (mean of 5 seeds, n=45 — **preliminary**)
 
 | strategy | recall@1 | recall@1 95% CI | recall@5 | recall@10 | MRR | p50 ms | p95 ms | index build ms |
 |---|---:|---|---:|---:|---:|---:|---:|---:|
-| `lexical` (BM25) | 0.422 | [0.290, 0.567] | 0.689 | 0.689 | 0.501 | 7.5 | 9.9 | 562.6 |
-| **`semantic`** (vector) | **0.689** | **[0.543, 0.805]** | **0.889** | **0.911** | **0.770** | 13.6 | 15.5 | 972.1 |
-| `auto` (RRF hybrid) | 0.615 | [0.476, 0.749] | 0.844 | 0.889 | 0.716 | 21.6 | 23.7 | 900.0 |
+| `lexical` (BM25) | 0.422 | [0.290, 0.567] | 0.689 | 0.689 | 0.501 | 9.2 | 21.9 | 622.6 |
+| **`semantic`** (vector) | **0.689** | **[0.543, 0.805]** | **0.889** | **0.911** | **0.770** | 13.4 | 16.2 | 1050.4 |
+| `auto` (RRF hybrid) | 0.631 | [0.476, 0.749] | 0.844 | 0.898 | 0.726 | 22.0 | 25.3 | 781.7 |
+
+### Paired comparisons (the ones that answer the question)
+
+Those three intervals are *marginal*: each says where one strategy's own recall
+lies, and none of them says whether one strategy beats another. Overlapping
+intervals do not establish a difference and do not rule one out. Because every
+strategy is scored on the **same 45 queries**, the comparison can be made
+properly — each query is its own control:
+
+| comparison | paired Δ recall@1 | 95% CI | McNemar b/c | exact p | separates at 95%? |
+|---|---:|---|---:|---:|---|
+| `semantic` − `lexical` | **+0.267** | [0.133, 0.400] | 12 / 0 | 4.9e-4 | **yes** |
+| `semantic` − `auto` | +0.058 | [−0.031, 0.160] | 4 / 2 | 0.69 | **no** |
+
+The first row is the claim the README makes, and it holds: on 12 queries the
+vector lane wins where BM25 fails, on **zero** does BM25 win where the vector
+lane fails, and the interval on the gap excludes zero.
+
+The second row is the honest correction to a comparison this page used to make
+by eye. At n=45 the `semantic`-over-`auto` gap **does not separate**, and the
+point estimate is not evidence that `auto` costs you recall. At this effect size
+it would take roughly **n=127** paired queries to resolve — just past the repo's
+own n≥100 bar, which is why the corpus size, not the fusion weights, is the next
+thing to fix.
 
 Latency is per query end-to-end **including the ONNX embed round-trip** for the
 `semantic`/`auto` lanes; `lexical` needs no query embedding, hence its lower latency.
@@ -59,7 +84,8 @@ Latency is per query end-to-end **including the ONNX embed round-trip** for the
 
 On this tight single-fact slice the **vector (`semantic`) lane is the strongest mode** —
 recall@1 **0.689**, recall@10 **0.911**, MRR **0.770**. mnemo's default `auto` RRF fusion
-sits just below it (recall@1 0.615): equal-weighting a strong semantic signal with the
+sits just below it (recall@1 0.631, a gap that does not separate — see the paired table):
+equal-weighting a strong semantic signal with the
 weaker BM25/recency/graph lanes dilutes it slightly when queries closely paraphrase their
 gold document. BM25-only trails on recall@1 (0.422) and, notably, its recall@5 and
 recall@10 are identical (0.689) — a lexical miss at rank 5 is still a miss at rank 10,
@@ -68,8 +94,9 @@ whereas the vector lane keeps recovering gold as k grows (0.889 → 0.911).
 **Takeaways:** for paraphrase-heavy single-fact recall prefer `strategy="semantic"`; treat
 the default `auto` weights as *tunable* (via the public `hybrid_weights` / `rrf_k` knobs)
 rather than fixed; and re-test fusion on a larger, noisier corpus where BM25's exact-token
-advantage has room to show. The `auto`-vs-`semantic` gap here is within overlapping 95%
-intervals at n=45, so it is **suggestive, not significant** — see limitations.
+advantage has room to show. The `auto`-vs-`semantic` gap is **not significant** at n=45 —
+that is now measured rather than eyeballed (paired Δ +0.058, 95% CI [−0.031, 0.160],
+McNemar exact p=0.69), so do not switch away from the default on the strength of it.
 
 ## Reproduce (no credentials)
 

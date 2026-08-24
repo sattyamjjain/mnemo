@@ -78,6 +78,10 @@ on:
         description: "I confirm CARGO_REGISTRY_TOKEN carries the publish-new scope (required to CREATE a new crate). Leave unchecked and the run fails early if the walk contains a new crate."
         type: boolean
         default: false
+      allow_red_commit:
+        description: "Publish even though required checks on the tagged commit are not green. Deliberate override — the reason is recorded in the run log."
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -105,7 +109,146 @@ env:
   WALK: "mnemo-core mnemo-graph mnemo-attention-state mnemo-compliance mnemo-mcp mnemo-postgres mnemo-rest mnemo-grpc mnemo-admin mnemo-pgwire mnemo-letta mnemo-mesh mnemo-codemode mnemo-deal mnemo-md-sync mnemo-cma mnemo-baseline mnemo-amp mnemo-db mnemo-embeddings-bench mnemo-mcp-server"
 
 jobs:
+  # A tag is a promise that the commit under it shipped. Nothing enforced that:
+  # a tag pushed at a red commit ran the full publish walk anyway, and
+  # crates.io publishes are permanent — there is no un-publishing a version cut
+  # from a commit whose tests were failing. The 0.5.26 tag was cut while `main`
+  # was red on the doc guards, which is what prompted this.
+  #
+  # This refuses to proceed unless the tagged commit's own required checks
+  # already passed. It is deliberately the FIRST job: everything else needs it.
+  #
+  # The trap this has to avoid is waiting on itself. This workflow's own checks
+  # run on the same commit, so they are excluded by workflow name — otherwise
+  # the gate blocks forever on a check that is blocked on the gate.
+  commit-is-green:
+    name: Tagged commit passed its checks
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+    steps:
+      - name: Require green required checks on ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          OVERRIDE: ${{ inputs.allow_red_commit }}
+          SELF: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+
+          if [ "${OVERRIDE:-false}" = "true" ]; then
+            echo "::warning::allow_red_commit=true — publishing from $SHA WITHOUT a green check requirement. This was an explicit operator choice."
+            exit 0
+          fi
+
+          # Two independent questions, because either alone lets a red commit
+          # through:
+          #
+          #   1. Did the REQUIRED workflow actually run and pass on this commit?
+          #      Asked against the workflow-runs API, since check-run names are
+          #      JOB names — matching "CI" against them silently matches nothing,
+          #      and a workflow that never triggered would read as "no failures".
+          #   2. Did anything else on this commit fail? Catches required checks
+          #      added later without updating REQUIRED.
+          REQUIRED_WORKFLOW="ci.yml"
+
+          deadline=$(( $(date +%s) + 20*60 ))
+          while :; do
+            # --- 1. the required workflow, by file name ---
+            ci="$(gh run list --workflow="$REQUIRED_WORKFLOW" --commit="$SHA" \
+                    --limit 20 --json status,conclusion,databaseId \
+                    --jq '.[] | [.databaseId, .status, (.conclusion // "pending")] | @tsv' || true)"
+
+            echo "--- $REQUIRED_WORKFLOW runs on $SHA ---"
+            printf '%s\n' "${ci:-<none>}"
+
+            if [ -z "${ci:-}" ]; then
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::$REQUIRED_WORKFLOW never ran on $SHA. A tag whose commit was never tested must not publish permanently to crates.io."
+                exit 1
+              fi
+              echo "waiting for $REQUIRED_WORKFLOW to appear..."; sleep 30; continue
+            fi
+
+            if grep -qv "completed" <<<"$(cut -f2 <<<"$ci")"; then
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "::error::Timed out waiting for $REQUIRED_WORKFLOW on $SHA to finish."
+                exit 1
+              fi
+              echo "waiting for $REQUIRED_WORKFLOW to finish..."; sleep 30; continue
+            fi
+
+            # The MOST RECENT completed run decides it, which is what a human
+            # means by "is this commit green". Not "any run ever succeeded":
+            # 3b876fc had one green push run and two later red scheduled runs
+            # when this gate was written, and "any success" would have waved a
+            # tag straight through a repo that was red at that moment.
+            # Not "every run": a commit can go red later for reasons that are
+            # not about its content (a registry moved, an advisory landed), and
+            # a re-run that passes is the operator saying so.
+            latest="$(head -n1 <<<"$ci")"
+            latest_id="$(cut -f1 <<<"$latest")"
+            latest_conclusion="$(cut -f3 <<<"$latest")"
+            if [ "$latest_conclusion" != "success" ]; then
+              echo "::error::The most recent $REQUIRED_WORKFLOW run on $SHA concluded '$latest_conclusion' (run $latest_id). This tag would publish a red commit permanently to crates.io."
+              echo "Fix the commit and move the tag, re-run CI if the failure was transient, or re-run this with allow_red_commit=true if it is deliberate."
+              exit 1
+            fi
+            older_bad="$(tail -n +2 <<<"$ci" | awk -F'\t' '$3!="success"{print $1" ("$3")"}' || true)"
+            if [ -n "$older_bad" ]; then
+              echo "::notice::earlier $REQUIRED_WORKFLOW runs on $SHA were not successful; the latest (run $latest_id) is green: $older_bad"
+            fi
+            break
+          done
+
+          # --- 2. anything else red on the same commit ---
+          # Asked against the WORKFLOW-runs API, not check-runs: check-run names
+          # are JOB names ("plan", "Gate (fmt + clippy + tests…)"), so filtering
+          # them by workflow name silently matches nothing and this whole arm
+          # reads as clean. Workflow runs carry the workflow name directly.
+          #
+          # Two workflows are excluded, each for a stated reason:
+          #
+          #   release-crate  — this one. Its checks are on this commit and
+          #                    cannot be green while this job is what decides
+          #                    that. Including it deadlocks the gate on itself.
+          #   cargo-publish  — its `plan` job FAILS BY DESIGN on any commit whose
+          #                    workspace version has no tag yet, which is every
+          #                    commit between a version bump and its tag. That is
+          #                    the normal state of `main` during a release, so
+          #                    including it would block every release this gate
+          #                    is supposed to allow.
+          EXCLUDE_WORKFLOWS="release-crate|cargo-publish"
+
+          others="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+                      --jq '.workflow_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv' || true)"
+          others="$(grep -Ev "^($EXCLUDE_WORKFLOWS)\t" <<<"${others:-}" || true)"
+
+          echo "--- other workflow runs on $SHA ---"
+          printf '%s\n' "${others:-<none>}"
+
+          # Only the most recent run per workflow counts, same rule as above: a
+          # later green re-run is the operator saying the failure is settled.
+          bad="$(awk -F'\t' '
+            $2=="completed" && !seen[$1]++ && $3!="success" && $3!="skipped" && $3!="neutral" {
+              print "  " $1 " (" $3 ")"
+            }' <<<"${others:-}" || true)"
+          if [ -n "$bad" ]; then
+            echo "::error::Other workflows are red on $SHA — this tag would publish a red commit permanently to crates.io:"
+            printf '%s\n' "$bad"
+            echo "Fix the commit and move the tag, or re-run with allow_red_commit=true if this is deliberate."
+            exit 1
+          fi
+
+          echo "$SHA: $REQUIRED_WORKFLOW succeeded and no other workflow is red."
+
   gate:
+    needs: commit-is-green
     name: Gate (fmt + clippy + tests, publish closure)
     if: github.repository == 'sattyamjjain/mnemo'
     runs-on: ubuntu-latest
@@ -522,6 +665,97 @@ jobs:
   # `needs: publish` on purpose. A Release object announces a version people can
   # install; publishing it before crates.io has the crates would advertise
   # something that does not exist yet.
+  # Publishing MOVES THE REGISTRY, and the README's published-versions table is
+  # generated from the registry — so a successful release makes `main` red on
+  # the doc guards, every time, until a human remembers to regenerate. That is
+  # exactly what happened after v0.5.26: the tag went out green and the next
+  # scheduled CI run failed with "README generated block(s) STALE".
+  #
+  # The fix is not to weaken the guard (it is correct: the committed table did
+  # not match reality). It is to close the loop the release itself opened.
+  refresh_generated_docs:
+    name: Refresh registry-generated README blocks
+    needs: publish
+    if: ${{ github.repository == 'sattyamjjain/mnemo' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Wait for crates.io to report the published version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          # The registry API lags the publish by a minute or two. Regenerating
+          # against a stale read would write the OLD version back and leave the
+          # guard red anyway — the failure this job exists to prevent.
+          for _ in $(seq 1 20); do
+            got="$(curl -sSL -H 'User-Agent: mnemo-release (github.com/sattyamjjain/mnemo)' \
+                     "https://crates.io/api/v1/crates/mnemo-core" | jq -r '.crate.max_version')"
+            echo "crates.io mnemo-core max_version=$got (want $ver)"
+            [ "$got" = "$ver" ] && exit 0
+            sleep 30
+          done
+          echo "::error::crates.io still does not report mnemo-core $ver after 10 minutes; not regenerating against a stale read."
+          exit 1
+
+      - name: Regenerate and commit
+        run: |
+          set -euo pipefail
+          python3 scripts/gen_published_versions.py --write
+          python3 scripts/gen_recall_number.py --write
+
+          if git diff --quiet -- README.md; then
+            echo "Generated blocks already match the registry — nothing to commit."
+            exit 0
+          fi
+
+          # Only the generated blocks may move here. If anything else in the
+          # working tree changed, something is wrong and a bot should not be
+          # pushing it to main.
+          changed="$(git diff --name-only)"
+          if [ "$changed" != "README.md" ]; then
+            echo "::error::unexpected files changed, refusing to push: $changed"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "chore(docs): refresh registry-generated README blocks for ${GITHUB_REF_NAME}" \
+                     -m "Generated by release-crate.yml after publishing ${GITHUB_REF_NAME}. Publishing moves the registry that these blocks are generated from, so without this the doc guards go red on the next run." \
+                     -m "Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          # A PR merging while the release runs would make a plain push fail,
+          # and a failed push here leaves the doc guards red — the exact outcome
+          # this job exists to prevent. Rebase and retry; the change is confined
+          # to two generated blocks, so it rebases cleanly or the regeneration
+          # is re-run on top of whatever landed.
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Pushed regenerated README to main."
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt) — main moved; rebasing and regenerating on top of it"
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort || true; git reset --hard origin/main; }
+            python3 scripts/gen_published_versions.py --write
+            python3 scripts/gen_recall_number.py --write
+            if git diff --quiet -- README.md && git diff --quiet HEAD origin/main -- README.md; then
+              echo "main already carries current generated blocks — nothing to push."
+              exit 0
+            fi
+            git add README.md
+            git diff --cached --quiet || git commit --amend --no-edit
+          done
+          echo "::error::could not push the regenerated README to main after 3 attempts. Run: python3 scripts/gen_published_versions.py && python3 scripts/gen_recall_number.py, then commit."
+          exit 1
+
   github_release:
     name: GitHub Release
     needs: publish

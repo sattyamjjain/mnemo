@@ -359,7 +359,11 @@ jobs:
     name: Doc guards (crate names, publish closure, GPM table, published versions, recall number)
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 0: the tag/release parity guard below needs the tag list,
+      # and a shallow clone has no tags to compare against.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # Two crates.io names collide with this project and belong to other
       # people: `mnemo` (aayushadhikari7/mnemo) and `mnemo-cli` (watzon/mnemo).
@@ -431,5 +435,23 @@ jobs:
       # block is rendered from bench/results/locomo_v1.json and this fails if the
       # two disagree. Offline — it reads the committed result, it does not re-run
       # the bench (that needs a downloaded ONNX model; see #125).
+      # Self-test first, same reasoning as the guards above. The branch that
+      # matters here is the one that does not run on today's data: when the
+      # paired gap FAILS to separate, the README must say so and say what n
+      # would be needed. Without a fixture that path would first execute on the
+      # day it matters, which is the worst possible day to discover it is wrong.
+      # v0.5.23/24/25 each shipped with no GitHub Release and nothing went red.
+      # release-crate.yml creates one now; this is what keeps that true if the
+      # job is ever removed, disabled, or skipped for a tag. Needs the tag list,
+      # hence fetch-depth 0 on this step's checkout below.
+      - name: Tag/release parity guard self-test
+        run: bash scripts/check_tag_release_parity.sh --self-test
+      - name: Every release tag has a GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check_tag_release_parity.sh
+
+      - name: Recall-number renderer self-test
+        run: python3 scripts/gen_recall_number.py --self-test
       - name: README recall number matches the committed bench result
         run: python3 scripts/gen_recall_number.py --check
