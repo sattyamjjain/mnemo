@@ -41,10 +41,15 @@ not-re-run claims — see
 
 **Real-embedder retrieval quality (measured, not asserted):** the byte-reproducible
 number above runs under a *deterministic hash-bag* embedder, which is a lexical
-**floor**, not a retrieval result. The one headline real-embedder number is the
-generated block immediately below: **MiniLM 384-dim, n=45, recall@1 0.689
-[0.543, 0.805], against a lexical control of 0.422 [0.290, 0.567] on the same
-corpus and harness.** There is deliberately only one, and an older measurement is
+**floor**, not a retrieval result.
+
+<!-- BEGIN generated: recall-headline -->
+<!-- Generated from bench/results/locomo_v1.json by scripts/gen_recall_number.py — do not hand-edit. -->
+
+The one headline real-embedder number is the generated block below: **Xenova/all-MiniLM-L6-v2 384-dim, n=45, recall@1 0.689** [0.543, 0.805], against a lexical control on the same corpus and harness. On the same 45 queries the paired gap over that control is **+0.267** [95% 0.133, 0.400], McNemar exact p=4.9e-4 — it separates.
+<!-- END generated: recall-headline -->
+
+There is deliberately only one headline, and an older measurement is
 kept below it under its own heading rather than beside it.
 
 Every published number, this one and the poisoning / audit / retrieval numbers
@@ -59,7 +64,7 @@ are in the benchmark tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
 <!-- BEGIN generated: recall-number -->
 <!-- Generated from bench/results/locomo_v1.json by scripts/gen_recall_number.py — do not hand-edit. -->
 
-**Real-embedder recall, measured on the supported backend.** Gold-document **recall@1 = 0.689** [Wilson 95% 0.543, 0.805], recall@5 0.889, recall@10 0.911, MRR 0.770.
+**Real-embedder recall, measured on the supported backend.** Gold-document **recall@1 = 0.689** [Wilson 95% 0.543, 0.805], recall@5 0.889, recall@10 0.911, MRR 0.770. Against the lexical control **on the same 45 queries** the paired gap is **+0.267** [95% 0.133, 0.400], McNemar exact p=4.9e-4 (12 queries won, 0 lost) — the gap separates at 95%.
 
 | | |
 |---|---|
@@ -69,10 +74,11 @@ are in the benchmark tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
 | storage backend | `duckdb (in-memory)` |
 | corpus | `crates/mnemo-core/benches/data/longmemeval_m.jsonl`, n=45 queries, mean of 5 seeds |
 | **control (lexical)** | recall@1 0.422 [0.290, 0.567] |
+| **paired gap vs control** | +0.267 [0.133, 0.400], McNemar b=12/c=0, exact p=4.9e-4 |
 | hardware | arm64/darwin Apple M4 |
-| measured | 2026-08-18 at `a258238` |
+| measured | 2026-08-24 at `3b876fc` |
 
-The lexical row is the control, not a second headline: it is the same corpus and the same harness with the vector lane switched off, so the gap between the two rows is what the embedder is actually buying.
+The lexical row is the control, not a second headline: it is the same corpus and the same harness with the vector lane switched off, so what the embedder buys is the difference between them. **Do not read that difference off the two intervals** — they overlap (0.543 sits below 0.567), and overlapping intervals neither establish nor rule out a difference. The paired row is the one that answers it: the same queries scored both ways, so each query is its own control.
 
 Reproduce:
 
@@ -111,10 +117,14 @@ the number above and the two must never be quoted together as a range.
 
 **The interval is the point.** At n=23 the Wilson 95% interval is
 **[0.535, 0.875]**, which is wider than the headline's and *fully overlaps* it
-([0.543, 0.805]). The two measurements are statistically indistinguishable, so the
-higher point estimate is not evidence that this embedder is better; it is evidence
-that n=23 buys very little resolution. Neither run clears the repo's own n≥100
-bar, and both are marked preliminary for that reason.
+([0.543, 0.805]). That overlap is **not** a finding of equivalence — the same
+arithmetic that cannot prove a difference cannot prove its absence either. What
+can be said is narrower and worth saying plainly: these are two separate runs on
+different corpora, so unlike the semantic-vs-lexical comparison above **there is
+no paired statistic available here at all**, and at n=23 the interval is far too
+wide to resolve a gap of this size in either direction. The higher point estimate
+is therefore not evidence that this embedder is better. Neither run clears the
+repo's own n≥100 bar, and both are marked preliminary for that reason.
 
 Reproduce with no credentials and no special build feature:
 
@@ -212,13 +222,13 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (unreleased target): **`v0.5.26`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (released): **`v0.5.26`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
-| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.25` | 2026-08-18 |
-| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.25` | 2026-08-18 |
-| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.25` | 2026-08-18 |
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.26` | 2026-08-22 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.26` | 2026-08-22 |
+| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.26` | 2026-08-22 |
 | PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.26` | 2026-08-19 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
@@ -615,7 +625,6 @@ pip install mnemo-db
 > **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.26`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
 >
 > - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.26` *is* `mnemo-core` `v0.5.26`. There is no version-skew question to answer: the engine is the wheel.
-> - **`pip install mnemo-db` and `cargo add mnemo-core` do not currently resolve the same version.** PyPI has `v0.5.26`; crates.io has `v0.5.25`. The wheel publishes on merge to `main` while the crates publish on a tag, so the Python side leads inside an open release window. Pin deliberately if you embed both.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.
 <!-- END generated: python-sdk-compat -->
 
