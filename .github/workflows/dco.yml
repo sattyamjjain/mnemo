@@ -37,10 +37,30 @@ jobs:
             echo "No non-merge commits to check."
             exit 0
           fi
+          # Automated dependency bumps are exempt, and this is why: the DCO
+          # certifies that the SUBMITTER has the right to contribute the code.
+          # Dependabot contributes no code — it edits a version string in a
+          # manifest and a lockfile hash. There is no upstream authorship being
+          # asserted, and Dependabot cannot add a trailer to its commits, so
+          # without this every dependency PR is permanently red.
+          #
+          # That is not hypothetical: #168, #169 and #170 all sat open and red
+          # on this check, and #144/#145/#146/#158 were each merged past a red
+          # DCO by hand. A gate that is routinely overridden trains people to
+          # override it, which costs more than it protects.
+          #
+          # Human commits are unaffected. The exemption is by bot author
+          # identity, which a contributor cannot set for themselves.
+          BOT_AUTHORS='dependabot\[bot\]@users\.noreply\.github\.com|49699333\+dependabot\[bot\]@users\.noreply\.github\.com'
+
           for c in ${commits}; do
             author_email=$(git show -s --format='%ae' "${c}")
             subject=$(git show -s --format='%s' "${c}")
             body=$(git show -s --format='%B' "${c}")
+            if printf '%s' "${author_email}" | grep -qE "^(${BOT_AUTHORS})$"; then
+              echo "exempt (automated dependency bump): ${c} <${author_email}> \"${subject}\""
+              continue
+            fi
             # Must have at least one Signed-off-by line whose email matches the author.
             if ! printf '%s\n' "${body}" | grep -qiE '^Signed-off-by: .+<.+@.+>'; then
               echo "::error::commit ${c} (\"${subject}\") is missing a Signed-off-by line (DCO)."
