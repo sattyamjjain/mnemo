@@ -15,6 +15,122 @@ The 0.5.27 window opens on the **v0.5.26** cut. The 0.5.26 release content lande
 points at the cut commit directly above it, which is where the `## [0.5.26]` heading the
 publish gate requires first exists.
 
+### Verified: v0.5.26 published completely (21/21 crates)
+
+Before changing anything, the registry was asked directly rather than the repo. Every
+publishable workspace member was checked against
+`https://crates.io/api/v1/crates/<name>`:
+
+- **21 of 21** crates that ship to crates.io are at **0.5.26**, `mnemo-mcp-server`
+  included. There is **no partial publish**, so the `v0.5.26` tag is not lying about what
+  shipped, and nothing needed re-publishing or yanking. The workspace stays at 0.5.26 and
+  was repaired in place rather than re-cut.
+- The two `cargo metadata` reports as publishable that return 404 are both deliberate and
+  both already carry a written exemption in `scripts/check_publish_closure.sh`:
+  `mnemo-python` (a maturin wheel, published to **PyPI as `mnemo-db`**, never to
+  crates.io — PyPI confirms `mnemo-db` 0.5.26) and `mnemo-golem-host` (excluded from the
+  CI workspace build, so CI cannot build it, let alone publish it).
+
+### Fixed: a release made `main` red, by construction
+
+CI on `main` was failing at `3b876fc` with
+`README generated block(s) STALE: published-versions, python-sdk-compat`.
+
+The guard was right and the repo was wrong. Publishing **moves the registry**, and those
+README blocks are generated *from* the registry — so a successful release always left the
+committed table one version behind, and the next scheduled run went red. The symptom was
+one stale table; the cause was a loop the release opened and nothing closed.
+
+- `release-crate.yml` gained a `refresh_generated_docs` job that waits for crates.io to
+  actually report the new version (regenerating against a stale read would write the old
+  version back), regenerates both blocks, refuses to push if anything other than
+  `README.md` changed, and commits to `main`.
+- Regenerating also **deleted a claim that had become false**: the README told readers
+  `pip install mnemo-db` and `cargo add mnemo-core` "do not currently resolve the same
+  version". They now both resolve 0.5.26.
+
+### Added: a tag can no longer publish a red commit
+
+crates.io publishes are permanent, and nothing checked whether the commit under a tag had
+passed. `release-crate.yml` now runs `commit-is-green` **first**, and everything else
+needs it.
+
+Three things it had to get right, each verified against real commits rather than by
+reading:
+
+- **The required workflow is asked for by file name** (`ci.yml`), through the
+  workflow-runs API. Check-run names are *job* names, so matching `"CI"` against them
+  silently matches nothing — and a workflow that never triggered would then read as "no
+  failures" rather than as a failure.
+- **The most recent run decides it.** `3b876fc` has one green push run and two later red
+  scheduled runs; an "any run succeeded" rule would have waved a tag straight through a
+  repo that was red at that moment.
+- **`cargo-publish` is excluded, with a reason.** Its `plan` job fails *by design* on any
+  commit whose workspace version has no tag yet — which is every commit between a version
+  bump and its tag. Including it would have blocked every release this gate exists to
+  allow. `release-crate` is excluded too, or the gate waits on itself forever.
+
+Verified in the failing direction: it refuses `3b876fc` (CI red), refuses `3718da3`
+(`benchmarks-nightly` red), and accepts `34e3550`. An `allow_red_commit` input exists for
+a deliberate override and records the choice in the run log.
+
+### Added: every release tag must have a GitHub Release
+
+Ported from ferrumdeck's `tag-has-release`. `scripts/check_tag_release_parity.sh` (with
+`--self-test`, 7 cases) asserts that every tag from `v0.5.4` forward has a Release —
+v0.5.23/24/25 each shipped without one and nothing went red. Nine tags predate the
+automation and are exempt by a **dated cutoff with a stated reason**, printed on every run
+so they stay visible, not by an open-ended allowlist. The self-test pins the two ways this
+guard could quietly stop working: string comparison exempting `v0.5.10` because it sorts
+below `v0.5.4`, and the cutoff tag itself falling outside the checked set.
+
+### Fixed: the recall claim is now a paired comparison, and says so
+
+The README stated recall@1 **0.689** [0.543, 0.805] against a lexical control of **0.422**
+[0.290, 0.567] at n=45. Those intervals **overlap** — 0.543 sits below 0.567 — and the
+page presented them as if that settled the comparison. It does not: overlap neither
+establishes a difference nor rules one out.
+
+Worse, the committed result recorded only the marginals, and **the marginals alone cannot
+decide it**. They fix `b − c = 12` while saying nothing about `c`, and both ends of the
+feasible range are consistent with those same two numbers:
+
+| discordant split | exact McNemar p | verdict at 0.05 |
+|---|---:|---|
+| `c = 0`, `b = 12` | 4.9e-4 | significant |
+| `c = 16`, `b = 28` | 0.096 | **not** significant |
+
+So the paired data was not a nicety; it was required. `locomo_v1_bench` now keeps the
+per-query rank-1 outcome vector it used to discard and reports two paired comparisons,
+each with a bootstrap interval over queries (fixed seed, recorded in the result) and an
+exact McNemar test:
+
+| comparison | paired Δ recall@1 | 95% CI | McNemar b/c | exact p | separates? |
+|---|---:|---|---:|---:|---|
+| `semantic` − `lexical` | **+0.267** | [0.133, 0.400] | 12 / 0 | 4.9e-4 | **yes** |
+| `semantic` − `auto` | +0.058 | [−0.031, 0.160] | 4 / 2 | 0.69 | no |
+
+The headline holds, and now holds for a stated reason: 12 queries won, **zero** lost, and
+the interval on the gap excludes zero. The re-run used the same checkpoint as the
+committed result (sha256 `759c3cd2b7fe…`, verified before use) and reproduced both
+marginals **exactly**.
+
+The second row is a correction. `docs/benchmarks/locomo-v1.md` called the
+`auto`-vs-`semantic` gap "suggestive, not significant" *by eyeballing interval overlap* —
+the same move, one page over. It genuinely does not separate, which is now measured
+(p=0.69) rather than guessed, and it would take roughly **n=127** to resolve.
+
+The README's own n=23 note made the mirror-image error, reading "statistically
+indistinguishable" off an overlap; it now says what can actually be said, which is that no
+paired statistic exists between two separate runs on different corpora.
+
+Both intervals and the `preliminary` (n<100) marking are kept. The paired verdict is
+stated **in the same sentence as the number**, at the top of the README and in the block,
+both generated from the result file — the hand-typed restatement that used to sit fifteen
+lines above the generated block is gone. `--self-test` (13 cases) covers the branch that
+does not run today: when the gap *fails* to separate, the README must say so and say what
+n would be needed, and a mutation that makes it claim a win instead fails three checks.
+
 ## [0.5.26] - 2026-08-22
 
 ### Landing trace (2026-08-18)
