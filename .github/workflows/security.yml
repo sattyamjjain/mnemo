@@ -82,14 +82,29 @@ jobs:
         # counts, 0 critical, exit 0 on both. 28 new rules, zero new findings on
         # mnemo. Nothing needed fixing, so nothing was pinned back.
         #
+        # 0.3.79 -> 0.3.86 (2026-08-24) was verified the same way, but against
+        # two CI runs on the same corpus rather than two local runs: a local
+        # tree carries a multi-GB `target/` that CI's checkout does not, so the
+        # two are not comparable.
+        #   0.3.79  main    job 97555199311 -> Findings 35, Critical 0, High 3, exit 0
+        #   0.3.86  PR #168 job 97555588707 -> Findings 35, Critical 0, High 3, exit 0
+        # Identical totals, 0 critical, exit 0 on both.
+        #
+        # Note the version: this PR opened as 0.3.84 and Dependabot moved it to
+        # 0.3.86 mid-review. The numbers above are from the job on the FINAL
+        # head, not the one this note was first drafted against — recording a
+        # verification for a version that is not the pinned one would be exactly
+        # the stale claim this comment exists to prevent.
+        #
         # The gate stays `fail-on: critical` with the .agent-audit-kit.yml
         # suppression baseline (e.g. the AAK-AGENT-001 CLAUDE.md false positive).
         # If a future rule surfaces a NEW critical, this job fails loudly and the
         # baseline must be re-derived — that is the intended signal, not a reason
         # to unpin. Reproduce the comparison locally with:
-        #   pipx run --spec agent-audit-kit==0.3.79 aak scan . \
-        #     --config .agent-audit-kit.yml --severity low --fail-on critical
-        uses: sattyamjjain/agent-audit-kit@v0.3.79
+        #   pipx run --spec agent-audit-kit==0.3.86 aak scan . \
+        #     --config .agent-audit-kit.yml --severity low --fail-on critical \
+        #     --ignore-paths target   # a local tree has target/; CI's checkout does not
+        uses: sattyamjjain/agent-audit-kit@v0.3.86
         with:
           path: .
           config: .agent-audit-kit.yml
