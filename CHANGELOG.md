@@ -15,7 +15,7 @@ The 0.5.27 window opens on the **v0.5.26** cut. The 0.5.26 release content lande
 points at the cut commit directly above it, which is where the `## [0.5.26]` heading the
 publish gate requires first exists.
 
-### Verified: v0.5.26 published completely (21/21 crates)
+### Verified (2026-08-24) - the last release published completely, 21/21 crates
 
 Before changing anything, the registry was asked directly rather than the repo. Every
 publishable workspace member was checked against
@@ -31,7 +31,7 @@ publishable workspace member was checked against
   crates.io — PyPI confirms `mnemo-db` 0.5.26) and `mnemo-golem-host` (excluded from the
   CI workspace build, so CI cannot build it, let alone publish it).
 
-### Fixed: a release made `main` red, by construction
+### Fixed (2026-08-24) - a release made `main` red, by construction
 
 CI on `main` was failing at `3b876fc` with
 `README generated block(s) STALE: published-versions, python-sdk-compat`.
@@ -49,7 +49,7 @@ one stale table; the cause was a loop the release opened and nothing closed.
   `pip install mnemo-db` and `cargo add mnemo-core` "do not currently resolve the same
   version". They now both resolve 0.5.26.
 
-### Added: a tag can no longer publish a red commit
+### Added (2026-08-24) - a tag can no longer publish a red commit
 
 crates.io publishes are permanent, and nothing checked whether the commit under a tag had
 passed. `release-crate.yml` now runs `commit-is-green` **first**, and everything else
@@ -74,7 +74,7 @@ Verified in the failing direction: it refuses `3b876fc` (CI red), refuses `3718d
 (`benchmarks-nightly` red), and accepts `34e3550`. An `allow_red_commit` input exists for
 a deliberate override and records the choice in the run log.
 
-### Added: every release tag must have a GitHub Release
+### Added (2026-08-24) - every release tag must have a GitHub Release
 
 Ported from ferrumdeck's `tag-has-release`. `scripts/check_tag_release_parity.sh` (with
 `--self-test`, 7 cases) asserts that every tag from `v0.5.4` forward has a Release —
@@ -84,7 +84,7 @@ so they stay visible, not by an open-ended allowlist. The self-test pins the two
 guard could quietly stop working: string comparison exempting `v0.5.10` because it sorts
 below `v0.5.4`, and the cutoff tag itself falling outside the checked set.
 
-### Fixed: the recall claim is now a paired comparison, and says so
+### Fixed (2026-08-24) - the recall claim is a paired comparison now, and says so
 
 The README stated recall@1 **0.689** [0.543, 0.805] against a lexical control of **0.422**
 [0.290, 0.567] at n=45. Those intervals **overlap** — 0.543 sits below 0.567 — and the
