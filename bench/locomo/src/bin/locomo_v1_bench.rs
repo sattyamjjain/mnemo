@@ -56,7 +56,7 @@ use mnemo_core::storage::duckdb::DuckDbStorage;
 
 use mnemo_locomo_bench::dataset::{LongMemRecord, dataset_sha, default_dataset_path, load_dataset};
 use mnemo_locomo_bench::real_embedder::guard_real_embedder;
-use mnemo_locomo_bench::stats::wilson_95;
+use mnemo_locomo_bench::stats::{bootstrap_mean_ci95, mcnemar_exact_p, wilson_95};
 
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
@@ -355,6 +355,13 @@ struct StrategyResult {
     p50_ms: f64,
     p95_ms: f64,
     index_build_ms: f64,
+    /// Per-query rank-1 hit count across the repeats, in dataset order.
+    ///
+    /// The marginal recall alone cannot support a comparison between two
+    /// strategies: it discards *which* query each hit came from, and the paired
+    /// test needs exactly that. Keeping the vector is what makes
+    /// semantic-vs-lexical answerable instead of merely assertable.
+    hits1_by_query: Vec<u32>,
 }
 
 async fn run_strategy(
@@ -372,6 +379,7 @@ async fn run_strategy(
     let mut mrrs = Vec::new();
     let mut all_lat = Vec::new();
     let mut index_build_ms = 0.0;
+    let mut hits1_by_query = vec![0u32; n];
 
     for rep in 0..repeats.max(1) {
         let engine = build_engine(embedding.clone(), dim);
@@ -382,7 +390,7 @@ async fn run_strategy(
         }
         let (mut h1, mut h5, mut h10) = (0usize, 0usize, 0usize);
         let mut rr = 0.0f64;
-        for r in dataset {
+        for (qi, r) in dataset.iter().enumerate() {
             let started = Instant::now();
             let resp = engine.recall(recall_req(&r.query, strategy, limit)).await;
             all_lat.push(started.elapsed().as_secs_f64() * 1000.0);
@@ -397,6 +405,7 @@ async fn run_strategy(
             {
                 if rank <= 1 {
                     h1 += 1;
+                    hits1_by_query[qi] += 1;
                 }
                 if rank <= 5 {
                     h5 += 1;
@@ -433,7 +442,80 @@ async fn run_strategy(
         p50_ms: percentile(&mut all_lat.clone(), 0.50),
         p95_ms: percentile(&mut all_lat, 0.95),
         index_build_ms,
+        hits1_by_query,
     }
+}
+
+/// Paired semantic-vs-lexical comparison at rank 1, over the same queries.
+///
+/// Two things are reported because they answer two different questions and
+/// neither subsumes the other:
+///
+/// * the **effect** — the mean per-query difference in rank-1 hit rate, with a
+///   bootstrap interval that resamples *queries* and so keeps the pairing;
+/// * the **sign** — an exact McNemar test on the binarised outcome, which is
+///   the standard test for "did A beat B on the same items".
+///
+/// The point estimate of the first is identical to (recall@1 semantic −
+/// recall@1 lexical), so this adds an interval to the number the README
+/// already shows rather than introducing a competing one.
+fn paired_comparison(
+    better: &StrategyResult,
+    baseline: &StrategyResult,
+    repeats: usize,
+) -> serde_json::Value {
+    let reps = repeats.max(1) as f64;
+    let n = better.hits1_by_query.len();
+    assert_eq!(
+        n,
+        baseline.hits1_by_query.len(),
+        "paired comparison needs both strategies scored on the same queries"
+    );
+
+    // Per-query difference in hit RATE, so the mean is exactly the difference
+    // of the two headline recall@1 numbers.
+    let diffs: Vec<f64> = better
+        .hits1_by_query
+        .iter()
+        .zip(&baseline.hits1_by_query)
+        .map(|(&a, &b)| (a as f64 - b as f64) / reps)
+        .collect();
+
+    // Bootstrap seed is fixed and recorded so the interval is re-derivable.
+    const SEED: u64 = 0x6C6F_636F_6D6F_5F31; // "locomo_1"
+    const RESAMPLES: usize = 10_000;
+    let (mean_diff, lo, hi) = bootstrap_mean_ci95(&diffs, RESAMPLES, SEED);
+
+    // Binarise by majority of the repeats for the sign test. A query that hits
+    // in most seeds counts as a hit; ties (exactly half) count as a miss, which
+    // is the conservative direction for whichever strategy is ahead.
+    let majority = |h: u32| (h as f64) > reps / 2.0;
+    let (mut b, mut c) = (0usize, 0usize);
+    for (&x, &y) in better.hits1_by_query.iter().zip(&baseline.hits1_by_query) {
+        match (majority(x), majority(y)) {
+            (true, false) => b += 1,
+            (false, true) => c += 1,
+            _ => {}
+        }
+    }
+    let p = mcnemar_exact_p(b, c);
+
+    serde_json::json!({
+        "comparison": format!("{} vs {}, recall@1, same {} queries", better.strategy, baseline.strategy, n),
+        "n": n,
+        "mean_diff": round3(mean_diff),
+        "mean_diff_ci95": [round3(lo), round3(hi)],
+        "ci_method": format!("percentile bootstrap over queries, {RESAMPLES} resamples, seed 0x{SEED:016X}"),
+        "mcnemar": {
+            "binarisation": "majority of repeats; an exact tie counts as a miss",
+            "b_better_only": b,
+            "c_baseline_only": c,
+            "concordant": n - b - c,
+            "exact_p": p,
+        },
+        // The single fact a reader wants: does this survive its own interval?
+        "separates_at_95": lo > 0.0 && p < 0.05,
+    })
 }
 
 fn ci_arr((lo, hi): (f64, f64)) -> serde_json::Value {
@@ -498,9 +580,30 @@ async fn main() -> Result<(), BoxErr> {
                 "p50_ms": round3(r.p50_ms),
                 "p95_ms": round3(r.p95_ms),
                 "index_build_ms": round3(r.index_build_ms),
+                "hits1_by_query": r.hits1_by_query,
             }),
         );
     }
+
+    // The headline claim this bench exists to support is "the real embedder
+    // beats the lexical control". That is a paired question and it needs the
+    // paired statistic; two separate marginal intervals cannot answer it.
+    let find = |s: &str| {
+        results
+            .iter()
+            .find(|r| r.strategy == s)
+            .expect("strategy was run")
+    };
+    // Two paired questions the docs previously answered by eyeballing whether
+    // marginal intervals overlapped, which is not something overlap can decide:
+    //   * semantic vs the lexical control — the headline claim;
+    //   * semantic vs the default `auto` RRF fusion — whether the default
+    //     actually costs you anything on this corpus.
+    let paired = serde_json::json!({
+        "semantic_vs_lexical": paired_comparison(find("semantic"), find("lexical"), cli.repeats),
+        "semantic_vs_auto": paired_comparison(find("semantic"), find("auto"), cli.repeats),
+    });
+
     let payload = serde_json::json!({
         "bench": "locomo_v1",
         "corpus": {
@@ -534,6 +637,7 @@ async fn main() -> Result<(), BoxErr> {
         "n": n,
         "preliminary": preliminary,
         "repeats": cli.repeats,
+        "paired": paired,
         "strategies": per_strategy,
     });
 
@@ -581,6 +685,24 @@ async fn main() -> Result<(), BoxErr> {
             r.p50_ms,
             r.p95_ms,
             r.index_build_ms
+        );
+    }
+    for key in ["semantic_vs_lexical", "semantic_vs_auto"] {
+        let pl = &paired[key];
+        println!(
+            "\npaired {key} (recall@1, same n={n}): {diff:+.3} 95%CI [{lo:.3}, {hi:.3}]  \
+         McNemar b={b} c={c} exact p={p:.2e}  -> {verdict}",
+            diff = pl["mean_diff"].as_f64().unwrap_or(f64::NAN),
+            lo = pl["mean_diff_ci95"][0].as_f64().unwrap_or(f64::NAN),
+            hi = pl["mean_diff_ci95"][1].as_f64().unwrap_or(f64::NAN),
+            b = pl["mcnemar"]["b_better_only"],
+            c = pl["mcnemar"]["c_baseline_only"],
+            p = pl["mcnemar"]["exact_p"].as_f64().unwrap_or(f64::NAN),
+            verdict = if pl["separates_at_95"].as_bool().unwrap_or(false) {
+                "SEPARATES at 95%"
+            } else {
+                "DOES NOT separate at 95%"
+            },
         );
     }
     println!("\nwrote {}", cli.out.display());
