@@ -27,6 +27,7 @@ pub mod dataset;
 pub mod judge;
 pub mod ollama;
 pub mod phase_cost;
+pub mod pinned_model;
 pub mod real_embedder;
 pub mod runner;
 pub mod scoring;

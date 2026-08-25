@@ -1,0 +1,184 @@
+name: minja-phase3-nightly
+
+# Regenerate the non-adaptive Phase-3 exploitation number against the real,
+# digest-pinned checkpoint and open an issue if it leaves the stated band.
+#
+# Why nightly and not on every push: the run needs the ~90 MB pinned ONNX
+# checkpoint. Fetching that on every CI run is not a sane runtime cost, so CI
+# checks the COMMITTED artifact offline on every push
+# (bench/minja_phase3/tests/committed_result_is_within_band.rs) and this job
+# regenerates it for real once a day.
+#
+# Why it opens an issue instead of just failing: a nightly that fails into a
+# mailbox nobody reads is how a drifted number stays published. `benchmarks-nightly`
+# in this repo failed every night for over a week with nobody noticing. An issue
+# has an assignee and a state; a red run has neither.
+#
+# NO credentials are required. The checkpoint is a public Hugging Face artifact
+# and the digest pin means a substituted file is refused rather than scored.
+
+on:
+  schedule:
+    # 03:41 UTC — after benchmarks-nightly (02:11) and locomo-nightly, so the
+    # three do not contend for a runner, and off the :00/:30 marks.
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  MODEL_SHA256: "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e"
+  MODEL_URL: "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+  TOKENIZER_URL: "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+
+jobs:
+  regenerate:
+    name: Regenerate Phase-3 number and compare to the committed artifact
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: minja-phase3-${{ runner.os }}-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Fetch the pinned checkpoint
+        run: |
+          set -euo pipefail
+          curl -sSL --fail -o model.onnx "$MODEL_URL"
+          curl -sSL --fail -o tokenizer.json "$TOKENIZER_URL"
+          got="$(sha256sum model.onnx | cut -d' ' -f1)"
+          echo "fetched sha256 $got"
+          # Belt and braces: the bench itself fails closed on a mismatch, but
+          # checking here distinguishes "upstream artifact changed" from "the
+          # bench is broken", which are different problems with different fixes.
+          if [ "$got" != "$MODEL_SHA256" ]; then
+            echo "::error::pinned checkpoint changed upstream: expected $MODEL_SHA256, got $got"
+            exit 1
+          fi
+
+      - name: Regenerate
+        id: regen
+        run: |
+          set -euo pipefail
+          cp bench/results/minja_phase3.json committed.json
+          MNEMO_ONNX_MODEL_PATH="$PWD/model.onnx" cargo run --release --features onnx \
+            -p mnemo-minja-phase3-bench --bin minja_phase3_bench \
+            -- --out "$PWD/regenerated.json"
+
+      - name: Compare to the committed artifact
+        id: compare
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee compare.md
+          import json, os
+
+          BAND = 0.05           # rates: ANN construction is not bit-identical across platforms
+          EXACT = ("defense_delta_off_minus_on",)
+
+          a = json.load(open("committed.json"))["headline"]
+          b = json.load(open("regenerated.json"))["headline"]
+
+          drift = []
+          lines = ["| field | committed | regenerated | delta |", "|---|---:|---:|---:|"]
+          for k in ("poison_exploited_detector_off", "poison_exploited_detector_on",
+                    "benign_floor_detector_off", "benign_false_quarantine_detector_on"):
+              ca, ra = a[k]["rate"], b[k]["rate"]
+              d = ra - ca
+              lines.append(f"| {k} | {ca:.4f} ({a[k]['successes']}/{a[k]['n']}) | "
+                           f"{ra:.4f} ({b[k]['successes']}/{b[k]['n']}) | {d:+.4f} |")
+              if abs(d) > BAND:
+                  drift.append(f"{k}: {ca:.4f} -> {ra:.4f} (band +/-{BAND})")
+          for k in EXACT:
+              ca, ra = a[k], b[k]
+              lines.append(f"| {k} (exact) | {ca} | {ra} | {ra - ca:+.4f} |")
+              if ca != ra:
+                  drift.append(f"{k}: {ca} -> {ra} (compared EXACTLY: structural, not statistical)")
+
+          # The published finding is that the detector fires on nothing. If it
+          # starts firing, that is not drift to be re-banded — it is a different
+          # result and the write-up has to be re-derived.
+          q = json.load(open("regenerated.json"))
+          fired = [s for s in q["arms"] if s["quarantined"]["successes"] > 0]
+          if fired:
+              drift.append("the z-score detector QUARANTINED records this run; the published "
+                           "negative result no longer holds and the write-up must be re-derived")
+
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"drift={'yes' if drift else 'no'}\n")
+          if drift:
+              open("drift.txt", "w").write("\n".join(f"- {d}" for d in drift))
+          PY
+
+      - name: Open an issue on drift
+        if: steps.compare.outputs.drift == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Phase-3 exploitation number drifted outside its band"
+          # One open issue, not one per night. A nightly that files a duplicate
+          # every 24h is the same failure as a nightly nobody reads.
+          existing="$(gh issue list --state open --search "$title in:title" \
+                        --json number --jq '.[0].number // empty')"
+          {
+            echo "The nightly regeneration of \`bench/results/minja_phase3.json\` left the stated band."
+            echo
+            cat drift.txt
+            echo
+            echo "### Comparison"
+            echo
+            cat compare.md
+            echo
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo "Committed artifact: \`bench/results/minja_phase3.json\` ·"
+            echo "write-up: \`docs/benchmarks/2026-08-25-minja-phase3-nonadaptive.md\` ·"
+            echo "tracks #37"
+            echo
+            echo "If this is a real behaviour change, regenerate the artifact AND update"
+            echo "the expectations in \`bench/minja_phase3/tests/committed_result_is_within_band.rs\`"
+            echo "in the same commit, so the published number and its guard cannot disagree."
+          } > body.md
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+            echo "commented on existing #$existing"
+          else
+            gh issue create --title "$title" --body-file body.md \
+              --label "area:security" || \
+              gh issue create --title "$title" --body-file body.md
+          fi
+
+      - name: Upload both artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minja-phase3-${{ github.run_id }}
+          path: |
+            committed.json
+            regenerated.json
+            compare.md
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Phase-3 nightly regeneration"
+            echo
+            echo "drift: **${{ steps.compare.outputs.drift }}**"
+            echo
+            [ -f compare.md ] && cat compare.md
+          } >> "$GITHUB_STEP_SUMMARY"
