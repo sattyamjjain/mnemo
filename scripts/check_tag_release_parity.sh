@@ -32,11 +32,44 @@ CUTOFF="v0.5.4"
 # `-rc` suffixes sort before their release, which is what we want.
 tag_lt() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ] && [ "$1" != "$2" ]; }
 
+# Seconds a freshly-pushed tag may exist without a Release before this fails.
+#
+# The Release is created BY the tag's own release run, so between `git push
+# --tags` and that job finishing there is a window where a tag legitimately has
+# no Release. Without a grace period this guard deadlocks the very release it is
+# meant to police: tag pushed -> guard red -> CI red -> the commit-is-green gate
+# refuses -> the release never runs -> the Release is never created -> guard
+# stays red. That is not hypothetical; it happened on v0.5.27.
+#
+# Six hours is far longer than a release takes (the v0.5.26 walk was ~40 min) and
+# far shorter than "nobody will notice": the next daily scheduled CI run fails on
+# a tag that genuinely never got its Release.
+DEFAULT_GRACE_SECONDS=21600
+
+# Tag creation time, not commit time: a tag can be cut long after its commit.
+# Annotated tags carry taggerdate; lightweight ones fall back to the commit date.
+tag_age_seconds() {
+  local tag="$1" when now
+  when="$(git for-each-ref --format='%(taggerdate:unix)%(creatordate:unix)' "refs/tags/$tag" 2>/dev/null | head -c 20)"
+  [ -z "$when" ] && return 1
+  now="$(date +%s)"
+  echo $(( now - ${when:0:10} ))
+}
+
 check() {
-  local tags="$1" releases="$2" missing="" skipped=""
+  local tags="$1" releases="$2" missing="" skipped="" inflight=""
+  # Resolved per CALL, not at load time: the self-test overrides it per case,
+  # and a load-time assignment would ignore that and pass both directions
+  # vacuously — which it did, the first time this was written.
+  local GRACE_SECONDS="${TAG_RELEASE_GRACE_SECONDS:-$DEFAULT_GRACE_SECONDS}"
   while IFS= read -r tag; do
     [ -z "$tag" ] && continue
     if grep -Fxq "$tag" <<<"$releases"; then
+      continue
+    fi
+    # Freshly pushed: its release run has not finished yet.
+    if age="$(tag_age_seconds "$tag")" && [ "$age" -lt "$GRACE_SECONDS" ]; then
+      inflight="$inflight $tag(${age}s)"
       continue
     fi
     # Only tags that ACTUALLY lack a Release are worth naming. Reporting every
@@ -51,6 +84,10 @@ check() {
 
   if [ -n "$skipped" ]; then
     echo "  pre-$CUTOFF tags with no Release (known, predate the automation):$skipped"
+  fi
+  if [ -n "$inflight" ]; then
+    echo "  tag(s) newer than ${GRACE_SECONDS}s with no Release yet — release presumably in flight:$inflight"
+    echo "      (this becomes a failure once the grace period elapses)"
   fi
   if [ -n "$missing" ]; then
     echo "::error::These tags at or after $CUTOFF have no GitHub Release:$missing"
@@ -89,6 +126,16 @@ if [ "${1:-}" = "--self-test" ]; then
   expect "v0.5.10 is not exempted by string comparison" 1 \
     "$(printf 'v0.5.10\n')" ""
   expect "no tags at all is not a failure" 0 "" ""
+
+  # The grace period must EXPIRE. A window that never closes is not a grace
+  # period, it is a permanent exemption with a friendlier name. The self-test
+  # drives it from both sides using a real tag age.
+  TAG_RELEASE_GRACE_SECONDS=0 \
+    expect "grace=0: a Release-less tag fails immediately" 1 \
+      "$(printf 'v0.5.26\n')" ""
+  TAG_RELEASE_GRACE_SECONDS=999999999 \
+    expect "huge grace: the same tag is only reported" 0 \
+      "$(printf 'v0.5.26\n')" ""
   # A pre-cutoff tag that DOES have a Release must not be reported as missing
   # one; the exemption list is for tags genuinely without one.
   out="$(check "$(printf 'v0.4.14\nv0.5.26\n')" "$(printf 'v0.4.14\nv0.5.26\n')" 2>&1)"
