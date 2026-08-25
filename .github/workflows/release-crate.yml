@@ -160,9 +160,20 @@ jobs:
           deadline=$(( $(date +%s) + 20*60 ))
           while :; do
             # --- 1. the required workflow, by file name ---
-            ci="$(gh run list --workflow="$REQUIRED_WORKFLOW" --commit="$SHA" \
-                    --limit 20 --json status,conclusion,databaseId \
-                    --jq '.[] | [.databaseId, .status, (.conclusion // "pending")] | @tsv' || true)"
+            # --repo is REQUIRED here: this job has no `actions/checkout`, and
+            # without a git remote `gh` exits with "failed to determine base
+            # repo". The first run of this gate spent 20 minutes polling on that
+            # and then reported "ci.yml never ran", which was wrong and
+            # unactionable.
+            ci=""
+            if ! ci="$(gh run list --repo "$REPO" --workflow="$REQUIRED_WORKFLOW" \
+                        --commit="$SHA" --limit 20 --json status,conclusion,databaseId \
+                        --jq '.[] | [.databaseId, .status, (.conclusion // "pending")] | @tsv' 2>&1)"; then
+              # A TOOL failure is not an empty result. Swallowing it into "not
+              # found yet" is how an absence reads as a wait instead of a fault.
+              echo "::error::could not query $REQUIRED_WORKFLOW runs for $SHA: $ci"
+              exit 1
+            fi
 
             echo "--- $REQUIRED_WORKFLOW runs on $SHA ---"
             printf '%s\n' "${ci:-<none>}"
@@ -217,16 +228,29 @@ jobs:
           #   release-crate  — this one. Its checks are on this commit and
           #                    cannot be green while this job is what decides
           #                    that. Including it deadlocks the gate on itself.
-          #   cargo-publish  — its `plan` job FAILS BY DESIGN on any commit whose
-          #                    workspace version has no tag yet, which is every
-          #                    commit between a version bump and its tag. That is
-          #                    the normal state of `main` during a release, so
-          #                    including it would block every release this gate
-          #                    is supposed to allow.
-          EXCLUDE_WORKFLOWS="release-crate|cargo-publish"
+          #
+          #   the PUBLISH lanes (cargo-publish, npm-publish, pypi-publish) —
+          #                    these are OUTPUTS of a release, not tests of the
+          #                    commit. Their failures are about registries and
+          #                    credentials and say nothing about whether the code
+          #                    is sound, which is the only question this gate
+          #                    asks. Two concrete cases from this repo:
+          #                    `cargo-publish`'s `plan` job fails BY DESIGN on
+          #                    every commit between a version bump and its tag,
+          #                    and `npm-publish` has failed since the NPM_TOKEN
+          #                    expired — an operator action nobody can fix from a
+          #                    commit. Including either would turn this gate into
+          #                    an availability problem rather than a correctness
+          #                    one, blocking releases it exists to permit.
+          #
+          # Everything else on the commit still has to be green.
+          EXCLUDE_WORKFLOWS="release-crate|cargo-publish|npm-publish|pypi-publish"
 
-          others="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
-                      --jq '.workflow_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv' || true)"
+          if ! others="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+                      --jq '.workflow_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv' 2>&1)"; then
+            echo "::error::could not list workflow runs for $SHA: $others"
+            exit 1
+          fi
           others="$(grep -Ev "^($EXCLUDE_WORKFLOWS)\t" <<<"${others:-}" || true)"
 
           echo "--- other workflow runs on $SHA ---"
