@@ -174,6 +174,19 @@ def render() -> str:
     return "\n".join(out)
 
 
+def _newer(a: str, b: str) -> bool:
+    """True when semver-ish `a` is strictly newer than `b`. Unparseable -> False."""
+
+    def parts(v: str):
+        try:
+            return tuple(int(x) for x in v.split("-")[0].split(".")[:3])
+        except ValueError:
+            return None
+
+    pa, pb = parts(a), parts(b)
+    return bool(pa and pb and pa > pb)
+
+
 def render_python_compat() -> str:
     """Generate the Python SDK version-and-compatibility paragraph.
 
@@ -198,7 +211,15 @@ def render_python_compat() -> str:
         out.append(COMPAT_END)
         return "\n".join(out)
 
+    # The workspace being AHEAD of PyPI is the normal state of an open release
+    # window: the version is bumped on merge and published on a tag, so between
+    # those two events they differ by design. An earlier draft of this block
+    # called that "a bug ... the fence above should have caught it", which would
+    # have printed a false accusation into the README on every version bump —
+    # and blamed a guard that is working correctly. Only PyPI being ahead of the
+    # workspace is a real inversion.
     tracks = pv == ws
+    pypi_ahead = _newer(pv, ws)
     lead = (
         f"> **Version line & wire compatibility.** `pip install mnemo-db` gives "
         f"**`v{pv}`**. The Python SDK is **not** independently versioned: `python/` is "
@@ -208,10 +229,18 @@ def render_python_compat() -> str:
         f"fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from "
         f"`[workspace.package].version`."
     )
-    if not tracks:
+    if pypi_ahead:
         lead += (
-            f" **It is drifting right now: the workspace is `v{ws}` and PyPI is `v{pv}`.** "
-            f"That is a bug, not a design, and the fence above should have caught it."
+            f" **PyPI is AHEAD of the workspace right now: PyPI has `v{pv}`, the workspace "
+            f"is `v{ws}`.** That inversion is a bug — a wheel cannot ship an engine the "
+            f"source tree has not reached."
+        )
+    elif not tracks:
+        lead += (
+            f" The workspace is currently `v{ws}` and PyPI is `v{pv}`: that is an **open "
+            f"release window**, not drift. The version is bumped on merge and published "
+            f"on a tag, so the two differ between those events by design. `pip install "
+            f"mnemo-db` gives `v{pv}` until `v{ws}` is tagged."
         )
     out.append(lead)
     out.append(">")
