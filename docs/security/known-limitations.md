@@ -11,8 +11,26 @@ outlived its own milestone.
 
 ## The MINJA procedure is not measured
 
-**Status: designed, not built. Tracked by
-[#37](https://github.com/sattyamjjain/mnemo/issues/37), targeted before 1.0.**
+**Status: the non-adaptive Phase-3 slice is now measured; the full procedure is
+not. Tracked by [#37](https://github.com/sattyamjjain/mnemo/issues/37), targeted
+before 1.0.**
+
+**What changed (2026-08-25).** The retrieval-time consequence of *already-shortened*
+records is measured against a digest-pinned real embedder:
+[`docs/benchmarks/2026-08-25-minja-phase3-nonadaptive.md`](../benchmarks/2026-08-25-minja-phase3-nonadaptive.md).
+It reports three nulls, and it is **not a MINJA number** — Phases 1 and 2 are
+generative and adaptive and remain unimplemented, which ADR 0003 says is exactly
+what makes a result stop being MINJA. Two findings from it belong here:
+
+- **The z-score lane quarantined 0 of 135 poisoned records**, mean z **1.08**
+  against a 3.0 threshold. Defense delta **0.0000**. The pre-registered
+  prediction in ADR 0003 held.
+- **The attack rate is fully explained by topical retrieval.** A benign twin
+  matched on opening clause, tags and query restatement is retrieved at the
+  *identical* rate (129/135 both), so the poisoning-specific effect is
+  **+0.0000**. A 95.6% figure quoted without that floor would badly mislead.
+
+The rest of this section stands unchanged.
 
 mnemo publishes four memory-poisoning benchmarks. **None of them is MINJA**
 ([arXiv:2503.03704](https://arxiv.org/abs/2503.03704)), and the gap is specific
@@ -31,9 +49,14 @@ channel. Nothing above models an interactive, multi-turn, query-only attacker.
 
 ### What a user should assume
 
-- **mnemo has no measured resistance to MINJA-style progressive memory
-  poisoning.** Do not read the four benches above as covering it. They measure
-  different attacks and they say so individually.
+- **mnemo has no measured resistance to the MINJA procedure.** The 2026-08-25
+  measurement above covers Phase-3 exploitation only, non-adaptively, and it
+  found no defense: the detector fires on nothing. Do not read the four benches
+  below as covering the procedure either. They measure different attacks and say
+  so individually.
+- **Nothing here says anything about an adaptive attacker** — one who can observe
+  the defense and iterate against it. That is a strictly harder threat model and
+  it is not measured at all.
 - The nearest applicable finding is uncomfortable and is published rather than
   buried: on a real dense embedder, poisoned content sits at roughly **1.5 sigma**
   against a **3.0 sigma** default threshold, so **the z-score outlier lane does not
