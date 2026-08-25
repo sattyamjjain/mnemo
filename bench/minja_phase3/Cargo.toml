@@ -1,0 +1,39 @@
+[package]
+name = "mnemo-minja-phase3-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Non-adaptive Phase-3 exploitation measurement against a real, digest-pinned embedder: retrieval-time consequence of already-shortened poisoned records, with a matched benign floor and Wilson-95 intervals on every rate. NOT a MINJA number (issue #37, ADR 0003)."
+
+[[bin]]
+name = "minja_phase3_bench"
+path = "src/bin/minja_phase3_bench.rs"
+
+[[bin]]
+name = "derive_fixture"
+path = "src/bin/derive_fixture.rs"
+
+[features]
+# Forwards the ONNX local-embedder feature so the DEFAULT (reproducible,
+# no-API-key) embedder path is available. The tests below do NOT need it: they
+# run on DeterministicEmbedding, which is real and offline, so `cargo test
+# --workspace` stays green on a machine with no model on disk.
+onnx = ["mnemo-core/onnx"]
+
+[dependencies]
+mnemo-core = { workspace = true }
+# Shared Wilson-95, the refuse-to-score-on-noop guard, and the fail-closed
+# model-digest pin.
+mnemo-locomo-bench = { path = "../locomo" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+clap = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
