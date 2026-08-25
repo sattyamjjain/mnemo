@@ -15,7 +15,7 @@ name = "mnemo-golem-wit"
 # hand-maintained and MUST be bumped with the workspace. It drifted to 0.5.21 while
 # the workspace was 0.5.23 (and while the root Cargo.toml already pinned this crate
 # at 0.5.23). `crates/mnemo-cli/tests/workspace_version_fence.rs` now fences it.
-version = "0.5.26"
+version = "0.5.27"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/sattyamjjain/mnemo"

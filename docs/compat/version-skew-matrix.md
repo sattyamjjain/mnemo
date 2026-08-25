@@ -1,5 +1,17 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-08-25 for the **v0.5.27** cut - a **benchmark and documentation** change
+> with **no public API, wire, or storage change**. It adds
+> `bench/minja_phase3`, the non-adaptive Phase-3 exploitation measurement that closes
+> [#37](https://github.com/sattyamjjain/mnemo/issues/37) at its reduced scope, together
+> with a fail-closed model-digest pin (`bench/locomo/src/pinned_model.rs`), the committed
+> artifact `bench/results/minja_phase3.json`, and a nightly regeneration workflow that
+> opens an issue on drift.
+>
+> **Nothing a consumer links against changes.** The new crate is `publish = false` and is
+> not in the release `WALK`. Version pins move 0.5.26 -> 0.5.27 in lockstep.
+> **Not breaking for any consumer.**
+>
 > Updated 2026-08-19 for the **v0.5.26** cut - a **conformance-documentation and
 > release-engineering** change with **one wire-visible behaviour change**, described
 > below. It adds `docs/src/integrations/mcp-2026-07-28.md`, a row-by-row conformance

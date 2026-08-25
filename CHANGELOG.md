@@ -131,6 +131,89 @@ lines above the generated block is gone. `--self-test` (13 cases) covers the bra
 does not run today: when the gap *fails* to separate, the README must say so and say what
 n would be needed, and a mutation that makes it claim a win instead fails three checks.
 
+### Added (2026-08-25) - issue #37: non-adaptive Phase-3 exploitation, measured
+
+Closes [#37](https://github.com/sattyamjjain/mnemo/issues/37) at the reduced scope its
+2026-08-18 comment fixed: Phase-3 exploitation only, non-adaptive, against a
+pre-registered fixed corpus of already-shortened records.
+
+**This is not a MINJA number and the artifact says so.** [ADR
+0003](docs/adr/0003-minja-procedure-harness.md) states that removing the adaptive
+shortening step is exactly what makes a result stop being MINJA. Phases 1 and 2 are
+generative and need a model in the loop as the attacker; they remain out of scope pending
+an LLM budget. What is measured is the retrieval-time consequence of records that are
+already shortened, which is a strictly weaker claim.
+
+**The number**, against a digest-pinned `Xenova/all-MiniLM-L6-v2` (384-dim, sha256
+`759c3cd2b7fe…`), 45 distinct victim queries x 3 seeds = 135 trials, k=10:
+
+| | rate | 95% CI | n |
+|---|---:|---|---:|
+| poisoned record exploited, detector **OFF** | **0.956** | [0.906, 0.980] | 129/135 |
+| poisoned record exploited, detector **ON** | **0.956** | [0.906, 0.980] | 129/135 |
+| **benign floor** (matched twin), detector OFF | **0.956** | [0.906, 0.980] | 129/135 |
+| benign false-quarantine, detector ON | 0.000 | [0.000, 0.028] | 0/135 |
+
+Conservative interval at the distinct-query denominator (the independent unit is the
+query, not the trial): **[0.852, 0.988]**, n=45.
+
+Three findings, all nulls, all published with their denominators:
+
+1. **The z-score lane does not defend against this.** 0/135 quarantined; mean poison
+   z-score **1.08** against the 3.0 default. Defense delta **0.0000**. ADR 0003
+   pre-registered this prediction before any code existed, and it held at a lower sigma
+   than predicted. The headline is the negative result, not a reframing to whatever the
+   detector does catch.
+2. **The attack rate is entirely explained by topical retrieval.** The benign twin —
+   matched on opening clause, tags and restatement of the victim query, differing only in
+   that it resolves to no answer — is retrieved at the *identical* rate. Poisoning delta
+   **+0.0000**. Reporting "95.6% ASR" without that floor would have been badly
+   misleading, which is why the floor is mandatory rather than decorative.
+3. **The null is not an artifact of a saturated oracle.** At k=10 both arms miss on the
+   same two queries, so the top-k measure is at ceiling. Re-measured at k=1, where it is
+   not: poison **0.756** vs benign floor **0.778** — the poisoned record is retrieved
+   *less* often than its twin. No k in {1, 3, 10} shows a poisoning advantage.
+
+The 0/135 false-quarantine rate is **not** evidence of a well-calibrated detector. It is
+0 because the detector fires on nothing at all.
+
+**Committed as an artifact, not a README sentence.**
+[`bench/results/minja_phase3.json`](bench/results/minja_phase3.json) carries all 540
+per-trial records, the seeds, the model digest, the corpus hash, the fixture hash and the
+exact regeneration command. Write-up with a "what this does not establish" section:
+[`docs/benchmarks/2026-08-25-minja-phase3-nonadaptive.md`](docs/benchmarks/2026-08-25-minja-phase3-nonadaptive.md).
+
+**Fail-closed model pinning.** `bench/locomo/src/pinned_model.rs` verifies the weights
+against a digest committed in source and **refuses to start** on a mismatch — a path is
+not a pin, because two checkpoints can sit at the same path and produce different numbers.
+An *absent* expected digest is also an error: "nothing to compare against" must not read
+as "comparison passed".
+
+**Drift.** `bench/minja_phase3/tests/committed_result_is_within_band.rs` checks the
+committed artifact offline on every CI run (+/-0.05 on rates; the quarantine count and
+defense delta are compared **exactly**, because they are structural rather than
+statistical). `.github/workflows/minja-phase3-nightly.yml` regenerates against the real
+model nightly and **opens an issue** on drift rather than failing into a mailbox nobody
+reads. Six mutations of the artifact were each verified to trip the guard.
+
+Two corrections the fixture tests caught during development, both real:
+
+- the benign twin originally omitted the victim query while the poison restated it, so the
+  delta would have measured "mentions the query" rather than "asserts a competing answer";
+- the target-answer rotation handed `c01-t02` a payload that is a **substring of its own
+  victim query**, which every query-restating record then contains for free — including
+  the benign twin, collapsing the one distinction between the arms.
+
+### Verified (2026-08-25) - Postgres semantic recall already fails loud
+
+Checked before writing any code, per the brief. The silent-empty stub is **not present**
+and has not been since v0.5.13: `crates/mnemo-core/src/query/recall.rs` fails loud on all
+four semantic legs, `mnemo-postgres`'s pgvector index returns the typed
+`Error::BackendUnsupported`, and `crates/mnemo-postgres/tests/semantic_recall_fails_loud.rs`
+pins the caller-visible contract with a non-empty fixture and a control asserting the store
+really holds a record. 3/3 pass. No change was needed; DuckDB is documented as the
+supported backend for this measurement in the bench, the write-up and the result file.
+
 ## [0.5.26] - 2026-08-22
 
 ### Landing trace (2026-08-18)
