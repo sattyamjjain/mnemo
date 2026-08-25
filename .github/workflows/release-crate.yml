@@ -251,15 +251,24 @@ jobs:
             echo "::error::could not list workflow runs for $SHA: $others"
             exit 1
           fi
-          others="$(grep -Ev "^($EXCLUDE_WORKFLOWS)\t" <<<"${others:-}" || true)"
-
           echo "--- other workflow runs on $SHA ---"
           printf '%s\n' "${others:-<none>}"
 
-          # Only the most recent run per workflow counts, same rule as above: a
+          # Exclusion and the red-check are BOTH done in awk, comparing field 1
+          # exactly against a list. The previous version used
+          # `grep -Ev "^($EXCLUDE)\t"`, and in ERE `\t` is a literal `t`, not a
+          # tab — so the pattern matched nothing, every excluded lane was
+          # evaluated anyway, and the gate refused a release for cargo-publish
+          # and npm-publish failures it was explicitly written to ignore.
+          # Comparing a field beats matching a delimiter, and it has no dialect.
+          #
+          # Only the most recent run per workflow counts, same rule as arm 1: a
           # later green re-run is the operator saying the failure is settled.
-          bad="$(awk -F'\t' '
-            $2=="completed" && !seen[$1]++ && $3!="success" && $3!="skipped" && $3!="neutral" {
+          bad="$(awk -F'\t' -v excl="$EXCLUDE_WORKFLOWS" '
+            BEGIN { n = split(excl, a, "|"); for (i = 1; i <= n; i++) skip[a[i]] = 1 }
+            $1 in skip { next }
+            $2 != "completed" { next }
+            !seen[$1]++ && $3 != "success" && $3 != "skipped" && $3 != "neutral" {
               print "  " $1 " (" $3 ")"
             }' <<<"${others:-}" || true)"
           if [ -n "$bad" ]; then
