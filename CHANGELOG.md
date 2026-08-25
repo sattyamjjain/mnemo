@@ -4,9 +4,23 @@ All notable changes to Mnemo are documented in this file.
 
 ## [Unreleased]
 
+### Landing trace (2026-08-25)
+
+The 0.5.28 window opens on the **v0.5.27** cut. The 0.5.27 release content landed on
+`main` across [#170](https://github.com/sattyamjjain/mnemo/pull/170),
+[#169](https://github.com/sattyamjjain/mnemo/pull/169),
+[#168](https://github.com/sattyamjjain/mnemo/pull/168),
+[#171](https://github.com/sattyamjjain/mnemo/pull/171) and
+[#172](https://github.com/sattyamjjain/mnemo/pull/172), the last of which is
+[`14ba03f`](https://github.com/sattyamjjain/mnemo/commit/14ba03f), and the `v0.5.27` tag
+points at the cut commit directly above it, which is where the `## [0.5.27]` heading the
+publish gate requires first exists.
+
+## [0.5.27] - 2026-08-25
+
 ### Landing trace (2026-08-22)
 
-The 0.5.27 window opens on the **v0.5.26** cut. The 0.5.26 release content landed on
+The 0.5.27 window opened on the **v0.5.26** cut. The 0.5.26 release content landed on
 `main` across [#163](https://github.com/sattyamjjain/mnemo/pull/163),
 [#164](https://github.com/sattyamjjain/mnemo/pull/164),
 [#165](https://github.com/sattyamjjain/mnemo/pull/165) and
