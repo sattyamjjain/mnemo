@@ -243,8 +243,18 @@ jobs:
           #                    an availability problem rather than a correctness
           #                    one, blocking releases it exists to permit.
           #
+          #   repo-hygiene   — release BOOKKEEPING, not a test of the commit.
+          #                    Its tag/release parity check fails until a tag has
+          #                    a Release, and the Release is created BY this
+          #                    workflow. Gating the release on it is circular by
+          #                    construction: it deadlocked v0.5.27 with 19 of 21
+          #                    crates published and the last two unreachable. A
+          #                    grace period only delays that loop; decoupling
+          #                    ends it. The check still runs and still fails
+          #                    loudly in its own workflow.
+          #
           # Everything else on the commit still has to be green.
-          EXCLUDE_WORKFLOWS="release-crate|cargo-publish|npm-publish|pypi-publish"
+          EXCLUDE_WORKFLOWS="release-crate|cargo-publish|npm-publish|pypi-publish|repo-hygiene"
 
           if ! others="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
                       --jq '.workflow_runs[] | [.name, .status, (.conclusion // "pending")] | @tsv' 2>&1)"; then

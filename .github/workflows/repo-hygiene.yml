@@ -1,0 +1,70 @@
+name: repo-hygiene
+
+# Release BOOKKEEPING checks — facts about the repository's release history that
+# are true or false independently of whether any given commit is sound.
+#
+# # Why these are not in `ci.yml`
+#
+# They were, and it deadlocked a release.
+#
+# `release-crate.yml`'s `commit-is-green` gate requires `ci.yml` to be green on
+# the tagged commit before it will publish. The tag/release parity check lived in
+# ci.yml's doc-guards job, and it fails when a tag has no GitHub Release. But the
+# Release is created BY the release run. So:
+#
+#   tag pushed -> no Release yet -> parity red -> ci.yml red -> the gate refuses
+#   -> the release never runs -> the Release is never created -> parity stays red
+#
+# A six-hour grace period was added first, which only delays the loop: v0.5.27
+# sat past the grace and the deadlock returned, with 19 of 21 crates published
+# and the last two unreachable.
+#
+# The real defect was the coupling, not the timing. "Does this tag have a
+# Release" says nothing about whether the commit compiles, passes its tests, or
+# is safe to publish — which is the only question the release gate asks. Gating a
+# release on a fact that only the release can make true is circular by
+# construction, and no grace period fixes a circle.
+#
+# So these checks live here, and `release-crate.yml` excludes this workflow by
+# name for the reason above. They still run on every push and every PR, and they
+# still fail loudly — they just cannot hold a release hostage to their own
+# outcome.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 06:23 UTC. A tag that never got its Release must not wait for someone to
+    # push before anything notices.
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tag-release-parity:
+    name: Every release tag has a GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # fetch-depth 0: the guard compares the full tag list against the
+      # Releases, and a shallow clone has no tags to compare.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Self-test first, same reasoning as every other guard in this repo: one
+      # that can no longer fail must not pass as coverage. Two of its cases
+      # exist because they once passed vacuously — the grace period was resolved
+      # at script load, so a per-case override did nothing and both directions
+      # tested the same value.
+      - name: Guard self-test
+        run: bash scripts/check_tag_release_parity.sh --self-test
+
+      - name: Check tags against Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check_tag_release_parity.sh
