@@ -8,6 +8,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Mnemo MCP memory server — runnable binary; install as `cargo install mnemo-mcp-server`, run as `mnemo`."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["mcp", "memory", "agent", "ai", "rust"]
+categories = ["command-line-utilities", "database-implementations"]
+readme = "README.md"
 
 [[bin]]
 name = "mnemo"

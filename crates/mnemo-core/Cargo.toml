@@ -9,6 +9,7 @@ description = "Core storage, data model, query engine, and indexing for Mnemo"
 readme = "README.md"
 keywords = ["memory", "database", "ai-agents", "vector-db", "mcp"]
 categories = ["database-implementations", "data-structures"]
+documentation.workspace = true
 
 [dependencies]
 tokio = { workspace = true }

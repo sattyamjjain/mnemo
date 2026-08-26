@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "REST API server for Mnemo"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["mcp", "memory", "rest", "api", "agent"]
+categories = ["web-programming", "api-bindings"]
 
 [dependencies]
 mnemo-core = { workspace = true }

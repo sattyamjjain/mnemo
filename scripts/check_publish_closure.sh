@@ -62,6 +62,46 @@ for p in m["packages"]:
 ' | sort -u
 }
 
+# Fields every published crate must declare, and why each one is not optional.
+#
+# A crates.io page with no repository, no homepage and no keywords is a dead end:
+# a reader cannot get to the source, and nobody searching "mcp memory" finds it.
+# `mnemo-mcp-server` — the crate the README tells people to `cargo install`,
+# twice — shipped through v0.5.27 with ALL of these null. Nothing was red,
+# because nothing was looking.
+#
+# `documentation` is included because cargo does NOT default it to docs.rs in the
+# published metadata; an absent value is an absent link.
+#
+# Metadata only takes effect on a NEW version. Editing the manifest without
+# publishing changes nothing a user can see, which is exactly how this stayed
+# broken across 27 releases.
+REQUIRED_METADATA="repository homepage documentation keywords categories"
+
+crate_metadata_gaps() {
+  # Emits "<crate> <missing-field>..." per offending publishable member.
+  cargo metadata --no-deps --format-version 1 --manifest-path "$REPO_ROOT/Cargo.toml" 2>/dev/null \
+  | python3 -c '
+import json, sys, tomllib
+required = sys.argv[1].split()
+m = json.load(sys.stdin)
+ids = set(m["workspace_members"])
+for p in sorted(m["packages"], key=lambda x: x["name"]):
+    if p["id"] not in ids or p.get("publish") == []:
+        continue
+    try:
+        raw = tomllib.load(open(p["manifest_path"], "rb")).get("package", {})
+    except Exception as e:
+        print(p["name"], "UNREADABLE:" + str(e).replace(" ", "_"))
+        continue
+    # An inherited value parses as {"workspace": True}; an empty list is as
+    # absent as a missing key, which is how `keywords = []` reads on crates.io.
+    missing = [k for k in required if not raw.get(k)]
+    if missing:
+        print(p["name"], " ".join(missing))
+' "$REQUIRED_METADATA"
+}
+
 walk_crates() {
   # The single WALK definition, as the workflow expands it.
   sed -n 's/^  WALK: "\(.*\)"$/\1/p' "$1" | tr ' ' '\n' | grep -E '^mnemo-' | sort -u
@@ -119,6 +159,37 @@ run_check() {
     echo "      Add them to WALK in .github/workflows/release-crate.yml (after any"
     echo "      crate they depend on), or add an exemption WITH A REASON to"
     echo "      exemption_reason() in this script."
+  fi
+
+  # 3. every publishable member carries the crates.io metadata a reader needs.
+  #    Checked here rather than in a separate guard because this script already
+  #    knows which crates actually ship, and that is precisely the set that has
+  #    a crates.io page to be blank.
+  # NOT `|| true`. The first version of this swallowed a SyntaxError in the
+  # embedded python and then printed "every publishable member declares ..."
+  # over a checker that had produced nothing at all. A checker that crashed must
+  # not be indistinguishable from a checker that found no problems.
+  local gaps rc
+  gaps="$(crate_metadata_gaps)" && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    failed=1
+    echo
+    echo "FAIL: the crates.io metadata check itself failed (exit $rc). That is a"
+    echo "      broken guard, not a clean repository."
+    printf '%s\n' "$gaps" | sed 's/^/        /'
+  elif [ -n "$gaps" ]; then
+    failed=1
+    echo
+    echo "FAIL: publishable crate(s) missing crates.io metadata:"
+    printf '%s\n' "$gaps" | sed 's/^/        /'
+    echo "      Required: $REQUIRED_METADATA"
+    echo "      Add the inheritable ones as \`<field>.workspace = true\` (the root"
+    echo "      [workspace.package] already defines repository/homepage/documentation),"
+    echo "      and give each crate its own keywords (max 5, max 20 chars) and"
+    echo "      categories (slugs must exist on crates.io or the publish is rejected)."
+    echo "      NOTE: metadata only lands on a NEW version — bump and publish."
+  else
+    echo "  every publishable member declares: $REQUIRED_METADATA"
   fi
 
   # 2. every WALK entry is a real publishable member
@@ -195,6 +266,40 @@ self_test() {
   sed 's/ mnemo-letta mnemo-mesh mnemo-codemode mnemo-deal mnemo-md-sync mnemo-cma mnemo-baseline//' \
     "$RELEASE_WF" > "$tmp/split.yml"
   expect fail "library lane ships crates the tag lane does not" "$tmp/split.yml" "$LIBRARY_WF"
+
+  # --- the crates.io metadata assertion ------------------------------------
+  # Driven through REQUIRED_METADATA rather than workflow fixtures, because that
+  # check reads real cargo metadata and has no workflow input to mutate.
+  local out
+
+  # A field every crate really does have (license is inherited workspace-wide)
+  # must produce no gaps. If this reports gaps the detector is over-firing.
+  out="$(REQUIRED_METADATA="license" crate_metadata_gaps)"
+  if [ -z "$out" ]; then
+    echo "  ok   metadata check is quiet on a field every crate has"; pass=$((pass+1))
+  else
+    echo "  FAIL metadata check reports gaps for 'license': $out"; fail=$((fail+1))
+  fi
+
+  # A field NO crate has must name crates. This is the non-vacuity test: a
+  # checker that can never report anything is not coverage.
+  out="$(REQUIRED_METADATA="definitely-not-a-cargo-field" crate_metadata_gaps)"
+  if grep -q "mnemo-mcp-server definitely-not-a-cargo-field" <<<"$out"; then
+    echo "  ok   metadata check names a crate missing a required field"; pass=$((pass+1))
+  else
+    echo "  FAIL metadata check found nothing for an impossible field"; fail=$((fail+1))
+  fi
+
+  # The real requirement must be satisfied right now — this is the assertion
+  # that would have caught mnemo-mcp-server shipping 27 releases with a blank
+  # crates.io page.
+  out="$(crate_metadata_gaps)"
+  if [ -z "$out" ]; then
+    echo "  ok   every publishable crate satisfies REQUIRED_METADATA today"; pass=$((pass+1))
+  else
+    echo "  FAIL crates missing required metadata:"; printf '%s\n' "$out" | sed 's/^/       /'
+    fail=$((fail+1))
+  fi
 
   echo
   echo "self-test: $pass passed, $fail failed"

@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Bidirectional sync between a git-tracked Markdown wiki and Mnemo (v0.4.0 P2-6). Wuphf-style ergonomics with mnemo-grade recall + provenance."
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["memory", "markdown", "sync", "wiki", "git"]
+categories = ["text-processing", "development-tools"]
 
 [dependencies]
 mnemo-core = { workspace = true }

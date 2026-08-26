@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "PostgreSQL wire protocol server for Mnemo — accept SQL queries over pgwire"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["postgres", "pgwire", "memory", "sql", "mcp"]
+categories = ["database-implementations", "network-programming"]
 
 [dependencies]
 mnemo-core = { workspace = true }

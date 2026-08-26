@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "AMP / memorywire JSON-Schema 2020-12 interop adapter (5 ops × 4 memory types) over a MnemoEngine."
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["mcp", "memory", "amp", "interop", "agent"]
+categories = ["api-bindings", "encoding"]
 
 [[bin]]
 name = "amp_conformance"

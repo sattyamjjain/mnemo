@@ -9,6 +9,7 @@ description = "MCP server interface for Mnemo memory database"
 readme = "README.md"
 keywords = ["mcp", "memory", "ai-agents", "llm", "database"]
 categories = ["api-bindings", "database"]
+documentation.workspace = true
 
 [dependencies]
 mnemo-core = { workspace = true }

@@ -13,4 +13,6 @@ categories = ["database-implementations"]
 # Intentionally dependency-free: a defensive stub must never drag the whole
 # workspace into its publish closure. It only carries docs pointing at the real
 # crates.
+documentation.workspace = true
+
 [dependencies]
