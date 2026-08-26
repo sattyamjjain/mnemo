@@ -31,6 +31,11 @@ name: real-embedder-benches-nightly
 # file is refused rather than scored.
 
 on:
+  # TEMPORARY (removed before merge): workflow_dispatch only works from the
+  # default branch, and the whole point of this branch is to find out whether
+  # the benches actually run in CI rather than to assume it.
+  push:
+    branches: [chore/crates-io-metadata]
   schedule:
     # 04:37 UTC — after minja-phase3-nightly (03:41) so the two do not contend
     # for a runner, and off the :00/:30 marks.
