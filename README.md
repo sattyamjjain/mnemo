@@ -236,13 +236,13 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (unreleased target): **`v0.5.27`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (released): **`v0.5.27`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
 | crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.27` | 2026-08-25 |
-| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.26` | 2026-08-22 |
-| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.26` | 2026-08-22 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.27` | 2026-08-26 |
+| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.27` | 2026-08-26 |
 | PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.27` | 2026-08-25 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
