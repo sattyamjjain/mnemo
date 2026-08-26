@@ -1,0 +1,203 @@
+name: real-embedder-benches-nightly
+
+# Regenerates the two HEADLINE real-embedder numbers against the pinned ONNX
+# checkpoint, and fails if either leaves its stated band.
+#
+#   1. `locomo_v1_bench`        — gold-document recall@1 (the README headline)
+#   2. `poisoning_real_bench`   — MINJA-style defense-delta ASR on a real embedder
+#
+# # Why this exists
+#
+# Issue #125 demoted both numbers to "not currently CI-reproducible" because the
+# `onnx` feature was broken against the pinned ort 2.0.0-rc.11 / ndarray 0.17
+# API. That was repaired and #125 closed on 2026-08-04, and `ci.yml`'s
+# `onnx-feature` job has since built, linked and END-TO-END TESTED the feature
+# against a downloaded model on every push.
+#
+# But "the feature compiles and infers" is not the same claim as "the published
+# numbers regenerate". Until this workflow existed, the README's
+# not-CI-reproducible caveat was still literally true of the BENCHES even though
+# its stated cause had been fixed — the claim outlived its reason. This is the
+# job that makes the stronger claim true, so the README can drop the caveat and
+# point at something running rather than at prose.
+#
+# # Why nightly and not on every push
+#
+# Each run fetches a ~90 MB checkpoint and compiles ONNX Runtime. That is not a
+# per-push cost. The same split as `minja-phase3-nightly`: committed artifacts
+# are checked cheaply in-tree, and regenerated for real once a day.
+#
+# No credentials. The checkpoint is public and pinned by digest, so a substituted
+# file is refused rather than scored.
+
+on:
+  schedule:
+    # 04:37 UTC — after minja-phase3-nightly (03:41) so the two do not contend
+    # for a runner, and off the :00/:30 marks.
+    - cron: "37 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  MODEL_SHA256: "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e"
+  MODEL_URL: "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+  TOKENIZER_URL: "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+
+jobs:
+  regenerate:
+    name: Regenerate the headline real-embedder numbers
+    if: github.repository == 'sattyamjjain/mnemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Fetch the pinned checkpoint
+        run: |
+          set -euo pipefail
+          curl -sSL --retry 3 --retry-delay 5 --fail -o model.onnx "$MODEL_URL"
+          curl -sSL --retry 3 --retry-delay 5 --fail -o tokenizer.json "$TOKENIZER_URL"
+          got="$(sha256sum model.onnx | cut -d' ' -f1)"
+          echo "fetched sha256 $got"
+          # Checking here as well as in the bench distinguishes "the upstream
+          # artifact changed" from "the bench is broken" — different problems.
+          if [ "$got" != "$MODEL_SHA256" ]; then
+            echo "::error::pinned checkpoint changed upstream: expected $MODEL_SHA256, got $got"
+            exit 1
+          fi
+
+      - name: Regenerate recall (locomo_v1_bench)
+        env:
+          MNEMO_ONNX_MODEL_PATH: ${{ github.workspace }}/model.onnx
+        run: |
+          set -euo pipefail
+          cp bench/results/locomo_v1.json committed_locomo.json
+          cargo run --release --features onnx -p mnemo-locomo-bench \
+            --bin locomo_v1_bench -- --out "$PWD/regen_locomo.json"
+
+      - name: Regenerate poisoning ASR (poisoning_real_bench)
+        env:
+          MNEMO_ONNX_MODEL_PATH: ${{ github.workspace }}/model.onnx
+        run: |
+          set -euo pipefail
+          cp bench/results/poisoning_real.json committed_poisoning.json
+          cargo run --release --features onnx -p mnemo-poisoning-bench \
+            --bin poisoning_real_bench -- --out "$PWD/regen_poisoning.json"
+
+      - name: Compare against the committed artifacts
+        id: compare
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee compare.md
+          import json, os
+
+          # Rates get a band: USearch HNSW construction is not bit-identical
+          # across platforms, and the committed numbers were measured on
+          # arm64/darwin while this runs on x86_64 linux. The band is wide enough
+          # to absorb that and narrow enough that a real regression escapes it.
+          BAND = 0.06
+          drift, lines = [], []
+
+          def rate(d, *path):
+              cur = d
+              for k in path:
+                  cur = cur[k]
+              return float(cur)
+
+          lines.append("| number | committed | regenerated | delta |")
+          lines.append("|---|---:|---:|---:|")
+
+          c = json.load(open("committed_locomo.json"))
+          r = json.load(open("regen_locomo.json"))
+          for strat in ("semantic", "lexical"):
+              for k in ("recall@1", "recall@10"):
+                  a, b = rate(c, "strategies", strat, k), rate(r, "strategies", strat, k)
+                  lines.append(f"| locomo {strat} {k} | {a:.4f} | {b:.4f} | {b-a:+.4f} |")
+                  if abs(b - a) > BAND:
+                      drift.append(f"locomo {strat} {k}: {a:.4f} -> {b:.4f} (band +/-{BAND})")
+
+          c = json.load(open("committed_poisoning.json"))
+          r = json.load(open("regen_poisoning.json"))
+          cby = {a["attack"]: a for a in c["attacks"]}
+          rby = {a["attack"]: a for a in r["attacks"]}
+          # A missing attack is not "no drift" — it is a bench that stopped
+          # measuring something the README still cites.
+          for name in cby:
+              if name not in rby:
+                  drift.append(f"poisoning: attack {name!r} disappeared from the regenerated result")
+                  continue
+              for k in ("asr_off", "asr_on"):
+                  a, b = float(cby[name][k]), float(rby[name][k])
+                  lines.append(f"| poisoning {name} {k} | {a:.4f} | {b:.4f} | {b-a:+.4f} |")
+                  if abs(b - a) > BAND:
+                      drift.append(f"poisoning {name} {k}: {a:.4f} -> {b:.4f} (band +/-{BAND})")
+
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"drift={'yes' if drift else 'no'}\n")
+          if drift:
+              open("drift.txt", "w").write("\n".join(f"- {d}" for d in drift))
+          PY
+
+      - name: Open an issue on drift
+        if: steps.compare.outputs.drift == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Real-embedder headline numbers drifted outside their band"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+                       --search "$title in:title" --json number --jq '.[0].number // empty')"
+          {
+            echo "The nightly regeneration of the headline real-embedder numbers left the stated band."
+            echo
+            cat drift.txt
+            echo
+            echo "### Comparison"
+            echo
+            cat compare.md
+            echo
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo "Artifacts: \`bench/results/locomo_v1.json\`, \`bench/results/poisoning_real.json\`."
+            echo "If the change is real, regenerate BOTH the artifact and the README block"
+            echo "(\`python3 scripts/gen_recall_number.py\`) in the same commit, so the"
+            echo "published number and its source cannot disagree."
+          } > body.md
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body-file body.md --label "area:security" \
+            || gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-embedder-${{ github.run_id }}
+          path: |
+            committed_locomo.json
+            regen_locomo.json
+            committed_poisoning.json
+            regen_poisoning.json
+            compare.md
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Headline real-embedder regeneration"
+            echo
+            echo "drift: **${{ steps.compare.outputs.drift }}**"
+            echo
+            [ -f compare.md ] && cat compare.md
+          } >> "$GITHUB_STEP_SUMMARY"
