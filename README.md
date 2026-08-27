@@ -245,14 +245,14 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (unreleased target): **`v0.5.28`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (released): **`v0.5.28`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
-| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.27` | 2026-08-25 |
-| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.27` | 2026-08-26 |
-| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.27` | 2026-08-26 |
-| PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.27` | 2026-08-25 |
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.28` | 2026-08-27 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.28` | 2026-08-27 |
+| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.28` | 2026-08-27 |
+| PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.28` | 2026-08-27 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
 _Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
@@ -645,9 +645,9 @@ pip install mnemo-db
 <!-- BEGIN generated: python-sdk-compat -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.27`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`. The workspace is currently `v0.5.28` and PyPI is `v0.5.27`: that is an **open release window**, not drift. The version is bumped on merge and published on a tag, so the two differ between those events by design. `pip install mnemo-db` gives `v0.5.27` until `v0.5.28` is tagged.
+> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.28`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
 >
-> - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.27` *is* `mnemo-core` `v0.5.27`. There is no version-skew question to answer: the engine is the wheel.
+> - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.28` *is* `mnemo-core` `v0.5.28`. There is no version-skew question to answer: the engine is the wheel.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.
 <!-- END generated: python-sdk-compat -->
 
