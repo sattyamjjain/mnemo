@@ -94,9 +94,13 @@ MNEMO_ONNX_MODEL_PATH=./model.onnx cargo run --release --features onnx \
 
 This block is generated from [`bench/results/locomo_v1.json`](bench/results/locomo_v1.json) by
 [`scripts/gen_recall_number.py`](scripts/gen_recall_number.py); the `doc-guards` CI job runs it
-with `--check`, so the README cannot drift from the measured result. Making it
-CI-*reproducible* (a model-fetch bench job) remains
-[#125](https://github.com/sattyamjjain/mnemo/issues/125).
+with `--check`, so the README cannot drift from the measured result. It is also
+**CI-reproducible**: [`real-embedder-benches-nightly`](.github/workflows/real-embedder-benches-nightly.yml)
+fetches the digest-pinned checkpoint, re-runs the bench and compares against the
+committed artifact nightly, opening an issue if either number leaves its band.
+The most recent run reproduced `recall@1` **exactly** — 0.6890 committed, 0.6890
+regenerated — on an x86-64 Linux runner, against a number first measured on
+arm64/darwin.
 
 <details>
 <summary><strong>Earlier measurement, different embedder and corpus</strong> (nomic-embed-text 768-dim, n=23)</summary>
@@ -161,11 +165,16 @@ are not implemented, and it says nothing about an adaptive attacker.
 [`docs/benchmarks/2026-08-25-minja-phase3-nonadaptive.md`](docs/benchmarks/2026-08-25-minja-phase3-nonadaptive.md)
 · [`bench/results/minja_phase3.json`](bench/results/minja_phase3.json)
 (`cargo run --release --features onnx -p mnemo-poisoning-bench --bin poisoning_real_bench`).
-This bench is **also `--features onnx`**, so — like the ONNX MiniLM retrieval number
-above — it is **not currently CI-reproducible** until the `ort` integration is repaired
-([#125](https://github.com/sattyamjjain/mnemo/issues/125)). The byte-stable
-hash-embedder defense-*delta* companion runs in CI and is at
-[`bench/poisoning/`](bench/poisoning/).
+This bench is **also `--features onnx`**, and like the ONNX MiniLM retrieval number
+above it **is** CI-reproducible: the same
+[`real-embedder-benches-nightly`](.github/workflows/real-embedder-benches-nightly.yml)
+job regenerates it against the pinned checkpoint and reproduced every rate exactly,
+including the canonical-MINJA **1.000 → 0.000** defense delta. The `ort` integration
+it used to be blocked on was repaired in
+[#125](https://github.com/sattyamjjain/mnemo/issues/125) (closed 2026-08-04), and
+`ci.yml`'s `onnx-feature` job has built, linked and run end-to-end ONNX inference on
+every push since. The byte-stable hash-embedder defense-*delta* companion also runs
+in CI and is at [`bench/poisoning/`](bench/poisoning/).
 
 Quarantine is only half the story — the other half is the **auditable layer**,
 mnemo's real wedge for [OWASP **ASI06 — Memory & Context Poisoning**](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/)
@@ -212,8 +221,8 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.27`, cut but not yet published.** The commands above
-> resolve **`v0.5.26`**, which is what every published `mnemo-*` crate is on today,
+> **Current release: `0.5.28`, cut but not yet published.** The commands above
+> resolve **`v0.5.27`**, which is what every published `mnemo-*` crate is on today,
 > `mnemo-mcp-server` included. The generated table below shows published crates one
 > patch behind the workspace; that is the open release window, not drift, and that
 > table is the authority on what is installable right now.
@@ -236,7 +245,7 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (released): **`v0.5.27`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (unreleased target): **`v0.5.28`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
@@ -288,7 +297,7 @@ crates.io actually has. As of **2026-08-19** that is one number for every crate.
 
 | what | crates.io | workspace | gap |
 |---|---|---|---|
-| all **21** published `mnemo-*` crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.26` | `v0.5.27` (unreleased) | one patch, the open release window |
+| all **21** published `mnemo-*` crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.27` | `v0.5.28` (unreleased) | one patch, the open release window |
 
 The 21 are `mnemo-core`, `mnemo-mcp`, `mnemo-mcp-server`, `mnemo-db`,
 `mnemo-embeddings-bench`, `mnemo-attention-state`, `mnemo-compliance`,
@@ -636,7 +645,7 @@ pip install mnemo-db
 <!-- BEGIN generated: python-sdk-compat -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.27`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
+> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.27`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`. The workspace is currently `v0.5.28` and PyPI is `v0.5.27`: that is an **open release window**, not drift. The version is bumped on merge and published on a tag, so the two differ between those events by design. `pip install mnemo-db` gives `v0.5.27` until `v0.5.28` is tagged.
 >
 > - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.27` *is* `mnemo-core` `v0.5.27`. There is no version-skew question to answer: the engine is the wheel.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.
