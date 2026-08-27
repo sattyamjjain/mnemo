@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Code-mode recall for Mnemo (v0.4.0 P0-3) — agents call recall as a sandboxed WIT function instead of a JSON tool, dropping per-turn token cost by ~95%."
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["mcp", "memory", "wasm", "recall", "agent"]
+categories = ["wasm", "api-bindings"]
 
 [dependencies]
 mnemo-core = { workspace = true }

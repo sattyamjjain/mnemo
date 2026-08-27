@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Admin dashboard for Mnemo memory database"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["mcp", "memory", "admin", "dashboard", "agent"]
+categories = ["web-programming", "api-bindings"]
 
 [dependencies]
 mnemo-core = { workspace = true }

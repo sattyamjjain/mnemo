@@ -9,6 +9,7 @@ description = "Attention-state-memory storage substrate for mnemo (v0.4.5; ancho
 readme = "README.md"
 keywords = ["memory", "kv-cache", "ai-agents", "llm", "database"]
 categories = ["database", "data-structures"]
+documentation.workspace = true
 
 [dependencies]
 mnemo-core = { workspace = true }

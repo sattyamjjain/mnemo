@@ -21,7 +21,7 @@ name = "mnemo-db"
 # The previous "versioned independently" comment produced exactly the bug you
 # would predict: the wheel metadata said 0.5.12 while the compiled core inside it
 # was 0.5.23. Fenced now by workspace_version_fence.rs.
-version = "0.5.27"
+version = "0.5.28"
 description = "MCP-native memory database for AI agents"
 readme = "README.md"
 license = { text = "Apache-2.0" }

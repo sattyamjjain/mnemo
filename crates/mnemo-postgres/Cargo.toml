@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "PostgreSQL storage backend for Mnemo"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["postgres", "pgvector", "memory", "vector", "mcp"]
+categories = ["database-implementations"]
 
 [dependencies]
 mnemo-core = { workspace = true }

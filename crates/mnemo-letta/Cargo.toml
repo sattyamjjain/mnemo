@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Letta-protocol-compatible REST surface backed by Mnemo (v0.4.0-rc3 Task B5)."
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["mcp", "memory", "letta", "agent", "rest"]
+categories = ["api-bindings", "web-programming"]
 
 [dependencies]
 mnemo-core = { workspace = true }

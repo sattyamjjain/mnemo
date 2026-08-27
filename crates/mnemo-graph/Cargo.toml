@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Bitemporal graph layer for Mnemo — Graphiti-style temporal edges over the existing storage backends."
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["memory", "graph", "temporal", "bitemporal", "mcp"]
+categories = ["data-structures", "database-implementations"]
 
 [dependencies]
 mnemo-core = { workspace = true }

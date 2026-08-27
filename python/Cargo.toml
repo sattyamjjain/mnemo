@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Python bindings for Mnemo memory database"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords = ["memory", "python", "pyo3", "mcp", "ai"]
+categories = ["api-bindings", "database-implementations"]
 
 [lib]
 name = "_mnemo"

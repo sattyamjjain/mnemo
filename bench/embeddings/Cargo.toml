@@ -9,6 +9,11 @@ repository.workspace = true
 # depend on an unpublished path crate, which is what stranded mnemo-mcp-server at
 # 0.4.4 while the libraries moved to 0.5.21.
 description = "Embedding-backend selection benchmark — quality (recall@10, nDCG@10) + latency (p50, p95, vec/s) across OpenAI / ONNX / Noop on a labeled fixture, with an SLA-aware recommender. Anchored on arXiv:2605.23618 (v0.4.9)."
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords = ["memory", "embeddings", "bench", "mcp", "ai"]
+categories = ["development-tools", "science"]
 
 [lib]
 name = "mnemo_embeddings_bench"

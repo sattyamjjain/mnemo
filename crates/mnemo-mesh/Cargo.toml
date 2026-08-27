@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "SPIFFE-style identity + per-namespace ACL for Mnemo agents (v0.4.0 P0-2). Speaks the lifecycle-attestation envelope Cloudflare Mesh expects."
 readme = "README.md"
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["memory", "spiffe", "identity", "acl", "mcp"]
+categories = ["authentication", "network-programming"]
 
 [dependencies]
 mnemo-core = { workspace = true }

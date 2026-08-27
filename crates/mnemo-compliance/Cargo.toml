@@ -9,6 +9,7 @@ description = "DPDPA consent-manager and EU AI Act audit-log primitives for Mnem
 readme = "README.md"
 keywords = ["compliance", "audit-log", "eu-ai-act", "dpdp", "provenance"]
 categories = ["database", "cryptography"]
+documentation.workspace = true
 
 [dependencies]
 mnemo-core = { workspace = true }

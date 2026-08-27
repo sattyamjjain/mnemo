@@ -16,6 +16,77 @@ The 0.5.28 window opens on the **v0.5.27** cut. The 0.5.27 release content lande
 points at the cut commit directly above it, which is where the `## [0.5.27]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-26) - every published crate now has its crates.io metadata
+
+`mnemo-mcp-server` - the crate the README tells people to `cargo install`, twice - shipped
+through v0.5.27 with `homepage=None documentation=None repository=None keywords=[]
+categories=[]`. A crates.io page with no repository link is a dead end, and nobody
+searching "mcp memory" finds a crate with no keywords. Nothing was red, because nothing
+was looking.
+
+An audit found **all 23** publishable members incomplete, six missing `repository`
+outright: `mnemo-admin`, `mnemo-grpc`, `mnemo-mcp-server`, `mnemo-pgwire`,
+`mnemo-postgres`, `mnemo-rest`.
+
+All three URLs already existed in `[workspace.package]` and simply were not inherited.
+`documentation` is included because cargo does **not** default it to docs.rs in published
+metadata - an absent value is an absent link. Category slugs were validated against the
+**live** crates.io category list rather than guessed: an unknown slug is rejected at
+publish time, so a guess would have failed the release instead of the check.
+
+`mnemo-mcp-server` also gains a README, since it is the install target and had no page
+content at all. It documents the name split (`mnemo` and `mnemo-cli` on crates.io both
+belong to other authors) that the existing CI guard already protects.
+
+`scripts/check_publish_closure.sh` now asserts the metadata, because that is what stops
+this recurring. Two details:
+
+- **`keywords = []` is treated as missing.** An empty array is exactly as blank as an
+  absent key on the page, and it is the state `mnemo-mcp-server` was actually in.
+- **The first version of the check reported clean over a checker that had crashed.** A
+  `SyntaxError` in its own embedded python was swallowed by `|| true`, and the guard
+  printed "every publishable member declares ..." having examined nothing. It now fails
+  loudly on a non-zero exit, and the self-test asserts a field no crate has so the check
+  can never become vacuous.
+
+Verified by mutation: stripping keywords fails, `keywords = []` fails, and breaking the
+checker fails rather than reporting clean.
+
+### Changed (2026-08-26) - the real-embedder numbers are CI-reproducible, and now say so
+
+The README carried two claims sourced from [#125](https://github.com/sattyamjjain/mnemo/issues/125),
+which closed on 2026-08-04. Both were resolved by **measurement, not by deleting the
+reference**.
+
+**One was already false.** README:165 said the poisoning bench is not CI-reproducible
+*"until the `ort` integration is repaired"*. That repair is what #125 was, and `ci.yml`'s
+`onnx-feature` job has built, linked and run **end-to-end ONNX inference against a
+downloaded model** on every push since. The claim had outlived its own stated cause.
+
+**The other was narrower and genuinely outstanding**: a *model-fetch bench job* did not
+exist. It does now -
+[`.github/workflows/real-embedder-benches-nightly.yml`](.github/workflows/real-embedder-benches-nightly.yml)
+fetches the digest-pinned checkpoint, regenerates **both** headline numbers, compares
+against the committed artifacts within a stated band, and opens an issue on drift rather
+than failing into a mailbox.
+
+The prose was not changed until that job had actually run. It did, on an x86-64 Linux
+runner, against numbers first measured on arm64/darwin, and reproduced them **exactly**:
+
+| number | committed | regenerated | delta |
+|---|---:|---:|---:|
+| locomo `semantic` recall@1 | 0.6890 | 0.6890 | +0.0000 |
+| locomo `semantic` recall@10 | 0.9110 | 0.9110 | +0.0000 |
+| locomo `lexical` recall@1 | 0.4220 | 0.4220 | +0.0000 |
+| poisoning MINJA (canonical) ASR off -> on | 1.0000 -> 0.0000 | 1.0000 -> 0.0000 | +0.0000 |
+
+The comparison also treats a **disappeared attack** as drift: a bench that silently stops
+measuring something the README cites is not "no change".
+
+The two remaining #37 citations (README:151, README:196) were checked and left alone -
+they cite it as scope and provenance ("the compositional subset of #37"), not as
+outstanding work, and that is accurate.
+
 ## [0.5.27] - 2026-08-25
 
 ### Landing trace (2026-08-22)
