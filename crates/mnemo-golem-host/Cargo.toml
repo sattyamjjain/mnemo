@@ -27,7 +27,7 @@ tracing = { workspace = true }
 # forward-looking pin; bumps are resolve/compile-only until the loader
 # integration lands.
 wasmtime = { version = "47.0", features = ["component-model"] }
-wasmtime-wasi = "47.0"
+wasmtime-wasi = "48.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
