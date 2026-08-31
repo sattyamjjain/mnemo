@@ -68,3 +68,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/check_tag_release_parity.sh
+
+  readme-version-claims:
+    name: README does not assert release state by hand
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # Self-test first, for the reason the [0.5.27] entry records: a gate in
+      # this family already shipped unable to fail, because `\t` in `grep -E` is
+      # a literal `t` and its exclusion matched nothing. Two of the six cases
+      # here assert the gate stays SILENT — on the README's legitimate historical
+      # version citations, and on the same text inside a generated block — because
+      # an over-firing gate gets disabled, which is the same outcome as one that
+      # cannot fire.
+      - name: Guard self-test
+        run: bash scripts/check_readme_version_claims.sh --self-test
+
+      - name: Check README for hand-written release-state claims
+        run: bash scripts/check_readme_version_claims.sh
