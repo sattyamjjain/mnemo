@@ -45,6 +45,7 @@ Network is required. If a registry cannot be reached the cell is rendered as
 from __future__ import annotations
 
 import json
+import subprocess
 import re
 import sys
 import urllib.request
@@ -54,6 +55,8 @@ REPO = Path(__file__).resolve().parent.parent
 README = REPO / "README.md"
 BEGIN = "<!-- BEGIN generated: published-versions -->"
 END = "<!-- END generated: published-versions -->"
+ROSTER_BEGIN = "<!-- BEGIN generated: published-crate-roster -->"
+ROSTER_END = "<!-- END generated: published-crate-roster -->"
 COMPAT_BEGIN = "<!-- BEGIN generated: python-sdk-compat -->"
 COMPAT_END = "<!-- END generated: python-sdk-compat -->"
 UA = "mnemo-gen-published-versions (https://github.com/sattyamjjain/mnemo)"
@@ -130,6 +133,103 @@ def vcell(ver: str) -> str:
     if ver in ("absent", "unknown"):
         return f"_{ver}_"
     return f"`v{ver}`"
+
+
+# Crates that are publishable in cargo metadata but deliberately never reach
+# crates.io. Mirrors `exemption_reason()` in scripts/check_publish_closure.sh;
+# that script is the enforcing copy, this one only needs the names so the roster
+# below counts what actually ships.
+NEVER_PUBLISHED = {"mnemo-python", "mnemo-golem-host"}
+
+# Crates whose presence in the roster needs a word of explanation. Keyed by name
+# so the note disappears if the crate ever does.
+ROSTER_NOTES = {
+    "mnemo-db": (
+        "One of them, **`mnemo-db`, ships no code**: it is a defensive name "
+        "reservation whose entire contents are a doc comment pointing at "
+        "`mnemo-core` and `mnemo-mcp`. It is counted because it is a real "
+        "published artifact someone can `cargo add`, and they should learn that "
+        "from the count rather than from an empty crate."
+    ),
+}
+
+
+def shipping_crates() -> list[str]:
+    """Publishable workspace members that actually go to crates.io.
+
+    Derived from `cargo metadata`, not typed. The count and the list used to be
+    hand-written prose next to a hand-written version table; the table was wrong
+    within a day of the release it described.
+    """
+    out = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1",
+         "--manifest-path", str(REPO / "Cargo.toml")],
+        capture_output=True, text=True, check=True,
+    )
+    m = json.loads(out.stdout)
+    ids = set(m["workspace_members"])
+    names = {
+        p["name"]
+        for p in m["packages"]
+        if p["id"] in ids and p.get("publish") != [] and p["name"] not in NEVER_PUBLISHED
+    }
+    return sorted(names)
+
+
+def registry_versions(names: list[str]) -> dict[str, str]:
+    """Live max_version for each name, in ONE query.
+
+    Deliberately not 21 separate calls: doing that got this session rate-limited
+    by crates.io, after which the per-crate lookups simply hung and a naive
+    caller would have read the timeouts as "crate absent".
+    """
+    d = _get_json("https://crates.io/api/v1/crates?q=mnemo&per_page=100") or {}
+    found = {c["name"]: c.get("max_version", "unknown") for c in d.get("crates", [])}
+    return {n: found.get(n, "absent") for n in names}
+
+
+def render_crate_roster() -> str:
+    ws = workspace_version()
+    names = shipping_crates()
+    vers = registry_versions(names)
+    behind = sorted(n for n, v in vers.items() if v != ws)
+
+    out = [ROSTER_BEGIN,
+           "<!-- Regenerate with: python3 scripts/gen_published_versions.py -->",
+           ""]
+    if not behind:
+        out.append(
+            f"Installing the right *name* is only half of it: `cargo install` resolves "
+            f"whatever crates.io actually has. All **{len(names)}** published `mnemo-*` "
+            f"crates are on **`v{ws}`**, the current workspace version — verified against "
+            f"the live registry when this block was generated, not asserted."
+        )
+    else:
+        out.append(
+            f"Installing the right *name* is only half of it: `cargo install` resolves "
+            f"whatever crates.io actually has. Of the **{len(names)}** published "
+            f"`mnemo-*` crates, **{len(behind)}** are not yet on the workspace version "
+            f"`v{ws}`: "
+            + ", ".join(f"`{n}` (`{vers[n]}`)" for n in behind)
+            + ". That is either a release in flight or a stranded crate; "
+            "[`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) "
+            "distinguishes the two by naming the crates rather than reporting a total."
+        )
+    out.append("")
+    out.append("The " + str(len(names)) + " are " +
+               ", ".join(f"`{n}`" for n in names[:-1]) + f" and `{names[-1]}`.")
+    for name, note in ROSTER_NOTES.items():
+        if name in names:
+            out.append("")
+            out.append(note)
+    out.append("")
+    out.append(
+        "_Count and list generated from `cargo metadata` (publishable workspace members, "
+        "less those with a written never-published exemption) and checked against the live "
+        "registry by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py)._"
+    )
+    out.append(ROSTER_END)
+    return "\n".join(out)
 
 
 def render() -> str:
@@ -275,6 +375,7 @@ def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "--write"
     blocks = [
         ("published-versions", BEGIN, END, render()),
+        ("published-crate-roster", ROSTER_BEGIN, ROSTER_END, render_crate_roster()),
         ("python-sdk-compat", COMPAT_BEGIN, COMPAT_END, render_python_compat()),
     ]
     if mode == "--print":
@@ -309,10 +410,18 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        print("README generated blocks are up to date (published-versions, python-sdk-compat).")
+        print(
+            "README generated blocks are up to date ("
+            + ", ".join(label for label, _, _, _ in blocks)
+            + ")."
+        )
         return 0
     README.write_text(new)
-    print("Rewrote README generated blocks (published-versions, python-sdk-compat).")
+    print(
+        "Rewrote README generated blocks ("
+        + ", ".join(label for label, _, _, _ in blocks)
+        + ")."
+    )
     return 0
 
 

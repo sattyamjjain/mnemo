@@ -12,6 +12,75 @@ The 0.5.29 window opens on the **v0.5.28** cut. The 0.5.28 release content lande
 points at the cut commit directly above it, which is where the `## [0.5.28]` heading the
 publish gate requires first exists.
 
+### Fixed (2026-08-31) - the README said the current release was both shipped and pending
+
+For four days after v0.5.28 reached crates.io, README.md asserted both states at once.
+The generated block said:
+
+> Workspace `[workspace.package].version` (**released**): **`v0.5.28`**
+
+and forty lines below it, a hand-written table said:
+
+> | all **21** published `mnemo-*` crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.27` | `v0.5.28` (unreleased) | one patch, the open release window |
+
+with a second hand-written claim above it — *"Current release: `0.5.28`, cut but not yet
+published"* — and a dated preamble, *"As of **2026-08-19** that is one number for every
+crate"*, twelve days stale.
+
+Verified live before touching anything, so the fix went to the document rather than to
+the truth: crates.io reports `mnemo-core` and `mnemo-mcp-server` at **0.5.28**, PyPI
+reports `mnemo-db` at **0.5.28**. The registries were right; the prose was wrong.
+
+**Both hand-written regions are deleted, not updated.** A hand-maintained mirror of a
+generated table drifts again on the next release — this one drifted within a day of the
+release it described, and the README admitted as much three paragraphs later: *"The
+summary table above is written by hand and is a narrative of one moment."*
+
+What the stale region carried that the generated block did not — the **count** of
+published crates, the **enumerated list**, and the note that `mnemo-db` ships no code —
+is now produced rather than typed. A third generated block, `published-crate-roster`,
+derives the count and the list from `cargo metadata` (publishable workspace members less
+those with a written never-published exemption) and checks them against the live registry
+in **one** bulk query. Twenty-one separate lookups is what got this session rate-limited
+earlier, after which the per-crate calls simply hung — and a naive caller would have read
+those timeouts as "crate absent".
+
+The generator's own summary line named its blocks by hand and had already drifted: it
+printed "(published-versions, python-sdk-compat)" while writing three. It is derived from
+the block list now.
+
+### Added (2026-08-31) - a gate for the whole class
+
+`scripts/check_readme_version_claims.sh` (wired into `repo-hygiene.yml` beside
+`check_tag_release_parity.sh`) fails when the README asserts release state by hand,
+outside the generated markers.
+
+**It is deliberately not "every version literal must equal the workspace version".** That
+rule is tempting and wrong: the README legitimately cites past versions, and those are
+true statements about the past that must not be rewritten when the workspace moves —
+*"in the tag walk as of `v0.5.26`"*, *"`mnemo-mcp-server` had stranded at `v0.5.23`"*.
+The existing fence
+([`readme_crates_version_matches_workspace.rs`](crates/mnemo-cli/tests/readme_crates_version_matches_workspace.rs))
+already pins **bare** in-band literals and exempts `v`-prefixed citations for that reason
+— and the stale table slipped straight through it, because every version in that table
+was `v`-prefixed.
+
+So the gate targets the thing that actually rots: a present-tense claim about release
+state. It also catches the *shape* — any hand-written table row pairing a version with
+`crates.io` or `workspace` — so a re-worded mirror is caught too.
+
+Six self-test cases, and **two of them assert the gate stays silent**: on the README's
+legitimate historical citations, and on the same banned text inside a generated block.
+An over-firing gate gets disabled, which is the same end state as one that cannot fire.
+The `[0.5.27]` entry records this family's previous failure — `\t` in `grep -E` is a
+literal `t`, so an exclusion matched nothing — which is why this one uses `grep -F` for
+the phrase list: `(unreleased)` contains parentheses that an ERE would read as a group,
+matching the bare word and firing on the legitimate *"one patch behind an unreleased
+workspace"* sentence that describes a guard's behaviour.
+
+Verified against the real README with the exact removed line seeded back in: exit 0 clean,
+exit 1 seeded, exit 0 after removing the seed.
+
 ## [0.5.28] - 2026-08-27
 
 ### Landing trace (2026-08-25)

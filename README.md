@@ -221,11 +221,10 @@ cargo add mnemo-mcp                      # (optional) expose it as MCP tools
 cargo install mnemo-mcp-server          # server binary → `mnemo`
 ```
 
-> **Current release: `0.5.28`, cut but not yet published.** The commands above
-> resolve **`v0.5.27`**, which is what every published `mnemo-*` crate is on today,
-> `mnemo-mcp-server` included. The generated table below shows published crates one
-> patch behind the workspace; that is the open release window, not drift, and that
-> table is the authority on what is installable right now.
+> **What these commands resolve is in the generated table below, which is the
+> authority.** No version is restated here: a hand-written copy of a generated
+> number is a copy that drifts, and this paragraph did — for four days after
+> v0.5.28 reached crates.io it still described that version as pending.
 >
 > The seven satellite crates that trailed a patch during the `v0.5.25` window have
 > caught up, and they are in the tag walk as of `v0.5.26`, so the split that caused it
@@ -292,22 +291,17 @@ docs.
 
 #### All published `mnemo-*` crates are at one version
 
-Installing the right *name* is only half of it: `cargo install` resolves whatever
-crates.io actually has. As of **2026-08-19** that is one number for every crate.
+<!-- BEGIN generated: published-crate-roster -->
+<!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-| what | crates.io | workspace | gap |
-|---|---|---|---|
-| all **21** published `mnemo-*` crates, including `mnemo-core`, `mnemo-mcp` and **`mnemo-mcp-server`** | `v0.5.27` | `v0.5.28` (unreleased) | one patch, the open release window |
+Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. All **21** published `mnemo-*` crates are on **`v0.5.28`**, the current workspace version — verified against the live registry when this block was generated, not asserted.
 
-The 21 are `mnemo-core`, `mnemo-mcp`, `mnemo-mcp-server`, `mnemo-db`,
-`mnemo-embeddings-bench`, `mnemo-attention-state`, `mnemo-compliance`,
-`mnemo-md-sync`, `mnemo-pgwire`, `mnemo-rest`, `mnemo-grpc`, `mnemo-postgres`,
-`mnemo-admin`, `mnemo-graph`, `mnemo-letta`, `mnemo-codemode`, `mnemo-mesh`,
-`mnemo-baseline`, `mnemo-deal`, `mnemo-cma` and `mnemo-amp`. One of them,
-**`mnemo-db`, ships no code**: it is a defensive name reservation whose entire
-contents are a doc comment pointing at `mnemo-core` and `mnemo-mcp`. It is
-counted here because it is a real published artifact someone can `cargo add`,
-and they should learn that from the count rather than from an empty crate.
+The 21 are `mnemo-admin`, `mnemo-amp`, `mnemo-attention-state`, `mnemo-baseline`, `mnemo-cma`, `mnemo-codemode`, `mnemo-compliance`, `mnemo-core`, `mnemo-db`, `mnemo-deal`, `mnemo-embeddings-bench`, `mnemo-graph`, `mnemo-grpc`, `mnemo-letta`, `mnemo-mcp`, `mnemo-mcp-server`, `mnemo-md-sync`, `mnemo-mesh`, `mnemo-pgwire`, `mnemo-postgres` and `mnemo-rest`.
+
+One of them, **`mnemo-db`, ships no code**: it is a defensive name reservation whose entire contents are a doc comment pointing at `mnemo-core` and `mnemo-mcp`. It is counted because it is a real published artifact someone can `cargo add`, and they should learn that from the count rather than from an empty crate.
+
+_Count and list generated from `cargo metadata` (publishable workspace members, less those with a written never-published exemption) and checked against the live registry by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py)._
+<!-- END generated: published-crate-roster -->
 
 Other `mnemo*` names on crates.io (`mnemo`, `mnemo-cli`, `mnemo-engine`,
 `mnemo-rs`, `mnemo-server`) belong to **unrelated projects**. See

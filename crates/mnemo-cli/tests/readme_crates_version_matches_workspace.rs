@@ -40,20 +40,44 @@ fn workspace_version() -> String {
     panic!("could not find [workspace.package].version in root Cargo.toml");
 }
 
-/// The version the README states as the current crates.io release, parsed from the
-/// `Current release: `X.Y.Z`` line.
+/// The workspace version as the README states it, read from the **generated**
+/// published-versions block.
+///
+/// This used to parse a hand-written ``Current release: `X.Y.Z``` line. That
+/// line was deleted: it was a hand-maintained mirror of a generated number, and
+/// it drifted — for four days after v0.5.28 reached crates.io it still described
+/// that version as pending, while the generated block eight lines away said
+/// "(released)". `scripts/check_readme_version_claims.sh` now fails the build if
+/// such a hand-written claim reappears.
+///
+/// So the fence moved rather than went away. It pins the generated block's
+/// statement of the WORKSPACE version — not the registry version, which is
+/// legitimately one behind during an open release window and would make this
+/// fail on every release.
+///
+/// Overlapping with `gen_published_versions.py --check` is deliberate: that
+/// check needs the live registries, and this one does not. When the network is
+/// unavailable in CI the generator check cannot run, and this still can.
 fn readme_stated_version() -> String {
     let readme = std::fs::read_to_string(repo_root().join("README.md")).expect("read README.md");
-    let marker = "Current release: `";
+    // Generated form: Workspace `[workspace.package].version` (released): **`v0.5.28`**
+    let marker = "[workspace.package].version`";
     for line in readme.lines() {
-        if let Some(pos) = line.find(marker) {
-            let rest = &line[pos + marker.len()..];
-            if let Some(end) = rest.find('`') {
-                return rest[..end].to_string();
-            }
+        let Some(pos) = line.find(marker) else {
+            continue;
+        };
+        let rest = &line[pos + marker.len()..];
+        if let Some(start) = rest.find("**`v")
+            && let Some(end) = rest[start + 4..].find('`')
+        {
+            return rest[start + 4..start + 4 + end].to_string();
         }
     }
-    panic!("README.md has no `Current release: `<version>`` line for the fence to pin");
+    panic!(
+        "README.md has no generated `[workspace.package].version` statement for the \
+         fence to pin. It lives in the published-versions block; regenerate with \
+         `python3 scripts/gen_published_versions.py`."
+    );
 }
 
 #[test]
@@ -62,11 +86,11 @@ fn readme_current_release_matches_workspace_version() {
     let readme = readme_stated_version();
     assert_eq!(
         readme, workspace,
-        "README states current release `{readme}` but the workspace \
-         [workspace.package].version is `{workspace}`. Update the README `Current \
-         release:` line (or the workspace version) so they match. This is the fence \
-         that stops the README understating the published version, the way the \
-         0.5.16 heads-up did while crates.io was already at 0.5.21."
+        "the README's generated published-versions block states the workspace version \
+         as `{readme}`, but [workspace.package].version is `{workspace}`. The block is \
+         GENERATED — do not hand-edit it; run `python3 scripts/gen_published_versions.py` \
+         and commit. This is the fence that stops the README understating the published \
+         version, the way the 0.5.16 heads-up did while crates.io was already at 0.5.21."
     );
 }
 

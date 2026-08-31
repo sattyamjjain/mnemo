@@ -20,14 +20,23 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-# wasmtime is the WASM-component runtime. Tracks the stable v47
-# component-model release (wasmtime + wasmtime-wasi move in lockstep). NOTE:
-# this crate's source does not yet call the wasmtime API (the Linker/Store/
-# bindgen wiring is deferred — see the lib.rs module doc), so the version is a
-# forward-looking pin; bumps are resolve/compile-only until the loader
-# integration lands.
-wasmtime = { version = "47.0", features = ["component-model"] }
-wasmtime-wasi = "47.0"
+# wasmtime is the WASM-component runtime. Tracks the stable v48
+# component-model release. NOTE: this crate's source does not yet call the
+# wasmtime API (the Linker/Store/bindgen wiring is deferred — see the lib.rs
+# module doc), so the version is a forward-looking pin; bumps are
+# resolve/compile-only until the loader integration lands.
+#
+# THESE TWO MUST MOVE TOGETHER. wasmtime-wasi depends on a matching wasmtime, so
+# bumping one alone does not fail — it silently resolves BOTH majors into the
+# tree. Dependabot opened #177 and #178 to bump them separately and both were
+# green at 17/17, because compiling is not the property at stake:
+#
+#   wasmtime 48 + wasmtime-wasi 47  ->  wasmtime 47.0.4 AND wasmtime 48.0.1
+#   wasmtime 48 + wasmtime-wasi 48  ->  wasmtime 48.0.1 only
+#
+# Verified by resolving both arrangements before merging either.
+wasmtime = { version = "48.0", features = ["component-model"] }
+wasmtime-wasi = "48.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

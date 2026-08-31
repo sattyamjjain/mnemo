@@ -90,6 +90,14 @@ jobs:
         #   0.3.86  PR #168 job 97555588707 -> Findings 35, Critical 0, High 3, exit 0
         # Identical totals, 0 critical, exit 0 on both.
         #
+        # 0.3.86 -> 0.3.90 (2026-08-31, PR #174) verified the same way:
+        #   0.3.86  main    -> Findings 40, Critical 0, High 5, exit 0
+        #   0.3.90  PR #174 -> Findings 40, Critical 0, High 5, exit 0
+        # Identical again. The absolute count moved 35 -> 40 between the two
+        # comparisons because the REPOSITORY grew, not because a rule changed;
+        # what matters is that both sides of each comparison scanned the same
+        # tree and agreed.
+        #
         # Note the version: this PR opened as 0.3.84 and Dependabot moved it to
         # 0.3.86 mid-review. The numbers above are from the job on the FINAL
         # head, not the one this note was first drafted against — recording a
@@ -101,10 +109,10 @@ jobs:
         # If a future rule surfaces a NEW critical, this job fails loudly and the
         # baseline must be re-derived — that is the intended signal, not a reason
         # to unpin. Reproduce the comparison locally with:
-        #   pipx run --spec agent-audit-kit==0.3.86 aak scan . \
+        #   pipx run --spec agent-audit-kit==0.3.90 aak scan . \
         #     --config .agent-audit-kit.yml --severity low --fail-on critical \
         #     --ignore-paths target   # a local tree has target/; CI's checkout does not
-        uses: sattyamjjain/agent-audit-kit@v0.3.86
+        uses: sattyamjjain/agent-audit-kit@v0.3.90
         with:
           path: .
           config: .agent-audit-kit.yml
