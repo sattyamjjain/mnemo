@@ -11,6 +11,11 @@
 
 Mnemo (from Greek *mneme* — memory) is an **embedded** database (DuckDB in-process, or your own PostgreSQL) whose primitives — **REMEMBER**, **RECALL**, **FORGET**, **SHARE** — are exposed as [MCP](https://modelcontextprotocol.io/) tools any AI agent connects to directly. What sets it apart for regulated deployments: every write and delete is a **SHA-256 hash-chained `agent_events` entry an external verifier can check offline** (no store, no hosted tier to trust), and [`mnemo-compliance`](crates/mnemo-compliance) layers signed audit-log export + DPDPA consent records on top.
 
+**→ [Verify a mnemo log yourself, without trusting mnemo](docs/verify-my-log.md)** — a five-minute
+transcript: write three records, export the chain, run a **standalone** verifier whose only
+imports are the Python standard library, then tamper with one record and watch it get caught by
+name. Includes what a PASS does *not* mean, and a concurrency defect the exercise itself found.
+
 **→ [Positioning: on-prem, MCP-native, cryptographically-auditable memory for regulated AI](docs/POSITIONING.md)** — how mnemo compares to Mem0, Letta, and native provider memory on the compliance-audit axis, wired to the shipped bench numbers.
 
 ## On-prem, MCP-native, cryptographically-auditable memory for regulated AI
@@ -1198,6 +1203,17 @@ Commands:
                             --scope "<tokens>" (`role:<id>` entries become RBAC
                             roles; others are opaque scopes), --ttl-seconds <N>,
                             --format <bearer|json> [default: bearer].
+  audit       Export the memory-write hash chain for offline verification.
+              Subcommand:
+                export      Write the chain as JSONL, in verification order, with
+                            every field a plain string or null and hashes in hex
+                            — no mnemo types, so the verifier needs no mnemo.
+                            Flags: --agent-id <ID> [default: default],
+                            --since <RFC3339>, --limit <N> [default: 100000],
+                            --out <PATH> (stdout if omitted, so it pipes).
+                            Verify with `tools/verify_mnemo_chain.py`, which
+                            imports nothing but the Python standard library:
+                            see [docs/verify-my-log.md](docs/verify-my-log.md).
 ```
 
 ### Per-request identity (ADR 0002)

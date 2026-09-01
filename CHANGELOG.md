@@ -81,6 +81,84 @@ workspace"* sentence that describes a guard's behaviour.
 Verified against the real README with the exact removed line seeded back in: exit 0 clean,
 exit 1 seeded, exit 0 after removing the seed.
 
+### Added (2026-09-01) - a standalone chain verifier, and a worked example that breaks it on purpose
+
+**What the audit found first.** The repository description promises "a SHA-256 hash-chained log
+an auditor can verify offline, without trusting the store or the vendor". Before building
+anything, here is exactly what already existed, verbatim:
+
+| already shipped | what it is | why it does not satisfy the claim |
+|---|---|---|
+| `mnemo_core::hash::verify_chain` / `verify_event_chain` | library functions | take `&[MemoryRecord]` / `&[AgentEvent]` — **mnemo types**; you must link `mnemo-core` |
+| `MnemoEngine::verify_integrity` | engine method | inside the engine |
+| `POST /v1/verify` (mnemo-rest) | REST endpoint | inside the running server |
+| `mnemo.verify` (MCP tool) | MCP tool | inside the running server |
+| `mnemo_compliance::export_audit_log` / `verify_ndjson_signed` | library functions | **not reachable from the `mnemo` CLI** — only `RetentionProfile` is imported there |
+| `python/mnemo/provenance.py` | pure-Python verifier | verifies **HMAC read receipts**, a different artefact from the write chain |
+| `bench/audit_conformance` | calls itself "an external verifier" | links `mnemo_core` |
+
+So the outcome was **(b)**: verification existed, but only inside mnemo. The README's
+"without trusting the **store**" is true — `verify_chain` is a pure function that never
+consults the database. The repository description's "without trusting the **vendor**" was
+not: you compiled and ran the vendor's crate to check the vendor's log. And there was **no
+export path at all**, so an auditor could not obtain the log without writing Rust first.
+
+**Now shipped:**
+
+- **`tools/verify_mnemo_chain.py`** — one file, standard library only (`hashlib`, `json`,
+  `sys`, `argparse`). No network call, no subprocess, no file write. Exits non-zero at the
+  first break and prints the record index and both hashes.
+- **`mnemo audit export --out chain.jsonl`** — JSONL, every field a string or null, hashes in
+  hex, no mnemo types. If the export needed a mnemo type to parse, the format would be wrong.
+- **[`docs/verify-my-log.md`](docs/verify-my-log.md)** — a real transcript: write, export,
+  verify (passes), edit "24 months" to "6 months" in the file, verify again (fails, names the
+  record). Linked from the README's first screen.
+
+The verifier is **deliberately stricter than mnemo's own** in one place. `verify_chain` skips
+the link check entirely when a record's `prev_hash` is null, so deleting one field silences
+it — the file says "no link here" and is believed. Strict mode calls that a break;
+`--mnemo-compat` reproduces mnemo's behaviour so the two readings can be compared. Both
+directions are pinned by `crates/mnemo-cli/tests/audit_export_verifies_standalone.rs`, which
+shells out to the real Python rather than asserting in Rust: a Rust-side assertion would only
+prove mnemo agrees with itself, which is the property an auditor cannot use.
+
+### Fixed (2026-09-01) - the export could not have verified, and concurrent writes do not chain
+
+Two defects the worked example surfaced. Neither was introduced here; both were found by
+running the thing end to end instead of describing it.
+
+**1. Tied timestamps made a clean log fail.** `created_at` has microsecond resolution and is
+not unique — three quick writes tie, and `ORDER BY created_at ASC` then returns them in an
+arbitrary order within the tie. Since each link is defined against the *preceding* record,
+that alone makes an untampered chain fail to verify, and an auditor cannot tell that from
+tampering. Sorting by `id` does not help: the ids are UUID-v7 and inside one timestamp the
+random tail dominates, giving a third order that is also not write order. The exporter now
+resolves **ties only** by following the chain links, which is the one thing in the data that
+records write order. That cannot launder a tampered log — an edited `content` leaves the
+hashes untouched and is still caught, and a removed record leaves a tie group that cannot be
+linked, which the exporter reports and the verifier still fails.
+
+**2. Concurrent writes are not chained at all.** `remember()` reads the current chain head and
+then inserts. Three `tools/call` requests in one MCP session are processed concurrently, all
+three read the same head, and all three are written as chain **heads** — `prev_hash =
+SHA256(content_hash)` with no predecessor. Verified directly: three records written in one
+session produced three heads and zero links between any pair, while the same three written one
+per invocation produced `OK: 3 records, chain intact`.
+
+`crates/mnemo-core/src/query/remember.rs` has always said so — *"Concurrent writes for the
+same agent_id may race on prev_hash lookup"* — but nothing measured it. The standalone
+verifier is what made it visible, which is a point in favour of the artefact existing.
+
+**Not fixed here**, deliberately: serialising the write path is a concurrency change to the
+engine with its own risk, and it is not what this change set is. It is documented in
+`docs/verify-my-log.md` under its own heading, with the honest scope — under concurrency the
+per-record content hashes still catch edits, but the **ordering** guarantee is absent, so
+removal and reordering between racing writes are not detected. Treat the chain guarantee as
+holding for **serialised writes to one `(agent_id, thread_id)`**.
+
+No compliance claim is made anywhere in this change. mnemo produces a tamper-evident,
+independently verifiable event log; mapping that to an obligation is the reader's to do.
+
 ## [0.5.28] - 2026-08-27
 
 ### Landing trace (2026-08-25)
