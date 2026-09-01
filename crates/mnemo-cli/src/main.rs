@@ -184,6 +184,43 @@ enum Command {
     /// this is the operator-facing half of `--capability-key`.
     #[command(subcommand)]
     Capability(CapabilityCommand),
+    /// Export the memory-write hash chain for offline verification.
+    ///
+    /// The repository promises "a SHA-256 hash-chained log an auditor can
+    /// verify offline, without trusting the store or the vendor". Every
+    /// verifier that shipped before this required linking `mnemo-core` or
+    /// calling a running `mnemo` — which satisfies "without trusting the
+    /// store" but not "without trusting the vendor", and there was no way to
+    /// get the log out of the database at all.
+    ///
+    /// The export is deliberately dumb: plain JSONL, primitive fields, hex
+    /// hashes, no mnemo types. `tools/verify_mnemo_chain.py` reads it with
+    /// nothing but the Python standard library.
+    #[command(subcommand)]
+    Audit(AuditCommand),
+}
+
+#[derive(Subcommand)]
+enum AuditCommand {
+    /// Write the chain to a JSONL file (or stdout) in verification order.
+    Export(AuditExportArgs),
+}
+
+#[derive(clap::Args)]
+struct AuditExportArgs {
+    /// Agent whose write chain to export.
+    #[arg(long, default_value = "default")]
+    agent_id: String,
+    /// Only records created at or after this RFC3339 timestamp.
+    #[arg(long)]
+    since: Option<String>,
+    /// Maximum records to export.
+    #[arg(long, default_value_t = 100_000)]
+    limit: usize,
+    /// Where to write. Defaults to stdout so the export can be piped straight
+    /// into the verifier.
+    #[arg(long)]
+    out: Option<std::path::PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -351,6 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Bench(sub)) => return run_bench(sub).await,
         Some(Command::Compliance(sub)) => return run_compliance(sub).await,
         Some(Command::Capability(sub)) => return run_capability(sub),
+        Some(Command::Audit(sub)) => return run_audit(sub, &cli.db_path).await,
         None => {}
     }
 
@@ -1334,6 +1372,173 @@ fn run_capability(sub: &CapabilityCommand) -> Result<(), Box<dyn std::error::Err
             mnemo_mcp::identity::bearer_from_capability(&capability)
         ),
         _ => println!("{}", serde_json::to_string_pretty(&capability)?),
+    }
+    Ok(())
+}
+
+/// Reorder only the records that share a `created_at`, by following the chain.
+///
+/// See the long comment at the call site for why this is necessary and why it
+/// cannot turn a tampered log into a passing one. `unresolved` counts records in
+/// a tie group that could not be linked — a real signal, surfaced rather than
+/// smoothed over.
+fn order_ties_by_chain(
+    records: Vec<mnemo_core::model::memory::MemoryRecord>,
+    unresolved: &mut usize,
+) -> Vec<mnemo_core::model::memory::MemoryRecord> {
+    use mnemo_core::hash::compute_chain_hash;
+
+    let mut out = Vec::with_capacity(records.len());
+    let mut i = 0;
+    while i < records.len() {
+        let mut j = i + 1;
+        while j < records.len() && records[j].created_at == records[i].created_at {
+            j += 1;
+        }
+        if j - i == 1 {
+            out.push(records[i].clone());
+            i = j;
+            continue;
+        }
+
+        // A tie group. Walk it by chain link, starting from whichever member
+        // links to the record already emitted (or to nothing, at the head).
+        let mut group: Vec<_> = records[i..j].to_vec();
+        let mut prev_ch: Option<Vec<u8>> = out
+            .last()
+            .map(|r: &mnemo_core::model::memory::MemoryRecord| r.content_hash.clone());
+        let mut ordered = Vec::with_capacity(group.len());
+        while !group.is_empty() {
+            let found = group.iter().position(|r| {
+                r.prev_hash.as_deref()
+                    == Some(compute_chain_hash(&r.content_hash, prev_ch.as_deref()).as_slice())
+            });
+            match found {
+                Some(k) => {
+                    let rec = group.remove(k);
+                    prev_ch = Some(rec.content_hash.clone());
+                    ordered.push(rec);
+                }
+                None => {
+                    // Nothing in the group links here. Emit the rest as-is and
+                    // count them: the verifier will fail on them, correctly.
+                    *unresolved += group.len();
+                    ordered.append(&mut group);
+                    break;
+                }
+            }
+        }
+        out.append(&mut ordered);
+        i = j;
+    }
+    out
+}
+
+/// Export the memory-write hash chain as JSONL for offline verification.
+///
+/// # Why the format is this boring
+///
+/// Every field is a JSON string or null. Hashes are lowercase hex. There is no
+/// nesting, no enum tag, no schema version negotiated at runtime. The verifier
+/// (`tools/verify_mnemo_chain.py`) must be readable end to end by an auditor in
+/// a few minutes, and every type it has to understand is a type it has to
+/// trust. If the export needed a mnemo type to parse, the format would be
+/// wrong.
+///
+/// The record order is the order `verify_chain` expects — oldest first, by
+/// creation — because the chain link is defined against the PRECEDING record.
+/// Exporting in any other order would produce a file that fails verification
+/// for a reason that has nothing to do with tampering.
+async fn run_audit(
+    sub: &AuditCommand,
+    db_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let AuditCommand::Export(args) = sub;
+
+    let storage = DuckDbStorage::open(db_path)?;
+    let mut records = storage
+        .list_memories_by_agent_ordered(&args.agent_id, None, args.limit)
+        .await?;
+
+    if let Some(ref since) = args.since {
+        records.retain(|r| r.created_at.as_str() >= since.as_str());
+    }
+
+    // Put the records in CHAIN order, which is not the same as the storage
+    // layer's order.
+    //
+    // `list_memories_by_agent_ordered` sorts `created_at ASC`, and `created_at`
+    // is not unique: three writes issued back to back land in the same
+    // microsecond and tie. DuckDB then returns them in an arbitrary order
+    // within the tie, and `verify_chain` — which defines each link against the
+    // PRECEDING record — reports a break. That break is an artefact of the
+    // sort, not evidence of tampering, and an auditor cannot tell the two
+    // apart. Sorting by `id` does not help: the ids are UUID-v7, and inside a
+    // single timestamp the random tail dominates, giving a third order that is
+    // also not write order.
+    //
+    // So ties are resolved by following the chain itself, which is the only
+    // thing in the export that actually records the write order.
+    //
+    // This does NOT launder a tampered log into one that verifies:
+    //
+    //   * an edited `content` leaves every hash untouched, so the ordering is
+    //     unaffected and the verifier still catches the content mismatch;
+    //   * a removed record leaves a tie group that cannot be linked, which is
+    //     reported below and still fails verification;
+    //   * a wholly re-forged chain is not detectable by any hash check — that
+    //     needs a signature, which is a different artefact with a different key.
+    //
+    // Only ties are reordered. Records with distinct timestamps keep their
+    // `created_at` order, so the walk is O(sum of tie-group^2) with tie groups
+    // of a handful, not O(n^2) over the whole export.
+    let mut unresolved_ties = 0usize;
+    records = order_ties_by_chain(records, &mut unresolved_ties);
+    if unresolved_ties > 0 {
+        eprintln!(
+            "warning: {unresolved_ties} record(s) share a timestamp with others but \
+             could not be linked into the chain. They are emitted in storage order. \
+             This is what a gap in the log looks like from here — verification will \
+             fail, and that failure is real."
+        );
+    }
+
+    // Soft-deleted records stay in the chain. Dropping them would silently
+    // break every link after the gap, and an auditor would be unable to tell
+    // that from tampering — which is exactly the confusion this export exists
+    // to remove. The flag is exported so the reader can see what was retracted.
+    let mut out: Box<dyn std::io::Write> = match args.out {
+        Some(ref p) => Box::new(std::io::BufWriter::new(std::fs::File::create(p)?)),
+        None => Box::new(std::io::BufWriter::new(std::io::stdout())),
+    };
+
+    let n = records.len();
+    for (i, r) in records.iter().enumerate() {
+        let line = serde_json::json!({
+            "index": i,
+            "id": r.id.to_string(),
+            "agent_id": r.agent_id,
+            "content": r.content,
+            "created_at": r.created_at,
+            "content_hash": hex::encode(&r.content_hash),
+            "prev_hash": r.prev_hash.as_ref().map(hex::encode),
+            "deleted_at": r.deleted_at,
+        });
+        use std::io::Write as _;
+        writeln!(out, "{line}")?;
+    }
+    use std::io::Write as _;
+    out.flush()?;
+
+    // Only when writing to a file: on stdout the export IS the output, and a
+    // trailing note would land in the auditor's chain.jsonl.
+    if let Some(path) = &args.out {
+        eprintln!(
+            "exported {n} record(s) for agent '{}'. Verify with:\n  \
+             python3 tools/verify_mnemo_chain.py {}",
+            args.agent_id,
+            path.display()
+        );
     }
     Ok(())
 }
