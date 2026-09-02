@@ -283,14 +283,27 @@ run against the three result lines those cases produce — `1 ignored`, `0 passe
 writes its chain one record at a time, so the number covers mutation of a serially-written log
 and says nothing about concurrent writes.
 
-The first version of that step had two defects of its own, both found by it going red on its
-own pull request. It captured cargo's output into a variable under `set -e`, so a non-zero exit
-aborted the step *at the assignment* and discarded the output that would have explained it —
-the run reported `exit code 101` and nothing else. And it selected `-p mnemo-core`, which
-resolves a narrower feature set than the workspace run above it; that is a different
-fingerprint, so cargo rebuilt the crate and its native dependencies from source and spent nine
-minutes on a check that should reuse artifacts and take a second. The step now matches the
-workspace package selection and prints before it evaluates.
+That step went red on its own pull request, twice, and the second failure corrected the
+diagnosis of the first.
+
+It originally captured cargo's output into a variable under `set -e`, so a non-zero exit
+aborted the step *at the assignment* and the `echo` below it never ran: CI reported
+`exit code 101` and nothing else. A guard that hides the evidence it exists to produce is worse
+than no guard, so the first fix made it print before evaluating — and that is the only reason
+the real cause was ever visible.
+
+The real cause was not a failing test. It was **disk**: `ar: unable to copy file
+'…/libduckdb.a'; reason: No space left on device`. Invoking cargo a second time with a
+different target filter gives `libduckdb-sys` a fresh fingerprint, and a second from-source
+DuckDB build does not fit beside the artifacts the first one already wrote. Matching the
+package selection was not enough — the target filter alone re-fingerprints it.
+
+So the step no longer runs cargo at all. The workspace run tees its output to a file and the
+step asserts that each of the three tests appears there as `... ok`. That is cheaper, it cannot
+exhaust the runner, and it is strictly better evidence: it checks the run whose result the job
+actually reports, rather than a second run that might differ from it. Verified in every failing
+direction — a test `#[ignore]`d, the file deleted, a test renamed, and a test present but
+failed all turn the step red.
 
 ### Changed (2026-09-02) - the README band fence no longer fails on its own generated block
 

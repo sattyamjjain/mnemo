@@ -89,45 +89,45 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by mnemo-grpc build script)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo test --workspace --exclude mnemo-python
+      - name: Test
+        run: |
+          set -o pipefail
+          cargo test --workspace --exclude mnemo-python 2>&1 | tee /tmp/workspace-tests.log
 
-      # The concurrency reproduction runs inside the workspace test above. It is
-      # re-run here on its own so that DELETING or #[ignore]-ing it is a CI
-      # failure rather than a silent reduction in coverage: the workspace run
-      # would stay green either way, and "the check is gone" and "the check
-      # passes" look identical from a summary line.
+      # The concurrency reproduction runs inside the workspace test above. This
+      # step asserts it actually RAN and PASSED there, so deleting the file or
+      # marking a test `#[ignore]` is a CI failure rather than a silent
+      # reduction in coverage: the workspace run stays green either way, and
+      # "the check is gone" and "the check passes" look identical from a
+      # summary line.
       #
-      # `--exact`-style counting rather than a plain invocation, because a
-      # filtered-out or ignored test still exits 0. This repository has shipped
-      # a green job over a check that never ran more than once.
+      # It reads that run's output rather than invoking cargo a second time,
+      # and that is not a stylistic choice. Any second invocation with a
+      # different target filter gives `libduckdb-sys` a fresh fingerprint, and
+      # rebuilding DuckDB from source does not fit beside the artifacts the
+      # first build already wrote — the runner dies with
+      # `ar: ... No space left on device`, which is how this step failed twice
+      # before being written this way. Reading the real run is also strictly
+      # better evidence than re-running: it is the run whose result the job
+      # reports.
       - name: Concurrent hash-chain linkage (must run, not merely pass)
         run: |
           set -uo pipefail
-          # Package selection deliberately matches the workspace run above.
-          # `-p mnemo-core` on its own resolves a NARROWER feature set, which is
-          # a different fingerprint: cargo rebuilds the crate and its native
-          # dependencies from source. That cost nine minutes for a check that
-          # should reuse artifacts and take a second.
-          set +e
-          out=$(cargo test --workspace --exclude mnemo-python --test concurrent_chain_linkage 2>&1)
-          status=$?
-          set -e
-          # Print BEFORE evaluating anything. Capturing into `$out` under `set -e`
-          # aborts the step at a failing test and discards the output that would
-          # explain it — which is exactly how this step first failed, reporting
-          # `exit code 101` and nothing else.
-          printf '%s\n' "$out"
-          if [ "$status" -ne 0 ]; then
-            echo "::error::the concurrency reproduction did not pass (exit $status)"
-            exit "$status"
-          fi
-          line=$(printf '%s\n' "$out" | grep -E '^test result:' | tail -1)
-          [ -n "$line" ] || { echo "::error::no test-result line; the reproduction did not run"; exit 1; }
-          passed=$(printf '%s' "$line" | sed -E 's/.* ([0-9]+) passed.*/\1/')
-          ignored=$(printf '%s' "$line" | sed -E 's/.* ([0-9]+) ignored.*/\1/')
-          echo "passed=$passed ignored=$ignored"
-          [ "$ignored" = "0" ] || { echo "::error::$ignored concurrency test(s) ignored"; exit 1; }
-          [ "$passed" -ge 3 ] || { echo "::error::expected >=3 concurrency tests, ran $passed"; exit 1; }
+          # libtest colours "ok" when CARGO_TERM_COLOR is set, so strip ANSI
+          # before matching or every line looks like a failure.
+          plain=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/workspace-tests.log)
+          missing=0
+          for t in concurrent_remember_produces_one_event_chain \
+                   concurrent_remember_produces_one_memory_chain \
+                   concurrent_remember_chains_within_an_explicit_thread; do
+            if printf '%s\n' "$plain" | grep -qE "^test ${t} \.\.\. ok$"; then
+              echo "ran and passed: $t"
+            else
+              echo "::error::${t} did not run and pass in the workspace test run"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
   # Dedicated job for the `onnx` feature. It builds and tests fine against the
   # pinned ort 2.0.0-rc.11 / ndarray 0.17 API, but `ort` compiles ONNX Runtime
