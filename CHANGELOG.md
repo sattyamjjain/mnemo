@@ -301,9 +301,20 @@ package selection was not enough — the target filter alone re-fingerprints it.
 So the step no longer runs cargo at all. The workspace run tees its output to a file and the
 step asserts that each of the three tests appears there as `... ok`. That is cheaper, it cannot
 exhaust the runner, and it is strictly better evidence: it checks the run whose result the job
-actually reports, rather than a second run that might differ from it. Verified in every failing
-direction — a test `#[ignore]`d, the file deleted, a test renamed, and a test present but
-failed all turn the step red.
+actually reports, rather than a second run that might differ from it.
+
+That version then failed too, reporting all three tests missing from a run that had just passed
+them — and the reason is worth writing down, because it is invisible at small scale. It fed the
+log into `grep -q` through a pipe. `grep -q` exits at its first match and closes the pipe, the
+writer dies of SIGPIPE, and under `pipefail` the pipeline reports *that* failure rather than
+grep's success. On a short log the writer finishes before grep exits and nothing goes wrong,
+which is why it passed locally; on the eleven-megabyte log a real workspace run produces, every
+match reads as a miss. `grep` now reads the file directly — no pipeline, nothing for `pipefail`
+to misreport.
+
+Verified at that scale, not at the scale that hid it: with 400,000 lines of trailing output, the
+piped form gives a false miss and the file form does not, and a test `#[ignore]`d, the file
+deleted, a test renamed, and a test present but failed each still turn the step red.
 
 ### Changed (2026-09-02) - the README band fence no longer fails on its own generated block
 

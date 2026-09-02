@@ -114,13 +114,19 @@ jobs:
         run: |
           set -uo pipefail
           # libtest colours "ok" when CARGO_TERM_COLOR is set, so strip ANSI
-          # before matching or every line looks like a failure.
-          plain=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/workspace-tests.log)
+          # into a file first, or every line looks like a failure.
+          sed -E 's/\x1b\[[0-9;]*m//g' /tmp/workspace-tests.log > /tmp/workspace-tests-plain.log
           missing=0
           for t in concurrent_remember_produces_one_event_chain \
                    concurrent_remember_produces_one_memory_chain \
                    concurrent_remember_chains_within_an_explicit_thread; do
-            if printf '%s\n' "$plain" | grep -qE "^test ${t} \.\.\. ok$"; then
+            # grep reads the FILE. Piping into `grep -q` looks equivalent and is
+            # not: -q exits at the first match and closes the pipe, the writer
+            # dies of SIGPIPE, and under `pipefail` the pipeline reports that
+            # failure instead of grep's success — so every match read as a miss.
+            # That is how this step reported all three tests missing while the
+            # run above it had just passed them.
+            if grep -qE "^test ${t} \.\.\. ok$" /tmp/workspace-tests-plain.log; then
               echo "ran and passed: $t"
             else
               echo "::error::${t} did not run and pass in the workspace test run"
