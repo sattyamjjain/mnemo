@@ -145,6 +145,42 @@ fn version_like_literals(text: &str) -> Vec<String> {
     out
 }
 
+/// Everything in the README **except** the generated blocks.
+///
+/// The band fence exists to catch hand-written prose that has gone stale — the
+/// failure it was built for was a `0.5.21` sitting in a sentence next to a
+/// `0.5.22` heading. A generated block is the opposite case: its numbers are
+/// re-derived from the live registry by `scripts/gen_published_versions.py`, so
+/// during an open release window it *correctly* names the published version
+/// while the workspace has already moved on. `published-crate-roster` lists
+/// every crate's published version as a bare literal, which the fence would
+/// otherwise flag on every release window, forever.
+///
+/// Exempting the generated regions rather than the whole file keeps the fence's
+/// teeth where they belong; `scripts/check_readme_version_claims.sh` separately
+/// requires that release state is asserted *only* inside these markers, so the
+/// two guards together leave no gap.
+fn readme_outside_generated_blocks(readme: &str) -> String {
+    let mut out = String::with_capacity(readme.len());
+    let mut skipping = false;
+    for line in readme.lines() {
+        let t = line.trim_start();
+        if t.starts_with("<!-- BEGIN generated:") {
+            skipping = true;
+            continue;
+        }
+        if t.starts_with("<!-- END generated:") {
+            skipping = false;
+            continue;
+        }
+        if !skipping {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Fences the README's *current patch band* against the workspace version.
 ///
 /// The `Current release:` fence above pins ONE line, so a stale `0.5.21` could —
@@ -164,6 +200,7 @@ fn readme_current_band_version_literals_match_workspace() {
         parse_semver(&ws).expect("workspace [workspace.package].version must be three-part semver");
     let band = wpatch / 10;
     let readme = std::fs::read_to_string(repo_root().join("README.md")).expect("read README.md");
+    let readme = readme_outside_generated_blocks(&readme);
 
     let mut offenders: Vec<String> = version_like_literals(&readme)
         .into_iter()
@@ -231,5 +268,25 @@ fn band_guard_logic_is_not_vacuous() {
     assert!(
         !flagged("0.5.18"),
         "an out-of-band historical literal must not be flagged"
+    );
+
+    // The generated-block exemption must remove ONLY the generated region. An
+    // exemption that swallowed the surrounding prose would silently retire the
+    // fence, which is the failure mode this repository keeps rediscovering.
+    let doc = concat!(
+        "hand-written 0.5.21 before\n",
+        "<!-- BEGIN generated: published-crate-roster -->\n",
+        "generated 0.5.20\n",
+        "<!-- END generated: published-crate-roster -->\n",
+        "hand-written 0.5.19 after\n",
+    );
+    let kept = readme_outside_generated_blocks(doc);
+    assert!(
+        kept.contains("0.5.21") && kept.contains("0.5.19"),
+        "prose on both sides of a generated block must survive the exemption: {kept:?}"
+    );
+    assert!(
+        !kept.contains("0.5.20"),
+        "the generated region must be removed: {kept:?}"
     );
 }

@@ -203,17 +203,6 @@ pub async fn resolve_conflict(
             let content_hash =
                 crate::hash::compute_content_hash(&combined_content, &mem_a.agent_id, &now);
 
-            let prev_hash_raw = engine
-                .storage
-                .get_latest_memory_hash(&mem_a.agent_id, None)
-                .await
-                .ok()
-                .flatten();
-            let prev_hash = Some(crate::hash::compute_chain_hash(
-                &content_hash,
-                prev_hash_raw.as_deref(),
-            ));
-
             let new_record = MemoryRecord {
                 id: Uuid::now_v7(),
                 agent_id: mem_a.agent_id.clone(),
@@ -227,7 +216,7 @@ pub async fn resolve_conflict(
                 }),
                 embedding: Some(embedding.clone()),
                 content_hash,
-                prev_hash,
+                prev_hash: None,
                 source_type: SourceType::Consolidation,
                 source_id: None,
                 consolidation_state: ConsolidationState::Active,
@@ -248,7 +237,7 @@ pub async fn resolve_conflict(
                 decay_function: None,
             };
 
-            engine.storage.insert_memory(&new_record).await?;
+            engine.storage.append_memory_chained(&new_record).await?;
             engine.index.add(new_record.id, &embedding)?;
             if let Some(ref ft) = engine.full_text {
                 ft.add(new_record.id, &new_record.content)?;

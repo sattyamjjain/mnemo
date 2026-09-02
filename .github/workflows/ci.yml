@@ -91,6 +91,28 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo test --workspace --exclude mnemo-python
 
+      # The concurrency reproduction runs inside the workspace test above. It is
+      # re-run here on its own so that DELETING or #[ignore]-ing it is a CI
+      # failure rather than a silent reduction in coverage: the workspace run
+      # would stay green either way, and "the check is gone" and "the check
+      # passes" look identical from a summary line.
+      #
+      # `--exact`-style counting rather than a plain invocation, because a
+      # filtered-out or ignored test still exits 0. This repository has shipped
+      # a green job over a check that never ran more than once.
+      - name: Concurrent hash-chain linkage (must run, not merely pass)
+        run: |
+          set -euo pipefail
+          out=$(cargo test -p mnemo-core --test concurrent_chain_linkage -- --test-threads=4 2>&1)
+          echo "$out"
+          line=$(printf '%s\n' "$out" | grep -E '^test result:' | tail -1)
+          [ -n "$line" ] || { echo "::error::no test-result line; the reproduction did not run"; exit 1; }
+          passed=$(printf '%s' "$line" | sed -E 's/.* ([0-9]+) passed.*/\1/')
+          ignored=$(printf '%s' "$line" | sed -E 's/.* ([0-9]+) ignored.*/\1/')
+          echo "passed=$passed ignored=$ignored"
+          [ "$ignored" = "0" ] || { echo "::error::$ignored concurrency test(s) ignored"; exit 1; }
+          [ "$passed" -ge 3 ] || { echo "::error::expected >=3 concurrency tests, ran $passed"; exit 1; }
+
   # Dedicated job for the `onnx` feature. It builds and tests fine against the
   # pinned ort 2.0.0-rc.11 / ndarray 0.17 API, but `ort` compiles ONNX Runtime
   # and downloads a prebuilt native lib, so it is kept out of the workspace-wide
@@ -194,6 +216,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p mnemo-postgres --test pgvector_ann -- --nocapture
+      # The PostgreSQL half of the concurrency fix. It uses a different
+      # mechanism from DuckDB's — `pg_advisory_xact_lock` rather than an
+      # in-process lock — so the mnemo-core test proves nothing about it, and
+      # without a live database it skips. This job is the only place it runs.
+      #
+      # (Only the two named tests run in this job. `write_provenance_pg` and
+      # `semantic_recall_fails_loud` are also MNEMO_TEST_POSTGRES_URL-gated and
+      # are not wired in here; that gap predates this change and is not closed
+      # by it.)
+      - run: cargo test -p mnemo-postgres --test concurrent_chain_linkage_pg -- --nocapture
 
   # Fails when the workspace version drifts MORE THAN ONE PATCH ahead of the
   # newest mnemo-core release on crates.io — the forcing function that stops

@@ -14,11 +14,39 @@ use crate::model::relation::Relation;
 use crate::model::write_provenance::{
     WriteOp, WriteProvenance, flags_from_storage, flags_to_storage,
 };
+use crate::storage::chain_lock::{Chain, ChainLocks, chain_name, thread_key};
 use crate::storage::{MemoryFilter, StorageBackend};
 use uuid::Uuid;
 
+/// Drop the recorded memory-chain tip if it names `id`.
+///
+/// A soft-deleted record leaves the live chain, and the memory head lookup has
+/// always filtered `deleted_at IS NULL` — so the next append must link to the
+/// last *live* record, not to the one just retired. Clearing the pointer makes
+/// the next append re-seed from that live-filtered lookup, which is exactly what
+/// the pre-`chain_heads` code did.
+///
+/// Called before the delete statement so it works for hard deletes too, where
+/// the row is about to stop existing.
+///
+/// Not taken under the chain lock: doing so would need the record's
+/// `(agent_id, thread_id)` first, and the two orderings a race can produce are
+/// both safe — an append that reads the tip before this runs links to a record
+/// that is about to be retired (the same window the delete always had), and one
+/// that reads after re-seeds. Neither forks the chain.
+const RETIRE_MEMORY_CHAIN_HEAD: &str = "DELETE FROM chain_heads WHERE chain = 'memory' \
+     AND content_hash IN (SELECT content_hash FROM memories WHERE id = ?)";
+
 pub struct DuckDbStorage {
     conn: Arc<Mutex<duckdb::Connection>>,
+    /// Serialises hash-chain appends per chain key, so that reading the current
+    /// head and inserting the record that names it cannot be interleaved. See
+    /// [`crate::storage::chain_lock`] for why this is sharded rather than global
+    /// and rather than per-key.
+    ///
+    /// `Arc` so that a cloned handle shares the same locks — two handles with
+    /// independent lock sets would serialise nothing.
+    chain_locks: Arc<ChainLocks>,
 }
 
 impl DuckDbStorage {
@@ -27,6 +55,7 @@ impl DuckDbStorage {
         super::migrations::run_migrations(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            chain_locks: Arc::new(ChainLocks::new()),
         })
     }
 
@@ -35,7 +64,74 @@ impl DuckDbStorage {
         super::migrations::run_migrations(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            chain_locks: Arc::new(ChainLocks::new()),
         })
+    }
+
+    /// Read the recorded tip for a chain key, seeding it from the legacy
+    /// timestamp-ordered lookup the first time a key is seen.
+    ///
+    /// The seed matters for databases written before `chain_heads` existed: they
+    /// have chains but no tip rows, and the old lookup is the only description of
+    /// their order that exists. It is used once per key and then superseded.
+    async fn read_chain_head<'a, F, Fut>(
+        &'a self,
+        chain: Chain,
+        agent_id: &str,
+        thread_id: Option<&str>,
+        seed: F,
+    ) -> Result<Option<Vec<u8>>>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<Option<Vec<u8>>>> + 'a,
+    {
+        let key = thread_key(chain, thread_id);
+        let recorded = {
+            let conn = self.conn.lock().await;
+            let mut stmt = conn.prepare(
+                "SELECT content_hash FROM chain_heads WHERE chain = ? AND agent_id = ? AND thread_key = ?",
+            )?;
+            match stmt.query_row(
+                duckdb::params![chain_name(chain), agent_id, key.as_str()],
+                |row| row.get::<_, Vec<u8>>(0),
+            ) {
+                Ok(h) => Some(h),
+                Err(duckdb::Error::QueryReturnedNoRows) => None,
+                Err(e) => return Err(Error::Storage(e.to_string())),
+            }
+        };
+        match recorded {
+            Some(h) => Ok(Some(h)),
+            None => seed().await,
+        }
+    }
+
+    /// Record `content_hash` as the tip for a chain key. Called inside the same
+    /// critical section as the insert it describes.
+    async fn write_chain_head(
+        &self,
+        chain: Chain,
+        agent_id: &str,
+        thread_id: Option<&str>,
+        content_hash: &[u8],
+        updated_at: &str,
+    ) -> Result<()> {
+        let key = thread_key(chain, thread_id);
+        let conn = self.conn.lock().await;
+        conn.execute(
+            "INSERT INTO chain_heads (chain, agent_id, thread_key, content_hash, updated_at) \
+             VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT (chain, agent_id, thread_key) \
+             DO UPDATE SET content_hash = EXCLUDED.content_hash, updated_at = EXCLUDED.updated_at",
+            duckdb::params![
+                chain_name(chain),
+                agent_id,
+                key.as_str(),
+                content_hash,
+                updated_at
+            ],
+        )?;
+        Ok(())
     }
 }
 
@@ -369,6 +465,7 @@ impl StorageBackend for DuckDbStorage {
 
     async fn soft_delete_memory(&self, id: Uuid) -> Result<()> {
         let conn = self.conn.lock().await;
+        conn.execute(RETIRE_MEMORY_CHAIN_HEAD, duckdb::params![id.to_string()])?;
         let now = chrono::Utc::now().to_rfc3339();
         let affected = conn.execute(
             "UPDATE memories SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
@@ -384,6 +481,7 @@ impl StorageBackend for DuckDbStorage {
 
     async fn hard_delete_memory(&self, id: Uuid) -> Result<()> {
         let conn = self.conn.lock().await;
+        conn.execute(RETIRE_MEMORY_CHAIN_HEAD, duckdb::params![id.to_string()])?;
         let affected = conn.execute(
             "DELETE FROM memories WHERE id = ?",
             duckdb::params![id.to_string()],
@@ -671,6 +769,70 @@ impl StorageBackend for DuckDbStorage {
             Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(Error::Storage(e.to_string())),
         }
+    }
+
+    async fn append_memory_chained(&self, record: &MemoryRecord) -> Result<Vec<u8>> {
+        // Design (a) — an in-process lock held across the whole read-link-insert
+        // sequence.
+        //
+        // This is not a compromise for the embedded backend, it is the complete
+        // answer: DuckDB takes an exclusive file lock for read-write access, so
+        // a database has at most one writing process and every appender to a
+        // chain is a task inside it. There is no second process for a
+        // database-level lock to arbitrate between.
+        let _guard = self
+            .chain_locks
+            .lock(Chain::Memory, &record.agent_id, record.thread_id.as_deref())
+            .await;
+        let head = self
+            .read_chain_head(
+                Chain::Memory,
+                &record.agent_id,
+                record.thread_id.as_deref(),
+                || self.get_latest_memory_hash(&record.agent_id, record.thread_id.as_deref()),
+            )
+            .await?;
+        let prev = crate::hash::compute_chain_hash(&record.content_hash, head.as_deref());
+        let mut linked = record.clone();
+        linked.prev_hash = Some(prev.clone());
+        self.insert_memory(&linked).await?;
+        self.write_chain_head(
+            Chain::Memory,
+            &record.agent_id,
+            record.thread_id.as_deref(),
+            &record.content_hash,
+            &record.created_at,
+        )
+        .await?;
+        Ok(prev)
+    }
+
+    async fn append_event_chained(&self, event: &AgentEvent) -> Result<Vec<u8>> {
+        let _guard = self
+            .chain_locks
+            .lock(Chain::Event, &event.agent_id, event.thread_id.as_deref())
+            .await;
+        let head = self
+            .read_chain_head(
+                Chain::Event,
+                &event.agent_id,
+                event.thread_id.as_deref(),
+                || self.get_latest_event_hash(&event.agent_id, None),
+            )
+            .await?;
+        let prev = crate::hash::compute_chain_hash(&event.content_hash, head.as_deref());
+        let mut linked = event.clone();
+        linked.prev_hash = Some(prev.clone());
+        self.insert_event(&linked).await?;
+        self.write_chain_head(
+            Chain::Event,
+            &event.agent_id,
+            event.thread_id.as_deref(),
+            &event.content_hash,
+            &event.timestamp,
+        )
+        .await?;
+        Ok(prev)
     }
 
     async fn get_sync_watermark(&self, key: &str) -> Result<Option<String>> {
@@ -1903,6 +2065,116 @@ mod tests {
             vec![1.0_f32],
             "a trailing partial chunk must be dropped, matching the previous \
              `chunks_exact` behaviour, rather than panicking or producing a value"
+        );
+    }
+
+    /// The upgrade path: a database written before `chain_heads` existed has a
+    /// chain but no tip row, and the next append must **extend** that chain
+    /// rather than start a new one.
+    ///
+    /// Simulated by clearing the tip rows, which is exactly the state a v6
+    /// database is in after the additive migration. Without the seed fallback
+    /// the fourth record would come out as a second head, and an operator would
+    /// discover that only when an auditor ran the verifier.
+    #[tokio::test]
+    async fn an_existing_chain_with_no_tip_row_is_extended_not_restarted() {
+        use crate::model::memory::{ConsolidationState, MemoryType, Scope, SourceType};
+
+        let storage = DuckDbStorage::open_in_memory().unwrap();
+        let agent = "legacy-agent";
+        let mut hashes = Vec::new();
+        for i in 0..3 {
+            let ts = format!("2026-09-02T00:00:0{i}+00:00");
+            let content = format!("legacy record {i}");
+            let content_hash = crate::hash::compute_content_hash(&content, agent, &ts);
+            let record = MemoryRecord {
+                id: Uuid::now_v7(),
+                agent_id: agent.to_string(),
+                content,
+                memory_type: MemoryType::Semantic,
+                scope: Scope::Private,
+                importance: 0.5,
+                tags: vec![],
+                metadata: serde_json::Value::Null,
+                embedding: None,
+                content_hash: content_hash.clone(),
+                prev_hash: None,
+                source_type: SourceType::Agent,
+                source_id: None,
+                consolidation_state: ConsolidationState::Raw,
+                access_count: 0,
+                org_id: None,
+                thread_id: None,
+                created_at: ts.clone(),
+                updated_at: ts,
+                last_accessed_at: None,
+                expires_at: None,
+                deleted_at: None,
+                decay_rate: None,
+                created_by: None,
+                version: 1,
+                prev_version_id: None,
+                quarantined: false,
+                quarantine_reason: None,
+                decay_function: None,
+            };
+            storage.append_memory_chained(&record).await.unwrap();
+            hashes.push(content_hash);
+        }
+
+        // Drop every tip row: this is a v6 database that has just been migrated.
+        {
+            let conn = storage.conn.lock().await;
+            conn.execute("DELETE FROM chain_heads", []).unwrap();
+        }
+
+        let ts = "2026-09-02T00:00:09+00:00".to_string();
+        let content = "record written after the upgrade".to_string();
+        let content_hash = crate::hash::compute_content_hash(&content, agent, &ts);
+        let record = MemoryRecord {
+            id: Uuid::now_v7(),
+            agent_id: agent.to_string(),
+            content,
+            memory_type: MemoryType::Semantic,
+            scope: Scope::Private,
+            importance: 0.5,
+            tags: vec![],
+            metadata: serde_json::Value::Null,
+            embedding: None,
+            content_hash: content_hash.clone(),
+            prev_hash: None,
+            source_type: SourceType::Agent,
+            source_id: None,
+            consolidation_state: ConsolidationState::Raw,
+            access_count: 0,
+            org_id: None,
+            thread_id: None,
+            created_at: ts.clone(),
+            updated_at: ts,
+            last_accessed_at: None,
+            expires_at: None,
+            deleted_at: None,
+            decay_rate: None,
+            created_by: None,
+            version: 1,
+            prev_version_id: None,
+            quarantined: false,
+            quarantine_reason: None,
+            decay_function: None,
+        };
+        let prev = storage.append_memory_chained(&record).await.unwrap();
+
+        assert_eq!(
+            prev,
+            crate::hash::compute_chain_hash(&content_hash, Some(&hashes[2])),
+            "the append after the upgrade must link to the last record of the existing \
+             chain, seeded from the pre-chain_heads lookup — not start a new one"
+        );
+        assert_ne!(
+            prev,
+            crate::hash::compute_chain_hash(&content_hash, None),
+            "a second head would pass mnemo's own per-record hash checks and fail the \
+             standalone verifier, which is the worst place to find out"
         );
     }
 }

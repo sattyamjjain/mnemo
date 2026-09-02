@@ -118,7 +118,7 @@ impl MnemoAmpStore {
                     None,
                 )
                 .await;
-                if let Err(e) = self.engine.storage.insert_event(&event).await {
+                if let Err(e) = self.engine.storage.append_event_chained(&event).await {
                     tracing::warn!(error = %e, "failed to insert AMP approval audit event");
                 }
                 Ok(true)

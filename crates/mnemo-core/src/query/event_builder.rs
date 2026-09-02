@@ -3,13 +3,21 @@ use uuid::Uuid;
 use crate::model::event::{AgentEvent, EventType};
 use crate::query::MnemoEngine;
 
-/// Build an AgentEvent with proper hash chain linking.
+/// Build an `AgentEvent` ready to be appended.
 ///
-/// Looks up the latest event hash for the agent and computes prev_hash
-/// to maintain chain integrity. This centralizes event construction
-/// that was previously duplicated across 8 query files.
+/// `prev_hash` is left unset on purpose. It is assigned by
+/// [`StorageBackend::append_event_chained`](crate::storage::StorageBackend::append_event_chained)
+/// at insertion time, under the backend's own mutual exclusion, so that reading
+/// the chain head and writing the event that names it cannot be interleaved.
+/// Computing it here — as this did until v0.5.29 — put an arbitrary amount of
+/// caller code between the read and the insert, and any two calls that
+/// overlapped that window both wrote themselves as chain heads.
+///
+/// Pair every `build_event` with `append_event_chained`, never with
+/// `insert_event`: the latter stores whatever `prev_hash` it is handed, which is
+/// now `None`.
 pub async fn build_event(
-    engine: &MnemoEngine,
+    _engine: &MnemoEngine,
     agent_id: &str,
     event_type: EventType,
     payload: serde_json::Value,
@@ -18,18 +26,6 @@ pub async fn build_event(
 ) -> AgentEvent {
     let now = chrono::Utc::now().to_rfc3339();
     let event_content_hash = crate::hash::compute_content_hash(content_for_hash, agent_id, &now);
-    let prev_event_hash = match engine.storage.get_latest_event_hash(agent_id, None).await {
-        Ok(hash) => hash,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
-            None
-        }
-    };
-    let event_prev_hash = Some(crate::hash::compute_chain_hash(
-        &event_content_hash,
-        prev_event_hash.as_deref(),
-    ));
-
     AgentEvent {
         id: Uuid::now_v7(),
         agent_id: agent_id.to_string(),
@@ -48,7 +44,7 @@ pub async fn build_event(
         timestamp: now.clone(),
         logical_clock: 0,
         content_hash: event_content_hash,
-        prev_hash: event_prev_hash,
+        prev_hash: None,
         embedding: None,
     }
 }

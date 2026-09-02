@@ -238,10 +238,42 @@ CREATE INDEX IF NOT EXISTS idx_write_provenance_authored_at ON write_provenance(
 pub const WRITE_PROVENANCE_V6_ALTERS: &[&str] =
     &["ALTER TABLE write_provenance ADD COLUMN flags VARCHAR"];
 
+/// Chain tips, one row per `(chain, agent_id, thread_key)`.
+///
+/// # Why a pointer table and not `ORDER BY timestamp DESC LIMIT 1`
+///
+/// The tip of a hash chain is the record inserted **last**. `created_at` /
+/// `timestamp` record when a write *started*, which under concurrency is not the
+/// order it finishes in: a write that began earlier can be inserted after one
+/// that began later, and from then on the largest-timestamp row is no longer the
+/// tip. Every subsequent append then links to that stale row, and the chain
+/// forks — measured at 16 concurrent writes, with all 16 timestamps distinct, so
+/// this is not a resolution or tie-breaking problem that more precision would
+/// fix.
+///
+/// This table is written inside the same critical section as the insert, so it
+/// says what was actually appended last. Lookups are a point read on the primary
+/// key: no ordering, nothing to tie.
+///
+/// `thread_key` encodes `Option<&str>` rather than storing NULL, because NULL in
+/// a primary key is not comparable with `=` and the two backends disagree about
+/// whether it is even permitted. `-` is the absent thread; `t:<id>` is a present
+/// one. The prefix keeps a thread literally named `-` distinct from no thread.
+pub const CREATE_CHAIN_HEADS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS chain_heads (
+    chain VARCHAR NOT NULL,
+    agent_id VARCHAR NOT NULL,
+    thread_key VARCHAR NOT NULL,
+    content_hash BLOB NOT NULL,
+    updated_at VARCHAR NOT NULL,
+    PRIMARY KEY (chain, agent_id, thread_key)
+);
+";
+
 /// Persistence format version this release writes. Bump when the on-disk
 /// schema changes in a way that requires a migrator pass. v6 added
-/// `write_provenance.flags`.
-pub const CURRENT_PERSISTENCE_VERSION: u32 = 6;
+/// `write_provenance.flags`; v7 added `chain_heads`.
+pub const CURRENT_PERSISTENCE_VERSION: u32 = 7;
 
 pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_MEMORIES_TABLE)?;
@@ -276,6 +308,10 @@ pub fn run_migrations(conn: &duckdb::Connection) -> duckdb::Result<()> {
     conn.execute_batch(CREATE_WRITE_PROVENANCE_TABLE)?;
     // v6: add write_provenance.flags to a DB created at v5 (idempotent).
     apply_alters_idempotent(conn, WRITE_PROVENANCE_V6_ALTERS)?;
+    // v7: chain tips. Purely additive — an existing database gains an empty
+    // table, and the first append for each key seeds it from the old
+    // timestamp-ordered lookup, so nothing has to be backfilled.
+    conn.execute_batch(CREATE_CHAIN_HEADS_TABLE)?;
     stamp_persistence_version(conn)?;
     Ok(())
 }
@@ -555,5 +591,82 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM write_provenance", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 1);
+    }
+
+    fn insert_one_head(conn: &duckdb::Connection) {
+        conn.execute(
+            "INSERT INTO chain_heads (chain, agent_id, thread_key, content_hash, updated_at) \
+             VALUES ('memory', 'a', '-', ?, '2026-09-02T00:00:00+00:00')",
+            duckdb::params![vec![1u8, 2, 3]],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fresh_db_creates_chain_heads_table() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        insert_one_head(&conn);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chain_heads", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn migrations_are_idempotent_for_chain_heads() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        insert_one_head(&conn);
+        run_migrations(&conn).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chain_heads", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "re-running migrations must preserve existing rows");
+    }
+
+    #[test]
+    fn upgrade_direction_existing_db_gains_chain_heads() {
+        // A pre-v7 database: memories exist, tips do not.
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        conn.execute_batch(CREATE_MEMORIES_TABLE).unwrap();
+        assert!(
+            conn.prepare("SELECT 1 FROM chain_heads LIMIT 1").is_err(),
+            "the tip table must not exist before the upgrade"
+        );
+        run_migrations(&conn).unwrap();
+        insert_one_head(&conn);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chain_heads", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    /// The primary key is what makes the tip a pointer rather than a log. If it
+    /// is ever dropped, `ON CONFLICT ... DO UPDATE` stops upserting and starts
+    /// erroring — or worse, silently accumulates rows and the point lookup
+    /// becomes ambiguous again.
+    #[test]
+    fn chain_heads_is_keyed_so_a_second_write_replaces_the_first() {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        for h in [vec![1u8], vec![2u8]] {
+            conn.execute(
+                "INSERT INTO chain_heads (chain, agent_id, thread_key, content_hash, updated_at) \
+                 VALUES ('memory', 'a', '-', ?, 'ts') \
+                 ON CONFLICT (chain, agent_id, thread_key) \
+                 DO UPDATE SET content_hash = EXCLUDED.content_hash",
+                duckdb::params![h],
+            )
+            .unwrap();
+        }
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chain_heads", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "the key must collapse the two writes into one row");
+        let h: Vec<u8> = conn
+            .query_row("SELECT content_hash FROM chain_heads", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(h, vec![2u8], "the tip must be the most recent write");
     }
 }
