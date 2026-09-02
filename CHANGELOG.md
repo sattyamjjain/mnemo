@@ -283,6 +283,15 @@ run against the three result lines those cases produce — `1 ignored`, `0 passe
 writes its chain one record at a time, so the number covers mutation of a serially-written log
 and says nothing about concurrent writes.
 
+The first version of that step had two defects of its own, both found by it going red on its
+own pull request. It captured cargo's output into a variable under `set -e`, so a non-zero exit
+aborted the step *at the assignment* and discarded the output that would have explained it —
+the run reported `exit code 101` and nothing else. And it selected `-p mnemo-core`, which
+resolves a narrower feature set than the workspace run above it; that is a different
+fingerprint, so cargo rebuilt the crate and its native dependencies from source and spent nine
+minutes on a check that should reuse artifacts and take a second. The step now matches the
+workspace package selection and prints before it evaluates.
+
 ### Changed (2026-09-02) - the README band fence no longer fails on its own generated block
 
 `readme_current_band_version_literals_match_workspace` pins every bare in-band version literal

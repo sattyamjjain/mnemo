@@ -102,9 +102,25 @@ jobs:
       # a green job over a check that never ran more than once.
       - name: Concurrent hash-chain linkage (must run, not merely pass)
         run: |
-          set -euo pipefail
-          out=$(cargo test -p mnemo-core --test concurrent_chain_linkage -- --test-threads=4 2>&1)
-          echo "$out"
+          set -uo pipefail
+          # Package selection deliberately matches the workspace run above.
+          # `-p mnemo-core` on its own resolves a NARROWER feature set, which is
+          # a different fingerprint: cargo rebuilds the crate and its native
+          # dependencies from source. That cost nine minutes for a check that
+          # should reuse artifacts and take a second.
+          set +e
+          out=$(cargo test --workspace --exclude mnemo-python --test concurrent_chain_linkage 2>&1)
+          status=$?
+          set -e
+          # Print BEFORE evaluating anything. Capturing into `$out` under `set -e`
+          # aborts the step at a failing test and discards the output that would
+          # explain it — which is exactly how this step first failed, reporting
+          # `exit code 101` and nothing else.
+          printf '%s\n' "$out"
+          if [ "$status" -ne 0 ]; then
+            echo "::error::the concurrency reproduction did not pass (exit $status)"
+            exit "$status"
+          fi
           line=$(printf '%s\n' "$out" | grep -E '^test result:' | tail -1)
           [ -n "$line" ] || { echo "::error::no test-result line; the reproduction did not run"; exit 1; }
           passed=$(printf '%s' "$line" | sed -E 's/.* ([0-9]+) passed.*/\1/')
