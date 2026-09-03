@@ -1172,7 +1172,7 @@ async fn record_catalog_drift_event(
         None,
     )
     .await;
-    if let Err(e) = engine.storage.insert_event(&event).await {
+    if let Err(e) = engine.storage.append_event_chained(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to record McpToolCatalogDrift audit event");
     }
 }
@@ -1382,54 +1382,118 @@ fn run_capability(sub: &CapabilityCommand) -> Result<(), Box<dyn std::error::Err
 /// cannot turn a tampered log into a passing one. `unresolved` counts records in
 /// a tie group that could not be linked — a real signal, surfaced rather than
 /// smoothed over.
-fn order_ties_by_chain(
+/// Put `records` in **chain** order: head first, then each record that links to
+/// the one before it.
+///
+/// # Why timestamp order is not chain order
+///
+/// `list_memories_by_agent_ordered` sorts `created_at ASC`, and `created_at`
+/// records when a write *started*. Under concurrency that is not the order the
+/// writes were inserted in, and the chain is built against what was inserted.
+/// A write that begins earlier and lands later leaves the two orders permanently
+/// out of step — not just inside a tie group, which is all the previous version
+/// of this function repaired. `verify_chain` defines each link against the
+/// PRECEDING record, so exporting in timestamp order reports a break that is an
+/// artefact of the sort rather than evidence of tampering, and an auditor cannot
+/// tell the two apart. (Sorting by `id` does not help: the ids are UUID-v7 and
+/// within a millisecond the random tail dominates, giving a third order that is
+/// also not write order.)
+///
+/// # This cannot launder a tampered log
+///
+/// * An edited `content` leaves every hash untouched, so the ordering is
+///   unaffected and the verifier still catches the content mismatch.
+/// * A removed record leaves the records after the gap unreachable from the
+///   head. They are counted in `unresolved`, reported to stderr, and emitted in
+///   storage order — where the verifier still fails on them.
+/// * A wholly re-forged chain is not detectable by any hash check. That needs a
+///   signature, which is a different artefact with a different key.
+///
+/// # Cost
+///
+/// The fast path is a single linear pass: if the records already satisfy what
+/// `verify_chain` checks — which is the case for any log written serially, and
+/// for any `--since` slice of one — they are returned untouched. Only a log that
+/// is genuinely out of order pays for the walk, which is quadratic in the number
+/// of records because the link `SHA256(content_hash ‖ predecessor_content_hash)`
+/// cannot be inverted to index a predecessor directly.
+fn order_by_chain(
     records: Vec<mnemo_core::model::memory::MemoryRecord>,
     unresolved: &mut usize,
 ) -> Vec<mnemo_core::model::memory::MemoryRecord> {
     use mnemo_core::hash::compute_chain_hash;
 
-    let mut out = Vec::with_capacity(records.len());
-    let mut i = 0;
-    while i < records.len() {
-        let mut j = i + 1;
-        while j < records.len() && records[j].created_at == records[i].created_at {
-            j += 1;
-        }
-        if j - i == 1 {
-            out.push(records[i].clone());
-            i = j;
-            continue;
-        }
+    let links_to = |r: &mnemo_core::model::memory::MemoryRecord, prev: Option<&[u8]>| -> bool {
+        r.prev_hash.as_deref() == Some(compute_chain_hash(&r.content_hash, prev).as_slice())
+    };
 
-        // A tie group. Walk it by chain link, starting from whichever member
-        // links to the record already emitted (or to nothing, at the head).
-        let mut group: Vec<_> = records[i..j].to_vec();
-        let mut prev_ch: Option<Vec<u8>> = out
-            .last()
-            .map(|r: &mnemo_core::model::memory::MemoryRecord| r.content_hash.clone());
-        let mut ordered = Vec::with_capacity(group.len());
-        while !group.is_empty() {
-            let found = group.iter().position(|r| {
-                r.prev_hash.as_deref()
-                    == Some(compute_chain_hash(&r.content_hash, prev_ch.as_deref()).as_slice())
-            });
-            match found {
-                Some(k) => {
-                    let rec = group.remove(k);
-                    prev_ch = Some(rec.content_hash.clone());
-                    ordered.push(rec);
-                }
-                None => {
-                    // Nothing in the group links here. Emit the rest as-is and
-                    // count them: the verifier will fail on them, correctly.
-                    *unresolved += group.len();
-                    ordered.append(&mut group);
-                    break;
-                }
-            }
+    // Fast path: the records already satisfy what `verify_chain` checks.
+    //
+    // The first record's link is deliberately not checked, exactly as
+    // `verify_chain` does not check it. `--since` hands us a slice whose first
+    // record links to something that was filtered out, and that slice is a
+    // perfectly good export — declaring it broken would make the flag useless.
+    let mut prev: Option<&[u8]> = None;
+    let already = records.iter().enumerate().all(|(i, r)| {
+        let ok = i == 0 || links_to(r, prev);
+        prev = Some(&r.content_hash);
+        ok
+    });
+    if already {
+        return records;
+    }
+
+    // Slow path. Start from the record nothing else follows on from: the head of
+    // whatever chain or slice this is. `links_to(r, None)` finds a true chain
+    // head; a `--since` slice has no such record, so fall back to the one that
+    // is not any other record's successor.
+    let successor_of = |s: &mnemo_core::model::memory::MemoryRecord| -> bool {
+        records
+            .iter()
+            .any(|r| !std::ptr::eq(r, s) && links_to(s, Some(&r.content_hash)))
+    };
+    let start = records
+        .iter()
+        .position(|r| links_to(r, None))
+        .or_else(|| records.iter().position(|r| !successor_of(r)));
+
+    let mut used = vec![false; records.len()];
+    let mut out = Vec::with_capacity(records.len());
+    let mut prev_ch: Option<Vec<u8>> = match start {
+        Some(i) => {
+            used[i] = true;
+            out.push(records[i].clone());
+            Some(records[i].content_hash.clone())
         }
-        out.append(&mut ordered);
-        i = j;
+        // Every record follows some other record: a cycle, or a set with no
+        // beginning. Neither is a chain, and inventing a start would hide it.
+        None => {
+            *unresolved += records.len();
+            return records;
+        }
+    };
+    for _ in 1..records.len() {
+        let found = records
+            .iter()
+            .enumerate()
+            .position(|(i, r)| !used[i] && links_to(r, prev_ch.as_deref()));
+        match found {
+            Some(i) => {
+                used[i] = true;
+                prev_ch = Some(records[i].content_hash.clone());
+                out.push(records[i].clone());
+            }
+            // Nothing links here: the chain stops. Whatever is left is either a
+            // gap in the log or a second chain, and both must reach the verifier
+            // rather than be tidied away.
+            None => break,
+        }
+    }
+    for (i, r) in records.iter().enumerate() {
+        if !used[i] {
+            *unresolved += 1;
+            out.push(r.clone());
+        }
     }
     out
 }
@@ -1465,41 +1529,15 @@ async fn run_audit(
     }
 
     // Put the records in CHAIN order, which is not the same as the storage
-    // layer's order.
-    //
-    // `list_memories_by_agent_ordered` sorts `created_at ASC`, and `created_at`
-    // is not unique: three writes issued back to back land in the same
-    // microsecond and tie. DuckDB then returns them in an arbitrary order
-    // within the tie, and `verify_chain` — which defines each link against the
-    // PRECEDING record — reports a break. That break is an artefact of the
-    // sort, not evidence of tampering, and an auditor cannot tell the two
-    // apart. Sorting by `id` does not help: the ids are UUID-v7, and inside a
-    // single timestamp the random tail dominates, giving a third order that is
-    // also not write order.
-    //
-    // So ties are resolved by following the chain itself, which is the only
-    // thing in the export that actually records the write order.
-    //
-    // This does NOT launder a tampered log into one that verifies:
-    //
-    //   * an edited `content` leaves every hash untouched, so the ordering is
-    //     unaffected and the verifier still catches the content mismatch;
-    //   * a removed record leaves a tie group that cannot be linked, which is
-    //     reported below and still fails verification;
-    //   * a wholly re-forged chain is not detectable by any hash check — that
-    //     needs a signature, which is a different artefact with a different key.
-    //
-    // Only ties are reordered. Records with distinct timestamps keep their
-    // `created_at` order, so the walk is O(sum of tie-group^2) with tie groups
-    // of a handful, not O(n^2) over the whole export.
-    let mut unresolved_ties = 0usize;
-    records = order_ties_by_chain(records, &mut unresolved_ties);
-    if unresolved_ties > 0 {
+    // layer's `created_at ASC`. See `order_by_chain` for why, and for why this
+    // cannot turn a tampered log into one that verifies.
+    let mut unlinked = 0usize;
+    records = order_by_chain(records, &mut unlinked);
+    if unlinked > 0 {
         eprintln!(
-            "warning: {unresolved_ties} record(s) share a timestamp with others but \
-             could not be linked into the chain. They are emitted in storage order. \
-             This is what a gap in the log looks like from here — verification will \
-             fail, and that failure is real."
+            "warning: {unlinked} record(s) could not be reached by following the chain \
+             from its head. They are emitted in storage order. This is what a gap in the \
+             log looks like from here — verification will fail, and that failure is real."
         );
     }
 
@@ -1645,6 +1683,242 @@ mod catalog_pin_tests {
         assert_eq!(
             attestor.attest(&fingerprints).unwrap(),
             attest::AttestationVerdict::Match
+        );
+    }
+}
+
+/// The export's record ORDER is a correctness property, not a cosmetic one:
+/// each chain link is defined against the preceding record, so a file emitted in
+/// the wrong order fails verification for a reason that has nothing to do with
+/// tampering — and an auditor cannot tell those two apart.
+#[cfg(test)]
+mod export_order_tests {
+    use super::order_by_chain;
+
+    /// A chain whose records are handed to the exporter in the WRONG order must
+    /// come out in chain order.
+    ///
+    /// This is the case the previous tie-only walker could not repair: the three
+    /// records have distinct timestamps, so no tie group exists to reorder, and
+    /// yet the timestamp order is not the write order — which is exactly what
+    /// concurrency produces, since `created_at` records when a write started and
+    /// the chain records what was inserted.
+    #[test]
+    fn order_by_chain_repairs_an_out_of_order_export() {
+        use mnemo_core::hash::{compute_chain_hash, compute_content_hash};
+        use mnemo_core::model::memory::{
+            ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+        };
+
+        let agent = "exporter";
+        let mk = |content: &str, ts: &str, prev: Option<&[u8]>| {
+            let ch = compute_content_hash(content, agent, ts);
+            let ph = compute_chain_hash(&ch, prev);
+            MemoryRecord {
+                id: uuid::Uuid::now_v7(),
+                agent_id: agent.to_string(),
+                content: content.to_string(),
+                memory_type: MemoryType::Semantic,
+                scope: Scope::Private,
+                importance: 0.5,
+                tags: vec![],
+                metadata: serde_json::Value::Null,
+                embedding: None,
+                content_hash: ch,
+                prev_hash: Some(ph),
+                source_type: SourceType::Agent,
+                source_id: None,
+                consolidation_state: ConsolidationState::Raw,
+                access_count: 0,
+                org_id: None,
+                thread_id: None,
+                created_at: ts.to_string(),
+                updated_at: ts.to_string(),
+                last_accessed_at: None,
+                expires_at: None,
+                deleted_at: None,
+                decay_rate: None,
+                created_by: None,
+                version: 1,
+                prev_version_id: None,
+                quarantined: false,
+                quarantine_reason: None,
+                decay_function: None,
+            }
+        };
+
+        // Written a, b, c — but `created_at` says c, a, b, which is the order the
+        // storage layer will hand them over in.
+        let a = mk("first written", "2026-09-02T00:00:05+00:00", None);
+        let b = mk(
+            "second written",
+            "2026-09-02T00:00:09+00:00",
+            Some(&a.content_hash),
+        );
+        let c = mk(
+            "third written",
+            "2026-09-02T00:00:01+00:00",
+            Some(&b.content_hash),
+        );
+
+        let mut by_timestamp = vec![c.clone(), a.clone(), b.clone()];
+        by_timestamp.sort_by(|x, y| x.created_at.cmp(&y.created_at));
+        assert_eq!(
+            by_timestamp[0].content, "third written",
+            "the timestamp sort must actually be wrong, or this test proves nothing"
+        );
+
+        let mut unresolved = 0usize;
+        let ordered = order_by_chain(by_timestamp, &mut unresolved);
+        assert_eq!(unresolved, 0, "every record is reachable from the head");
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|r| r.content.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first written", "second written", "third written"],
+        );
+    }
+
+    /// A record removed from the middle leaves everything after it unreachable.
+    /// Those must be reported and emitted, not quietly dropped — a shorter file
+    /// that verifies is the one outcome an audit export must never produce.
+    #[test]
+    fn order_by_chain_reports_records_it_cannot_reach() {
+        use mnemo_core::hash::{compute_chain_hash, compute_content_hash};
+        use mnemo_core::model::memory::{
+            ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+        };
+
+        let agent = "exporter";
+        let mk = |content: &str, ts: &str, prev: Option<&[u8]>| {
+            let ch = compute_content_hash(content, agent, ts);
+            let ph = compute_chain_hash(&ch, prev);
+            MemoryRecord {
+                id: uuid::Uuid::now_v7(),
+                agent_id: agent.to_string(),
+                content: content.to_string(),
+                memory_type: MemoryType::Semantic,
+                scope: Scope::Private,
+                importance: 0.5,
+                tags: vec![],
+                metadata: serde_json::Value::Null,
+                embedding: None,
+                content_hash: ch,
+                prev_hash: Some(ph),
+                source_type: SourceType::Agent,
+                source_id: None,
+                consolidation_state: ConsolidationState::Raw,
+                access_count: 0,
+                org_id: None,
+                thread_id: None,
+                created_at: ts.to_string(),
+                updated_at: ts.to_string(),
+                last_accessed_at: None,
+                expires_at: None,
+                deleted_at: None,
+                decay_rate: None,
+                created_by: None,
+                version: 1,
+                prev_version_id: None,
+                quarantined: false,
+                quarantine_reason: None,
+                decay_function: None,
+            }
+        };
+
+        let a = mk("kept", "2026-09-02T00:00:01+00:00", None);
+        let b = mk(
+            "removed",
+            "2026-09-02T00:00:02+00:00",
+            Some(&a.content_hash),
+        );
+        let c = mk(
+            "orphaned by the removal",
+            "2026-09-02T00:00:03+00:00",
+            Some(&b.content_hash),
+        );
+
+        let mut unresolved = 0usize;
+        let ordered = order_by_chain(vec![a, c], &mut unresolved);
+        assert_eq!(unresolved, 1, "the orphan must be counted, not dropped");
+        assert_eq!(ordered.len(), 2, "and still emitted");
+        assert_eq!(ordered[1].content, "orphaned by the removal");
+    }
+
+    /// `--since` hands the exporter a slice whose first record links to
+    /// something that was filtered out. That slice is a perfectly good export —
+    /// `verify_chain` does not check the first record's link either — and it
+    /// must come back untouched rather than be declared unreachable.
+    #[test]
+    fn order_by_chain_leaves_a_since_slice_alone() {
+        use mnemo_core::hash::{compute_chain_hash, compute_content_hash};
+        use mnemo_core::model::memory::{
+            ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType,
+        };
+
+        let agent = "exporter";
+        let mk = |content: &str, ts: &str, prev: Option<&[u8]>| {
+            let ch = compute_content_hash(content, agent, ts);
+            let ph = compute_chain_hash(&ch, prev);
+            MemoryRecord {
+                id: uuid::Uuid::now_v7(),
+                agent_id: agent.to_string(),
+                content: content.to_string(),
+                memory_type: MemoryType::Semantic,
+                scope: Scope::Private,
+                importance: 0.5,
+                tags: vec![],
+                metadata: serde_json::Value::Null,
+                embedding: None,
+                content_hash: ch,
+                prev_hash: Some(ph),
+                source_type: SourceType::Agent,
+                source_id: None,
+                consolidation_state: ConsolidationState::Raw,
+                access_count: 0,
+                org_id: None,
+                thread_id: None,
+                created_at: ts.to_string(),
+                updated_at: ts.to_string(),
+                last_accessed_at: None,
+                expires_at: None,
+                deleted_at: None,
+                decay_rate: None,
+                created_by: None,
+                version: 1,
+                prev_version_id: None,
+                quarantined: false,
+                quarantine_reason: None,
+                decay_function: None,
+            }
+        };
+
+        let a = mk("before the cutoff", "2026-09-02T00:00:01+00:00", None);
+        let b = mk(
+            "after the cutoff",
+            "2026-09-02T00:00:02+00:00",
+            Some(&a.content_hash),
+        );
+        let c = mk(
+            "also after",
+            "2026-09-02T00:00:03+00:00",
+            Some(&b.content_hash),
+        );
+
+        // `--since` dropped `a`.
+        let mut unresolved = 0usize;
+        let ordered = order_by_chain(vec![b, c], &mut unresolved);
+        assert_eq!(
+            unresolved, 0,
+            "a --since slice is not a gap in the log and must not be reported as one"
+        );
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|r| r.content.as_str())
+                .collect::<Vec<_>>(),
+            vec!["after the cutoff", "also after"],
         );
     }
 }

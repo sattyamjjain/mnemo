@@ -7,6 +7,8 @@
 
 **On-prem, MCP-native, cryptographically-auditable memory for regulated AI** (EU AI Act Art.12 · India DPDP · HIPAA §164.312(b)).
 
+Mnemo runs on your own infrastructure and writes a memory log an auditor can verify offline, without trusting the store or any hosted tier — see [Positioning](docs/POSITIONING.md) for how that compares to Mem0 and Letta.
+
 📖 **Documentation:** <https://sattyamjjain.github.io/mnemo/> — the full mdBook (quickstart, architecture, MCP tool reference, REST/SDK guides, compliance docs), deployed from [`docs/`](docs/) on every push to `main`.
 
 Mnemo (from Greek *mneme* — memory) is an **embedded** database (DuckDB in-process, or your own PostgreSQL) whose primitives — **REMEMBER**, **RECALL**, **FORGET**, **SHARE** — are exposed as [MCP](https://modelcontextprotocol.io/) tools any AI agent connects to directly. What sets it apart for regulated deployments: every write and delete is a **SHA-256 hash-chained `agent_events` entry an external verifier can check offline** (no store, no hosted tier to trust), and [`mnemo-compliance`](crates/mnemo-compliance) layers signed audit-log export + DPDPA consent records on top.
@@ -37,6 +39,11 @@ confirms `forget` appends a signed delete event rather than erasing the trail:
 cargo run --release -p mnemo-audit-conformance-bench
 # → bench/audit_conformance/results/conformance.md  (byte-stable report + recomputable SHA-256 crypto vector)
 ```
+
+Scope of that 256: the bench writes its chain one record at a time, so the figure
+covers mutation of a serially-written log and says nothing about concurrent
+writes — those are covered separately, and structurally rather than statistically,
+by [`concurrent_chain_linkage.rs`](crates/mnemo-core/tests/concurrent_chain_linkage.rs).
 
 **Reproducible-by-disclosure memory:** mnemo publishes its LoCoMo numbers with a
 fixed seed + a Wilson-95 you can re-run offline (`cargo run --release -p
@@ -249,7 +256,7 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (released): **`v0.5.28`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (unreleased target): **`v0.5.29`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
@@ -299,7 +306,7 @@ docs.
 <!-- BEGIN generated: published-crate-roster -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. All **21** published `mnemo-*` crates are on **`v0.5.28`**, the current workspace version — verified against the live registry when this block was generated, not asserted.
+Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. Of the **21** published `mnemo-*` crates, **21** are not yet on the workspace version `v0.5.29`: `mnemo-admin` (`0.5.28`), `mnemo-amp` (`0.5.28`), `mnemo-attention-state` (`0.5.28`), `mnemo-baseline` (`0.5.28`), `mnemo-cma` (`0.5.28`), `mnemo-codemode` (`0.5.28`), `mnemo-compliance` (`0.5.28`), `mnemo-core` (`0.5.28`), `mnemo-db` (`0.5.28`), `mnemo-deal` (`0.5.28`), `mnemo-embeddings-bench` (`0.5.28`), `mnemo-graph` (`0.5.28`), `mnemo-grpc` (`0.5.28`), `mnemo-letta` (`0.5.28`), `mnemo-mcp` (`0.5.28`), `mnemo-mcp-server` (`0.5.28`), `mnemo-md-sync` (`0.5.28`), `mnemo-mesh` (`0.5.28`), `mnemo-pgwire` (`0.5.28`), `mnemo-postgres` (`0.5.28`), `mnemo-rest` (`0.5.28`). That is either a release in flight or a stranded crate; [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) distinguishes the two by naming the crates rather than reporting a total.
 
 The 21 are `mnemo-admin`, `mnemo-amp`, `mnemo-attention-state`, `mnemo-baseline`, `mnemo-cma`, `mnemo-codemode`, `mnemo-compliance`, `mnemo-core`, `mnemo-db`, `mnemo-deal`, `mnemo-embeddings-bench`, `mnemo-graph`, `mnemo-grpc`, `mnemo-letta`, `mnemo-mcp`, `mnemo-mcp-server`, `mnemo-md-sync`, `mnemo-mesh`, `mnemo-pgwire`, `mnemo-postgres` and `mnemo-rest`.
 
@@ -644,7 +651,7 @@ pip install mnemo-db
 <!-- BEGIN generated: python-sdk-compat -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.28`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
+> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.28`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`. The workspace is currently `v0.5.29` and PyPI is `v0.5.28`: that is an **open release window**, not drift. The version is bumped on merge and published on a tag, so the two differ between those events by design. `pip install mnemo-db` gives `v0.5.28` until `v0.5.29` is tagged.
 >
 > - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.28` *is* `mnemo-core` `v0.5.28`. There is no version-skew question to answer: the engine is the wheel.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.

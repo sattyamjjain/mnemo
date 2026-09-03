@@ -328,17 +328,6 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
     let now = chrono::Utc::now().to_rfc3339();
     for id in &forgotten {
         let event_content_hash = compute_content_hash(&id.to_string(), &agent_id, &now);
-        let prev_event_hash = match engine.storage.get_latest_event_hash(&agent_id, None).await {
-            Ok(hash) => hash,
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
-                None
-            }
-        };
-        let event_prev_hash = Some(crate::hash::compute_chain_hash(
-            &event_content_hash,
-            prev_event_hash.as_deref(),
-        ));
         let event = AgentEvent {
             id: Uuid::now_v7(),
             agent_id: agent_id.clone(),
@@ -357,10 +346,10 @@ pub async fn execute(engine: &MnemoEngine, request: ForgetRequest) -> Result<For
             timestamp: now.clone(),
             logical_clock: 0,
             content_hash: event_content_hash,
-            prev_hash: event_prev_hash,
+            prev_hash: None,
             embedding: None,
         };
-        if let Err(e) = engine.storage.insert_event(&event).await {
+        if let Err(e) = engine.storage.append_event_chained(&event).await {
             tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
         }
 
@@ -498,16 +487,6 @@ pub async fn forget_subject(
                 &agent_id,
                 &now,
             );
-            let prev_hash_raw = engine
-                .storage
-                .get_latest_event_hash(&agent_id, None)
-                .await
-                .ok()
-                .flatten();
-            let event_prev_hash = Some(crate::hash::compute_chain_hash(
-                &content_hash,
-                prev_hash_raw.as_deref(),
-            ));
             let event = AgentEvent {
                 id: Uuid::now_v7(),
                 agent_id: agent_id.clone(),
@@ -529,10 +508,10 @@ pub async fn forget_subject(
                 timestamp: now.clone(),
                 logical_clock: 0,
                 content_hash,
-                prev_hash: event_prev_hash,
+                prev_hash: None,
                 embedding: None,
             };
-            if let Err(e) = engine.storage.insert_event(&event).await {
+            if let Err(e) = engine.storage.append_event_chained(&event).await {
                 tracing::error!(
                     event_id = %event.id,
                     error = %e,

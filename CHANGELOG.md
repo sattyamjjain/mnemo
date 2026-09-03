@@ -149,15 +149,262 @@ per invocation produced `OK: 3 records, chain intact`.
 same agent_id may race on prev_hash lookup"* — but nothing measured it. The standalone
 verifier is what made it visible, which is a point in favour of the artefact existing.
 
-**Not fixed here**, deliberately: serialising the write path is a concurrency change to the
-engine with its own risk, and it is not what this change set is. It is documented in
-`docs/verify-my-log.md` under its own heading, with the honest scope — under concurrency the
-per-record content hashes still catch edits, but the **ordering** guarantee is absent, so
-removal and reordering between racing writes are not detected. Treat the chain guarantee as
-holding for **serialised writes to one `(agent_id, thread_id)`**.
+**Not fixed in that change set**, deliberately: serialising the write path is a concurrency
+change to the engine with its own risk, and it was not what that change set was. It is fixed
+in the entry below.
 
 No compliance claim is made anywhere in this change. mnemo produces a tamper-evident,
 independently verifiable event log; mapping that to an obligation is the reader's to do.
+
+### Disclosure (2026-09-04) - chain ORDER was not guaranteed under concurrent writes, 0.1.0 to 0.5.28
+
+This is the disclosure that belongs beside the fix below, written separately because a defect
+that stood for seven months in a property the project advertises deserves more than a bullet in
+a "Fixed" list.
+
+**The window.** SHA-256 hash chaining shipped in **0.1.0 (2026-02-07)**, the initial release,
+whose notes claimed "SHA-256 hash chain integrity verification". From that release through
+**0.5.28**, chain **order** was not guaranteed for concurrent writes to the same
+`(agent_id, thread_id)`. `remember()` read the chain head and then did TTL resolution, record
+construction, opaque-reasoning detection and encryption before inserting; any two calls that
+overlapped that window read the same head and each wrote itself as a fresh head. Writes issued
+one at a time chained correctly, which is why every worked example and every test in the suite
+looked right.
+
+**What was NOT affected.** Per-record integrity. Each record's
+`content_hash = SHA256(content ‖ agent_id ‖ created_at)` was computed and stored correctly
+throughout, so editing a record's content was detectable then and is detectable now. The
+256-trial single-byte mutation figure measured that property and it stands.
+
+**What WAS affected.** Ordering — which is the property that makes a chain a chain rather than
+a set of hashes. Between racing writes, a removal or a reordering was not detectable. Anyone
+relying on a mnemo log to show *sequence* under concurrent writes, rather than *content*, had
+less than the documentation implied.
+
+**How it was found, which is the part worth writing down.** Not by the test suite. The suite was
+green, and stayed green, for seven months. It was found by writing
+[`docs/verify-my-log.md`](docs/verify-my-log.md) — pointing the standalone Python verifier at
+our own log, through the real MCP surface, with no mnemo code in the loop — and watching it
+reject an untampered file.
+
+The source had *said* so the entire time, and this is checkable rather than rhetorical: commit
+`1daf819`, dated 2026-02-07, carries `get_latest_memory_hash` at line 72 and `insert_memory` at
+line 120 of `remember.rs` — forty-eight lines apart — with the comment *"Concurrent writes for
+the same agent_id may race on prev_hash lookup"* sitting at line 67, directly above the read it
+describes. The defect and the note acknowledging it shipped in the same commit, on day one, and
+neither the note nor seven months of green CI made anyone measure it. A comment is not a
+measurement. The verifier existed precisely so an auditor would not have to trust us, and the
+first thing it did was catch us.
+
+The general lesson is cheap to state and was expensive to learn: **a test suite written by the
+same people who wrote the implementation shares its blind spots.** An independent oracle — one
+that cannot see your assumptions because it does not link your code — is worth more than another
+test. This project now runs one against itself in CI.
+
+### Fixed (2026-09-02) - concurrent writes now chain, and the head was being found the wrong way
+
+The defect deferred above. Reproduced first, as a failing test, then fixed —
+`crates/mnemo-core/tests/concurrent_chain_linkage.rs` fires 16 concurrent `remember()` calls
+at one `(agent_id, thread_id)` and asserts the resulting rows form a single chain with exactly
+one head. The assertions are structural rather than statistical: one head, and every other
+record reachable from it by following links, once. A fork fails. A missing record fails. There
+is no threshold to tune and no flake budget.
+
+**Measured before:** 16 heads, 0 links, on all three chains it checks — the unthreaded event
+chain, the thread-scoped event chain, and the memory chain. (The earlier note recorded 3 heads
+and 0 links from a real MCP session; 16 writers is the same defect with more of it.)
+
+**Measured after:** 1 head, 15 links, no forks, on all three.
+
+**Two causes, and the second only became visible once the first was fixed.**
+
+*1. The read of the chain head and the insert were not atomic.* `remember()` read the head at
+the top and inserted about eighty lines later, with TTL resolution, record construction,
+opaque-reasoning detection and encryption in between. Any two calls overlapping that window
+read the same head, and each wrote itself as a fresh head.
+
+Fixed with one new pair of trait methods —
+`StorageBackend::append_memory_chained` / `append_event_chained` — that own the whole
+read-link-insert sequence, so the racy shape is no longer expressible at a call site. Two
+implementations, because the two backends genuinely need different mechanisms:
+
+- **DuckDB — design (a), a sharded in-process lock** keyed on `(chain, agent_id, thread_id)`.
+  Not a compromise for the embedded backend but the complete answer: DuckDB takes an exclusive
+  file lock for read-write access, so a database has at most one writing process and every
+  appender is a task inside it. Sharded (64 slots) rather than a `HashMap` of per-key locks,
+  which grows without bound and needs an eviction protocol that has to prove nobody holds the
+  lock it is dropping. A **global** lock was rejected outright: it would serialise every agent
+  in the process, which is a worse product than the defect.
+- **PostgreSQL — design (b), `pg_advisory_xact_lock`** on a stable 64-bit key derived from the
+  chain, inside the transaction that does the read and the insert. An in-process lock is
+  useless here: a PostgreSQL database is reached by however many mnemo processes the operator
+  runs, and ordering the appends inside one of them would make the race *rarer* without making
+  it absent — which is the worst of both, because it then survives testing. The advisory lock
+  is released by COMMIT or ROLLBACK, including the rollback a dropped transaction performs, so
+  no path leaks it. Preferred over an optimistic compare-and-swap plus bounded retry: the retry
+  bound is a number that is either too small under contention or too slow when it fires.
+
+*2. The chain head was being found with `ORDER BY <timestamp> DESC LIMIT 1`, which is not the
+tip.* With the lock in place the head count went from 16 to 1 — and the chain still forked, 2
+to 5 records claiming the same predecessor. A record's `created_at` / `timestamp` says when the
+write *started*, not when it was inserted; a write that begins earlier can be inserted after
+one that begins later, and from that moment the largest-timestamp row is no longer the tip.
+Every subsequent append then links to that stale row.
+
+This was **not** a clock-resolution or tie-breaking problem, which is what the shape of it
+suggests: all 16 timestamps were distinct in the runs that forked, and the test reports that
+count on failure so the next person does not spend the same hour on the same wrong hypothesis.
+
+Fixed with a `chain_heads` pointer table — one row per `(chain, agent_id, thread_key)`,
+written inside the same critical section as the insert it describes, read back as a point
+lookup with nothing to order and nothing to tie. Additive on both backends (DuckDB persistence
+version 6 → 7; PostgreSQL `CREATE TABLE IF NOT EXISTS`): an existing database gains an empty
+table, and the first append for each key seeds the tip from the old timestamp-ordered lookup,
+so nothing is backfilled and nothing already written changes meaning. Deleting a record that is
+the current tip clears the pointer, so the next append re-seeds from the live-filtered lookup —
+which is what the pre-`chain_heads` code did after a `forget`, and without it a soft delete of
+the tail would leave the next write linking to a record no longer in the live chain.
+
+**Verified by mutation, in the failing direction, not by inspection.** Removing the DuckDB lock
+reproduces 16 heads and 0 links. Removing the `chain_heads` seed makes the first append after
+an upgrade start a second chain instead of extending the existing one. Removing the PostgreSQL
+advisory lock, against a live database, gives 9 heads and 7 links. Each is a distinct test that
+fails for a distinct reason.
+
+**PostgreSQL is exercised against a live database, not asserted.**
+`crates/mnemo-postgres/tests/concurrent_chain_linkage_pg.rs` is the parity half — the two
+backends fix this with different mechanisms, so the DuckDB result proves nothing about
+PostgreSQL. It skips loudly without `MNEMO_TEST_POSTGRES_URL` and is wired into the existing
+`postgres` CI job, which is the only place it runs. It does **not** prove ordering across
+*processes*: every task shares one pool in one process. What it proves is that the ordering
+comes from the database — there is no in-process lock in the PostgreSQL backend for these tasks
+to be accidentally serialised by.
+
+**A third defect, found by pointing the verifier at the result.** With the chain correct in the
+database, `mnemo audit export` still produced a file the standalone verifier rejected —
+`BROKEN at record index 4`, on an untampered log. The exporter emits in `created_at` order and
+repaired only *tie groups* by following chain links, which was the right fix for the defect it
+was written for. Concurrency is not a tie: a write that starts earlier and is inserted later
+puts the two orders permanently out of step, with every timestamp distinct. `order_by_chain`
+now walks the whole chain from its head, with a linear fast path for a log that is already in
+order (which is every serially-written log, so nothing pays for this that does not need to).
+Records unreachable from the head — what a removal leaves behind — are still counted, reported
+to stderr, and emitted, because a shorter file that verifies is the one thing an audit export
+must never produce.
+
+**One deliberate scope change.** Event appends now use a single chain per agent, where a
+threaded write previously linked to the last event *in its thread*. That is what the only
+event-chain verification path in the tree checks — `verify_event_integrity(agent, None)` walks
+`list_events`, which returns every event for the agent regardless of thread — and the previous
+split made that walk fail on any agent that used more than one thread. Nothing in the tree
+verifies a per-thread event chain. Memory chains remain per-`(agent_id, thread_id)`, where the
+write path and `list_memories_by_agent_ordered` already agreed.
+
+Every append site is routed through the new methods: `remember`, `forget` (delete and redact),
+`recall`, `share`, `merge`, `branch`, `checkpoint`, `consolidate`, `conflict`, `lifecycle`
+(consolidation and the TTL sweep), `reflection` (three sites), the CLI, and `mnemo-amp`.
+`event_builder::build_event` no longer computes `prev_hash` at all — it is assigned at
+insertion time — so pairing it with a bare `insert_event` now stores a null link, which the
+standalone verifier's strict mode reports.
+
+**Still true, and out of scope:** the REST OTLP ingest path writes `agent_events` rows with
+`prev_hash: null`, outside the chain. It did so before this change too. mnemo's own
+`verify_chain` skips the link check on a null `prev_hash`, so those rows pass it silently while
+strict mode calls them a break — the disagreement `--mnemo-compat` exists to surface. Folding
+telemetry ingest into the audit chain is a different decision with different consequences and
+is not made here.
+
+### Measured (2026-09-04) - what the per-key chain lock costs: nothing resolvable
+
+Serialising a write path is exactly the kind of correctness fix that can quietly cost an order
+of magnitude, so the cost was measured instead of argued.
+`cargo run --release -p mnemo-core --example concurrent_append_throughput` — 16 writes, median
+of 9 runs, DuckDB in-memory, release build:
+
+| shape | with the lock (shipped) | lock removed |
+|---|---|---|
+| contended — 16 concurrent writers, one key | **44.29 ms · 361 writes/sec** | 46.35 ms · 345 writes/sec |
+| sharded — 16 concurrent writers, 16 keys | 50.34 ms · 318 writes/sec | 50.33 ms · 318 writes/sec |
+| serial — 16 writes, no concurrency | 42.86 ms · 373 writes/sec | 43.07 ms · 371 writes/sec |
+
+The lock-removed configuration measured *nominally slower* on the contended shape, which is the
+finding: the difference is inside run-to-run variance, so the cost is below what the harness
+resolves.
+
+The reason is more useful than the number. DuckDB storage holds
+`conn: Arc<Mutex<duckdb::Connection>>`, so every database call already serialised on the
+connection; the chain lock wraps work that had no parallelism to lose. The table confirms it
+independently — **contended ≈ serial** (1.03x with the lock, 1.08x without), meaning 16
+concurrent writers to DuckDB were never meaningfully faster than 16 sequential ones. Concurrency
+was not buying throughput on this backend. It was only corrupting chain order.
+
+**Not measured, and not claimed:** PostgreSQL. It uses `pg_advisory_xact_lock` inside the
+inserting transaction and is reached by multiple processes, so its cost profile is different and
+a single-process harness cannot speak to it. Also single-machine, in-memory, and with
+`DeterministicEmbedding` — a real embedder dominates this workload, which shrinks the lock's
+share further rather than growing it.
+
+### Added (2026-09-02) - the reproduction cannot quietly stop running
+
+`ci.yml` runs the concurrency reproduction as its own named step on every PR, on top of the
+workspace test run that already covers it. The point is not to run it twice: it is that
+deleting the file or marking a test `#[ignore]` would leave the workspace run green, and "the
+check is gone" and "the check passes" look identical from a summary line. The step parses the
+test-result line and fails if any test is ignored or if fewer than three ran. Its parser was
+run against the three result lines those cases produce — `1 ignored`, `0 passed`, and cargo's
+"no test target named …" — and is red on all three.
+
+`README.md` gains one line of scope on the 256-trial audit-conformance figure: that bench
+writes its chain one record at a time, so the number covers mutation of a serially-written log
+and says nothing about concurrent writes.
+
+That step went red on its own pull request, twice, and the second failure corrected the
+diagnosis of the first.
+
+It originally captured cargo's output into a variable under `set -e`, so a non-zero exit
+aborted the step *at the assignment* and the `echo` below it never ran: CI reported
+`exit code 101` and nothing else. A guard that hides the evidence it exists to produce is worse
+than no guard, so the first fix made it print before evaluating — and that is the only reason
+the real cause was ever visible.
+
+The real cause was not a failing test. It was **disk**: `ar: unable to copy file
+'…/libduckdb.a'; reason: No space left on device`. Invoking cargo a second time with a
+different target filter gives `libduckdb-sys` a fresh fingerprint, and a second from-source
+DuckDB build does not fit beside the artifacts the first one already wrote. Matching the
+package selection was not enough — the target filter alone re-fingerprints it.
+
+So the step no longer runs cargo at all. The workspace run tees its output to a file and the
+step asserts that each of the three tests appears there as `... ok`. That is cheaper, it cannot
+exhaust the runner, and it is strictly better evidence: it checks the run whose result the job
+actually reports, rather than a second run that might differ from it.
+
+That version then failed too, reporting all three tests missing from a run that had just passed
+them — and the reason is worth writing down, because it is invisible at small scale. It fed the
+log into `grep -q` through a pipe. `grep -q` exits at its first match and closes the pipe, the
+writer dies of SIGPIPE, and under `pipefail` the pipeline reports *that* failure rather than
+grep's success. On a short log the writer finishes before grep exits and nothing goes wrong,
+which is why it passed locally; on the eleven-megabyte log a real workspace run produces, every
+match reads as a miss. `grep` now reads the file directly — no pipeline, nothing for `pipefail`
+to misreport.
+
+Verified at that scale, not at the scale that hid it: with 400,000 lines of trailing output, the
+piped form gives a false miss and the file form does not, and a test `#[ignore]`d, the file
+deleted, a test renamed, and a test present but failed each still turn the step red.
+
+### Changed (2026-09-02) - the README band fence no longer fails on its own generated block
+
+`readme_current_band_version_literals_match_workspace` pins every bare in-band version literal
+in the README to the workspace version. The version bump made it fail on the
+`published-crate-roster` generated block, which correctly lists each crate's published
+`0.5.28` while the workspace has moved on — so the fence would have failed on every release
+window from here.
+
+Generated regions are excluded, by structure rather than by an allowlist entry: the fence
+exists to catch hand-written prose that has gone stale, and a generated block is re-derived
+from the live registry on every run. `scripts/check_readme_version_claims.sh` separately
+requires that release state is asserted **only** inside those markers, so the two guards
+together still leave no gap. Verified by putting a stale hand-written literal outside the
+markers — the fence stays red.
 
 ## [0.5.28] - 2026-08-27
 

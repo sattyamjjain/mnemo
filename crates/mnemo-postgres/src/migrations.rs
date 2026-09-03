@@ -242,6 +242,27 @@ CREATE TABLE IF NOT EXISTS write_provenance (
         .await
         .map_err(|e| Error::Storage(format!("add write_provenance.flags: {e}")))?;
 
+    // v7: chain tips. Mirrors the DuckDB `chain_heads` table — see
+    // `mnemo_core::storage::migrations::CREATE_CHAIN_HEADS_TABLE` for why the
+    // tip is a pointer rather than `ORDER BY timestamp DESC LIMIT 1`. Purely
+    // additive: an existing database gains an empty table and each key is seeded
+    // on its first append.
+    sqlx::query(
+        r#"
+CREATE TABLE IF NOT EXISTS chain_heads (
+    chain VARCHAR NOT NULL,
+    agent_id VARCHAR NOT NULL,
+    thread_key VARCHAR NOT NULL,
+    content_hash BYTEA NOT NULL,
+    updated_at VARCHAR NOT NULL,
+    PRIMARY KEY (chain, agent_id, thread_key)
+)
+"#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| Error::Storage(format!("create chain_heads: {e}")))?;
+
     // ---- Indexes ----
     // sqlx 0.9 gates dynamic SQL behind `SqlSafeStr`; these statements are
     // compile-time literals (no user data), so `AssertSqlSafe` is audited-safe.

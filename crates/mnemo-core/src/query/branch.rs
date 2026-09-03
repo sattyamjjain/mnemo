@@ -105,7 +105,7 @@ pub async fn execute(engine: &MnemoEngine, request: BranchRequest) -> Result<Bra
         Some(request.thread_id),
     )
     .await;
-    if let Err(e) = engine.storage.insert_event(&event).await {
+    if let Err(e) = engine.storage.append_event_chained(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }
 

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::hash::{compute_chain_hash, compute_content_hash};
+use crate::hash::compute_content_hash;
 use crate::model::capability::Capability;
 use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType};
@@ -123,15 +123,13 @@ async fn remember_inner(
     // Compute content hash
     let content_hash = compute_content_hash(&request.content, &agent_id, &now_str);
 
-    // Chain linking: look up prev_hash
-    // NOTE: Concurrent writes for the same agent_id may race on prev_hash lookup.
-    // DuckDB mode serializes via Arc<Mutex<Connection>>. PostgreSQL deployments
-    // should rely on verify_chain() to detect any broken links.
-    let prev_hash_raw = engine
-        .storage
-        .get_latest_memory_hash(&agent_id, request.thread_id.as_deref())
-        .await?;
-    let prev_hash = Some(compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
+    // Chain linking happens at insertion time, inside the storage backend, so
+    // that reading the head and writing the record that names it cannot be
+    // interleaved by another writer. Reading the head here — as this did until
+    // v0.5.29 — left ~80 lines of work between the read and the insert, and
+    // every call that overlapped that window wrote itself as a fresh head. See
+    // `StorageBackend::append_memory_chained`.
+    let prev_hash = None;
 
     // Compute expires_at from ttl_seconds. Working-tier memories get an
     // automatic TTL so they can't outlive their session — caller-supplied
@@ -206,8 +204,11 @@ async fn remember_inner(
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encrypted);
     }
 
-    // Store in database
-    engine.storage.insert_memory(&record).await?;
+    // Store in database. `append_memory_chained` assigns `prev_hash` under the
+    // backend's own mutual exclusion and hands back what it wrote, so the local
+    // copy — which is what the cache and the response carry — agrees with what
+    // is durable.
+    record.prev_hash = Some(engine.storage.append_memory_chained(&record).await?);
 
     // Write provenance: who wrote this, under what authority. The principal is
     // the capability holder if the write was capability-authorised, else the
@@ -270,22 +271,8 @@ async fn remember_inner(
         }
     }
 
-    // Emit MemoryWrite event with hash chain linking (fire-and-forget)
-    let prev_event_hash = match engine
-        .storage
-        .get_latest_event_hash(&agent_id, record.thread_id.as_deref())
-        .await
-    {
-        Ok(hash) => hash,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
-            None
-        }
-    };
-    let event_prev_hash = Some(compute_chain_hash(
-        &content_hash,
-        prev_event_hash.as_deref(),
-    ));
+    // Emit MemoryWrite event (fire-and-forget). `prev_hash` is left unset: the
+    // append assigns it, for the same reason as the memory chain above.
     let mut event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: record.agent_id.clone(),
@@ -304,7 +291,7 @@ async fn remember_inner(
         timestamp: record.created_at.clone(),
         logical_clock: 0,
         content_hash: content_hash.clone(),
-        prev_hash: event_prev_hash,
+        prev_hash: None,
         embedding: None,
     };
     // Optionally embed the event payload
@@ -313,7 +300,7 @@ async fn remember_inner(
     {
         event.embedding = Some(emb);
     }
-    if let Err(e) = engine.storage.insert_event(&event).await {
+    if let Err(e) = engine.storage.append_event_chained(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }
 

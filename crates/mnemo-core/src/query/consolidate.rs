@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::hash::{compute_chain_hash, compute_content_hash};
+use crate::hash::compute_content_hash;
 use crate::model::acl::Permission;
 use crate::model::event::EventType;
 use crate::model::memory::{ConsolidationState, MemoryRecord, MemoryType, Scope, SourceType};
@@ -245,11 +245,6 @@ pub async fn execute(
     let now = chrono::Utc::now().to_rfc3339();
     let id = Uuid::now_v7();
     let content_hash = compute_content_hash(&content_plain, &agent_id, &now);
-    let prev_hash_raw = engine
-        .storage
-        .get_latest_memory_hash(&agent_id, request.thread_id.as_deref())
-        .await?;
-    let prev_hash = Some(compute_chain_hash(&content_hash, prev_hash_raw.as_deref()));
     let importance = members.iter().map(|m| m.importance).fold(0.0_f32, f32::max);
     let scope = members.first().map(|m| m.scope).unwrap_or(Scope::Private);
     let org_id = members
@@ -269,7 +264,7 @@ pub async fn execute(
         metadata,
         embedding: Some(embedding.clone()),
         content_hash: content_hash.clone(),
-        prev_hash,
+        prev_hash: None,
         source_type: SourceType::Consolidation,
         source_id: None,
         consolidation_state: ConsolidationState::Active,
@@ -297,7 +292,7 @@ pub async fn execute(
     }
 
     // --- Persist + index --------------------------------------------------
-    engine.storage.insert_memory(&record).await?;
+    engine.storage.append_memory_chained(&record).await?;
     engine.index.add(id, &embedding)?;
     if let Some(ref ft) = engine.full_text {
         ft.add(id, &record.content)?;
@@ -360,7 +355,11 @@ pub async fn execute(
     )
     .await;
     let consolidation_event_id = consolidation_event.id;
-    if let Err(e) = engine.storage.insert_event(&consolidation_event).await {
+    if let Err(e) = engine
+        .storage
+        .append_event_chained(&consolidation_event)
+        .await
+    {
         tracing::error!(event_id = %consolidation_event.id, error = %e, "failed to insert consolidation event");
     }
 
@@ -379,7 +378,7 @@ pub async fn execute(
         )
         .await;
         let rid = revision_event.id;
-        if let Err(e) = engine.storage.insert_event(&revision_event).await {
+        if let Err(e) = engine.storage.append_event_chained(&revision_event).await {
             tracing::error!(event_id = %revision_event.id, error = %e, "failed to insert revision event");
         }
         Some(rid)

@@ -10,6 +10,7 @@ use mnemo_core::model::relation::Relation;
 use mnemo_core::model::write_provenance::{
     WriteOp, WriteProvenance, flags_from_storage, flags_to_storage,
 };
+use mnemo_core::storage::chain_lock::{Chain, advisory_key, chain_name, thread_key};
 use mnemo_core::storage::{MemoryFilter, StorageBackend};
 use pgvector::Vector;
 use sqlx::Row;
@@ -21,6 +22,13 @@ use uuid::Uuid;
 /// Embeddings are stored using the pgvector `vector` column type, while
 /// event embeddings are stored as `BYTEA` (serialised `Vec<f32>` in
 /// little-endian byte order), matching the DuckDB backend convention.
+/// Drop the recorded memory-chain tip if it names `id`. See the DuckDB
+/// `RETIRE_MEMORY_CHAIN_HEAD` for why: a retired record leaves the live chain,
+/// and the memory head lookup has always filtered `deleted_at IS NULL`, so the
+/// next append must re-seed rather than link to it.
+const RETIRE_MEMORY_CHAIN_HEAD: &str = "DELETE FROM chain_heads WHERE chain = 'memory' \
+     AND content_hash IN (SELECT content_hash FROM memories WHERE id = $1)";
+
 pub struct PgStorage {
     pool: sqlx::PgPool,
     dimensions: usize,
@@ -491,66 +499,7 @@ FROM write_provenance ORDER BY id ASC LIMIT $1
     // -----------------------------------------------------------------------
 
     async fn insert_memory(&self, record: &MemoryRecord) -> Result<()> {
-        let embedding_param: Option<Vector> =
-            record.embedding.as_ref().map(|v| Vector::from(v.clone()));
-
-        let tags_slice: &[String] = &record.tags;
-
-        sqlx::query(
-            r#"
-INSERT INTO memories (
-    id, agent_id, content, memory_type, scope, importance,
-    tags, metadata, embedding,
-    content_hash, prev_hash, source_type, source_id,
-    consolidation_state, access_count, org_id, thread_id,
-    created_at, updated_at, last_accessed_at, expires_at,
-    deleted_at, decay_rate, created_by, version, prev_version_id,
-    quarantined, quarantine_reason, decay_function
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9,
-    $10, $11, $12, $13,
-    $14, $15, $16, $17,
-    $18, $19, $20, $21,
-    $22, $23, $24, $25, $26,
-    $27, $28, $29
-)
-"#,
-        )
-        .bind(record.id)
-        .bind(&record.agent_id)
-        .bind(&record.content)
-        .bind(record.memory_type.to_string())
-        .bind(record.scope.to_string())
-        .bind(record.importance)
-        .bind(tags_slice)
-        .bind(&record.metadata)
-        .bind(&embedding_param)
-        .bind(&record.content_hash)
-        .bind(&record.prev_hash)
-        .bind(record.source_type.to_string())
-        .bind(&record.source_id)
-        .bind(record.consolidation_state.to_string())
-        .bind(record.access_count as i64)
-        .bind(&record.org_id)
-        .bind(&record.thread_id)
-        .bind(&record.created_at)
-        .bind(&record.updated_at)
-        .bind(&record.last_accessed_at)
-        .bind(&record.expires_at)
-        .bind(&record.deleted_at)
-        .bind(record.decay_rate)
-        .bind(&record.created_by)
-        .bind(record.version as i32)
-        .bind(record.prev_version_id)
-        .bind(record.quarantined)
-        .bind(&record.quarantine_reason)
-        .bind(&record.decay_function)
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
-
-        Ok(())
+        insert_memory_on(&self.pool, record).await
     }
 
     async fn get_memory(&self, id: Uuid) -> Result<Option<MemoryRecord>> {
@@ -628,6 +577,11 @@ WHERE id = $28
     }
 
     async fn soft_delete_memory(&self, id: Uuid) -> Result<()> {
+        sqlx::query(RETIRE_MEMORY_CHAIN_HEAD)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
             "UPDATE memories SET deleted_at = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL",
@@ -648,6 +602,11 @@ WHERE id = $28
     }
 
     async fn hard_delete_memory(&self, id: Uuid) -> Result<()> {
+        sqlx::query(RETIRE_MEMORY_CHAIN_HEAD)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
         let result = sqlx::query("DELETE FROM memories WHERE id = $1")
             .bind(id)
             .execute(&self.pool)
@@ -995,6 +954,135 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
         Ok(row.map(|r| r.get::<Vec<u8>, _>("content_hash")))
     }
 
+    async fn append_memory_chained(&self, record: &MemoryRecord) -> Result<Vec<u8>> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx)?;
+        // Design (b) — the database arbitrates, because this process cannot.
+        //
+        // A PostgreSQL database is reached by however many mnemo processes the
+        // operator runs. An in-process lock would order the appends inside one
+        // of them and do nothing about the others, which is worse than no fix:
+        // it makes the race rarer without making it absent, so it survives
+        // testing and shows up in production.
+        //
+        // `pg_advisory_xact_lock` is held until COMMIT or ROLLBACK — including
+        // the rollback that dropping the transaction performs — so no path leaks
+        // it. It is preferred to an optimistic compare-and-swap plus bounded
+        // retry because the retry bound is a number that is either too small
+        // under contention or too slow when it fires, and because the CAS would
+        // be against the same `chain_heads` row this already holds a lock over.
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(advisory_key(
+                Chain::Memory,
+                &record.agent_id,
+                record.thread_id.as_deref(),
+            ))
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx)?;
+
+        let key = thread_key(Chain::Memory, record.thread_id.as_deref());
+        let mut head: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT content_hash FROM chain_heads WHERE chain = $1 AND agent_id = $2 AND thread_key = $3",
+        )
+        .bind(chain_name(Chain::Memory))
+        .bind(&record.agent_id)
+        .bind(&key)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx)?;
+
+        // First append for this key: seed the tip from the pre-`chain_heads`
+        // lookup, which is the only record of order a legacy database has.
+        if head.is_none() {
+            head = if let Some(tid) = record.thread_id.as_deref() {
+                sqlx::query_scalar(
+                    "SELECT content_hash FROM memories WHERE agent_id = $1 AND thread_id = $2 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+                )
+                .bind(&record.agent_id)
+                .bind(tid)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx)?
+            } else {
+                sqlx::query_scalar(
+                    "SELECT content_hash FROM memories WHERE agent_id = $1 AND thread_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+                )
+                .bind(&record.agent_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx)?
+            };
+        }
+
+        let prev = mnemo_core::hash::compute_chain_hash(&record.content_hash, head.as_deref());
+        let mut linked = record.clone();
+        linked.prev_hash = Some(prev.clone());
+        insert_memory_on(&mut *tx, &linked).await?;
+        upsert_chain_head(
+            &mut *tx,
+            Chain::Memory,
+            &record.agent_id,
+            &key,
+            &record.content_hash,
+            &record.created_at,
+        )
+        .await?;
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(prev)
+    }
+
+    async fn append_event_chained(&self, event: &AgentEvent) -> Result<Vec<u8>> {
+        let mut tx = self.pool.begin().await.map_err(map_sqlx)?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(advisory_key(
+                Chain::Event,
+                &event.agent_id,
+                event.thread_id.as_deref(),
+            ))
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx)?;
+
+        let key = thread_key(Chain::Event, event.thread_id.as_deref());
+        let mut head: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT content_hash FROM chain_heads WHERE chain = $1 AND agent_id = $2 AND thread_key = $3",
+        )
+        .bind(chain_name(Chain::Event))
+        .bind(&event.agent_id)
+        .bind(&key)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sqlx)?;
+
+        if head.is_none() {
+            // Agent-wide, matching `thread_key(Chain::Event, _)` and the walk
+            // that `verify_event_integrity(agent, None)` performs.
+            head = sqlx::query_scalar(
+                "SELECT content_hash FROM agent_events WHERE agent_id = $1 ORDER BY \"timestamp\" DESC LIMIT 1",
+            )
+            .bind(&event.agent_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_sqlx)?;
+        }
+
+        let prev = mnemo_core::hash::compute_chain_hash(&event.content_hash, head.as_deref());
+        let mut linked = event.clone();
+        linked.prev_hash = Some(prev.clone());
+        insert_event_on(&mut *tx, &linked).await?;
+        upsert_chain_head(
+            &mut *tx,
+            Chain::Event,
+            &event.agent_id,
+            &key,
+            &event.content_hash,
+            &event.timestamp,
+        )
+        .await?;
+        tx.commit().await.map_err(map_sqlx)?;
+        Ok(prev)
+    }
+
     async fn get_sync_watermark(&self, key: &str) -> Result<Option<String>> {
         let row = sqlx::query("SELECT value FROM sync_metadata WHERE key = $1")
             .bind(key)
@@ -1056,47 +1144,7 @@ LIMIT $4
     // -----------------------------------------------------------------------
 
     async fn insert_event(&self, event: &AgentEvent) -> Result<()> {
-        let payload_json = &event.payload;
-        let embedding_blob = serialize_embedding(&event.embedding);
-
-        sqlx::query(
-            r#"
-INSERT INTO agent_events (
-    id, agent_id, thread_id, run_id, parent_event_id, event_type,
-    payload, trace_id, span_id, model, tokens_input, tokens_output,
-    latency_ms, cost_usd, "timestamp", logical_clock, content_hash,
-    prev_hash, embedding
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11, $12,
-    $13, $14, $15, $16, $17,
-    $18, $19
-)
-"#,
-        )
-        .bind(event.id)
-        .bind(&event.agent_id)
-        .bind(&event.thread_id)
-        .bind(&event.run_id)
-        .bind(event.parent_event_id)
-        .bind(event.event_type.to_string())
-        .bind(payload_json)
-        .bind(&event.trace_id)
-        .bind(&event.span_id)
-        .bind(&event.model)
-        .bind(event.tokens_input)
-        .bind(event.tokens_output)
-        .bind(event.latency_ms)
-        .bind(event.cost_usd)
-        .bind(&event.timestamp)
-        .bind(event.logical_clock)
-        .bind(&event.content_hash)
-        .bind(&event.prev_hash)
-        .bind(&embedding_blob)
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
-        Ok(())
+        insert_event_on(&self.pool, event).await
     }
 
     async fn list_events(
@@ -1661,4 +1709,143 @@ LIMIT 1
             None => Ok(None),
         }
     }
+}
+
+async fn insert_memory_on<'e, E: sqlx::PgExecutor<'e>>(
+    exec: E,
+    record: &MemoryRecord,
+) -> Result<()> {
+    let embedding_param: Option<Vector> =
+        record.embedding.as_ref().map(|v| Vector::from(v.clone()));
+
+    let tags_slice: &[String] = &record.tags;
+
+    sqlx::query(
+        r#"
+INSERT INTO memories (
+    id, agent_id, content, memory_type, scope, importance,
+    tags, metadata, embedding,
+    content_hash, prev_hash, source_type, source_id,
+    consolidation_state, access_count, org_id, thread_id,
+    created_at, updated_at, last_accessed_at, expires_at,
+    deleted_at, decay_rate, created_by, version, prev_version_id,
+    quarantined, quarantine_reason, decay_function
+) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9,
+    $10, $11, $12, $13,
+    $14, $15, $16, $17,
+    $18, $19, $20, $21,
+    $22, $23, $24, $25, $26,
+    $27, $28, $29
+)
+"#,
+    )
+    .bind(record.id)
+    .bind(&record.agent_id)
+    .bind(&record.content)
+    .bind(record.memory_type.to_string())
+    .bind(record.scope.to_string())
+    .bind(record.importance)
+    .bind(tags_slice)
+    .bind(&record.metadata)
+    .bind(&embedding_param)
+    .bind(&record.content_hash)
+    .bind(&record.prev_hash)
+    .bind(record.source_type.to_string())
+    .bind(&record.source_id)
+    .bind(record.consolidation_state.to_string())
+    .bind(record.access_count as i64)
+    .bind(&record.org_id)
+    .bind(&record.thread_id)
+    .bind(&record.created_at)
+    .bind(&record.updated_at)
+    .bind(&record.last_accessed_at)
+    .bind(&record.expires_at)
+    .bind(&record.deleted_at)
+    .bind(record.decay_rate)
+    .bind(&record.created_by)
+    .bind(record.version as i32)
+    .bind(record.prev_version_id)
+    .bind(record.quarantined)
+    .bind(&record.quarantine_reason)
+    .bind(&record.decay_function)
+    .execute(exec)
+    .await
+    .map_err(map_sqlx)?;
+
+    Ok(())
+}
+
+async fn insert_event_on<'e, E: sqlx::PgExecutor<'e>>(exec: E, event: &AgentEvent) -> Result<()> {
+    let payload_json = &event.payload;
+    let embedding_blob = serialize_embedding(&event.embedding);
+
+    sqlx::query(
+        r#"
+INSERT INTO agent_events (
+    id, agent_id, thread_id, run_id, parent_event_id, event_type,
+    payload, trace_id, span_id, model, tokens_input, tokens_output,
+    latency_ms, cost_usd, "timestamp", logical_clock, content_hash,
+    prev_hash, embedding
+) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11, $12,
+    $13, $14, $15, $16, $17,
+    $18, $19
+)
+"#,
+    )
+    .bind(event.id)
+    .bind(&event.agent_id)
+    .bind(&event.thread_id)
+    .bind(&event.run_id)
+    .bind(event.parent_event_id)
+    .bind(event.event_type.to_string())
+    .bind(payload_json)
+    .bind(&event.trace_id)
+    .bind(&event.span_id)
+    .bind(&event.model)
+    .bind(event.tokens_input)
+    .bind(event.tokens_output)
+    .bind(event.latency_ms)
+    .bind(event.cost_usd)
+    .bind(&event.timestamp)
+    .bind(event.logical_clock)
+    .bind(&event.content_hash)
+    .bind(&event.prev_hash)
+    .bind(&embedding_blob)
+    .execute(exec)
+    .await
+    .map_err(map_sqlx)?;
+    Ok(())
+}
+
+/// Record a chain tip. Runs inside the transaction that inserted the record it
+/// describes, so the tip and the row it names commit together or not at all.
+async fn upsert_chain_head<'e, E: sqlx::PgExecutor<'e>>(
+    exec: E,
+    chain: Chain,
+    agent_id: &str,
+    thread_key: &str,
+    content_hash: &[u8],
+    updated_at: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+INSERT INTO chain_heads (chain, agent_id, thread_key, content_hash, updated_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (chain, agent_id, thread_key)
+DO UPDATE SET content_hash = EXCLUDED.content_hash, updated_at = EXCLUDED.updated_at
+"#,
+    )
+    .bind(chain_name(chain))
+    .bind(agent_id)
+    .bind(thread_key)
+    .bind(content_hash)
+    .bind(updated_at)
+    .execute(exec)
+    .await
+    .map_err(map_sqlx)?;
+    Ok(())
 }

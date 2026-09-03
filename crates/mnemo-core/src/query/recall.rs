@@ -900,17 +900,6 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     // Emit MemoryRead event with hash chain linking (fire-and-forget)
     let now = chrono::Utc::now().to_rfc3339();
     let event_content_hash = compute_content_hash(&request.query, &agent_id, &now);
-    let prev_event_hash = match engine.storage.get_latest_event_hash(&agent_id, None).await {
-        Ok(hash) => hash,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to get latest event hash, starting new chain segment");
-            None
-        }
-    };
-    let event_prev_hash = Some(crate::hash::compute_chain_hash(
-        &event_content_hash,
-        prev_event_hash.as_deref(),
-    ));
     let mut event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: agent_id.clone(),
@@ -933,7 +922,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
         timestamp: now.clone(),
         logical_clock: 0,
         content_hash: event_content_hash,
-        prev_hash: event_prev_hash,
+        prev_hash: None,
         embedding: None,
     };
     // Optionally embed the event payload
@@ -942,7 +931,7 @@ pub async fn execute(engine: &MnemoEngine, request: RecallRequest) -> Result<Rec
     {
         event.embedding = Some(emb);
     }
-    if let Err(e) = engine.storage.insert_event(&event).await {
+    if let Err(e) = engine.storage.append_event_chained(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "failed to insert audit event");
     }
 

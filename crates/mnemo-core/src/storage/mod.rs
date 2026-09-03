@@ -1,3 +1,4 @@
+pub mod chain_lock;
 pub mod cold;
 pub mod duckdb;
 pub mod migrations;
@@ -58,6 +59,13 @@ pub trait StorageBackend: Send + Sync {
     async fn delete_relation(&self, id: Uuid) -> Result<()>;
 
     // Chain linking
+    //
+    // `get_latest_*_hash` reads a chain head and nothing more. On its own it
+    // cannot be used to append: between the read and the matching insert another
+    // writer can advance the head, and both writers then link to the same
+    // predecessor — or, when the head was empty, both write themselves as heads.
+    // Use `append_*_chained` to append. These stay public because reading a head
+    // is a legitimate query in its own right.
     async fn get_latest_memory_hash(
         &self,
         agent_id: &str,
@@ -68,6 +76,35 @@ pub trait StorageBackend: Send + Sync {
         agent_id: &str,
         thread_id: Option<&str>,
     ) -> Result<Option<Vec<u8>>>;
+
+    /// Append `record` to its chain, assigning `prev_hash` from the head that is
+    /// current at the moment of insertion. Returns the `prev_hash` written, so
+    /// the caller can bring its in-memory copy into agreement with what is now
+    /// durable. `record.prev_hash` is ignored on input.
+    ///
+    /// # Contract
+    ///
+    /// The read of the head and the insert must be atomic with respect to other
+    /// appends that could observe or advance the same head. Concretely: N
+    /// concurrent appends to one chain must yield N-1 links and exactly one
+    /// head, for every interleaving. A backend that cannot guarantee that must
+    /// return an error rather than silently degrade — a forked chain still
+    /// passes per-record hash checks, so the failure is invisible downstream,
+    /// which is precisely why this is a trait obligation and not a convention.
+    ///
+    /// # Why one method and not a lock primitive
+    ///
+    /// The two backends need different mechanisms — an in-process lock is
+    /// sufficient and complete for an embedded single-writer store, and useless
+    /// for a shared PostgreSQL reached by several processes. Exposing a lock
+    /// would force the caller to pick, and the caller does not know which store
+    /// it is talking to. Exposing the whole critical section lets each backend
+    /// answer in its own terms.
+    async fn append_memory_chained(&self, record: &MemoryRecord) -> Result<Vec<u8>>;
+
+    /// [`append_memory_chained`](Self::append_memory_chained) for the
+    /// `agent_events` chain. `event.prev_hash` is ignored on input.
+    async fn append_event_chained(&self, event: &AgentEvent) -> Result<Vec<u8>>;
 
     // Sync watermarks
     async fn get_sync_watermark(&self, key: &str) -> Result<Option<String>>;

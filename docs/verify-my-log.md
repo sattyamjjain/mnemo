@@ -24,9 +24,9 @@ and satisfy yourself about that, which is the entire point.
 
 ## 1. Write three records
 
-Any write path works; this uses the MCP tool surface. Note that each record is
-written by its own invocation — see [the concurrency
-caveat](#a-caveat-that-this-page-found) below, which matters.
+Any write path works; this uses the MCP tool surface. One invocation per record
+here is incidental — concurrent writes chain too, which was [not true when this
+page was written](#what-writing-this-page-found).
 
 ```bash
 for C in "Consent obtained from data subject 4471 on 2026-09-01." \
@@ -131,18 +131,20 @@ Stated plainly, because a verifier oversold is worse than none:
   attestation. A writer choosing its own clock is bound to that choice, not to
   its truth.
 
-## A caveat that this page found
+## What writing this page found
 
 Writing the page surfaced a real defect, so it is recorded here rather than
-quietly worked around.
+quietly worked around. It is fixed as of v0.5.29; the account stays because a
+page that only ever shows things working is not evidence.
 
-**Concurrent writes do not chain.** `remember()` reads the current chain head
-and then inserts. Three `tools/call` requests issued in one MCP session are
-processed concurrently, all three read the same head, and all three are written
-as chain *heads* — `prev_hash = SHA256(content_hash)` with no predecessor. The
-result is three unlinked records rather than a chain of three.
+**Concurrent writes did not chain.** `remember()` read the current chain head and
+then inserted, with the record's construction, TTL resolution and encryption in
+between. Three `tools/call` requests issued in one MCP session are processed
+concurrently, all three read the same head, and all three were written as chain
+*heads* — `prev_hash = SHA256(content_hash)` with no predecessor. The result was
+three unlinked records rather than a chain of three.
 
-The source has always said so — *"Concurrent writes for the same agent_id may
+The source had always said so — *"Concurrent writes for the same agent_id may
 race on prev_hash lookup"* in `crates/mnemo-core/src/query/remember.rs` — but
 nothing measured it, and the standalone verifier is what made it visible:
 
@@ -153,23 +155,46 @@ BROKEN at record index 1
 ```
 
 That failure came from an untampered log. Under concurrency the content hashes
-still protect each record individually — an edit is still caught — but the
-*ordering* guarantee is not there, so removal and reordering are not detected
-between racing writes.
+still protected each record individually — an edit was still caught — but the
+*ordering* guarantee was absent, so removal and reordering between racing writes
+were not detected.
 
-Until that is fixed, treat the chain guarantee as holding for **serialised
-writes to one `(agent_id, thread_id)`**. The step-1 loop above uses one
-invocation per record for exactly this reason.
+**What the fix turned out to be.** Serialising the read-and-insert per
+`(agent_id, thread_id)` took the head count from 16 to 1 at 16 concurrent
+writes — and the chain still forked. The second cause is more interesting than
+the first: the head was being found with `ORDER BY <timestamp> DESC LIMIT 1`, and
+a write's timestamp records when it *started*, not when it was inserted. A write
+that begins earlier can be inserted after one that begins later, and from that
+moment the largest-timestamp row is no longer the tip; every later append links
+to that stale row and the chain forks. All 16 timestamps were distinct, so this
+was never a clock-resolution problem. The tip is now recorded in a `chain_heads`
+pointer table, written inside the same critical section as the insert.
 
-**A related sharp edge in the export.** `created_at` has microsecond resolution
-and is not unique — three quick writes tie, and the storage layer's
-`ORDER BY created_at ASC` then returns them in an arbitrary order within the
-tie. Since each link is defined against the *preceding* record, that alone makes
-a clean log fail to verify. The exporter resolves ties by following the chain
-links themselves, which is the only thing in the data that records write order.
+**And the export had the same disease.** With the chain correct in the database,
+`mnemo audit export` still produced a file this verifier rejected — `BROKEN at
+record index 4`, on an untampered log. The exporter emitted in `created_at` order
+and repaired only *tie groups* by following chain links. Concurrency is not a
+tie: every timestamp was distinct and the two orders were still out of step,
+because `created_at` records when a write started and the chain records what was
+inserted. The exporter now walks the whole chain from its head, with a linear
+fast path for a log already in order.
+
 That cannot launder a tampered log: an edited `content` leaves the hashes
-untouched and is still caught, and a removed record leaves a tie group that
-cannot be linked, which the exporter reports and the verifier still fails.
+untouched and is still caught, and a removed record leaves everything after it
+unreachable from the head, which the exporter counts, reports on stderr and emits
+anyway — a shorter file that verifies is the one thing an audit export must never
+produce.
+
+There is a cost worth naming: the reordering walk is quadratic in the number of
+records, because `SHA256(content_hash ‖ predecessor_content_hash)` cannot be
+inverted to index a predecessor directly. Only a log that is genuinely out of
+order pays it.
+
+**Still true, and out of scope of that fix:** an `agent_events` row written by
+the REST OTLP ingest path carries `prev_hash: null` and is therefore outside the
+chain. mnemo's own verifier skips the link check on a null `prev_hash`, so such
+rows pass it silently; the standalone verifier's strict mode calls them a break,
+which is the disagreement `--mnemo-compat` exists to show you.
 
 ## The verifier
 

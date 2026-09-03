@@ -89,7 +89,51 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc (required by mnemo-grpc build script)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - run: cargo test --workspace --exclude mnemo-python
+      - name: Test
+        run: |
+          set -o pipefail
+          cargo test --workspace --exclude mnemo-python 2>&1 | tee /tmp/workspace-tests.log
+
+      # The concurrency reproduction runs inside the workspace test above. This
+      # step asserts it actually RAN and PASSED there, so deleting the file or
+      # marking a test `#[ignore]` is a CI failure rather than a silent
+      # reduction in coverage: the workspace run stays green either way, and
+      # "the check is gone" and "the check passes" look identical from a
+      # summary line.
+      #
+      # It reads that run's output rather than invoking cargo a second time,
+      # and that is not a stylistic choice. Any second invocation with a
+      # different target filter gives `libduckdb-sys` a fresh fingerprint, and
+      # rebuilding DuckDB from source does not fit beside the artifacts the
+      # first build already wrote — the runner dies with
+      # `ar: ... No space left on device`, which is how this step failed twice
+      # before being written this way. Reading the real run is also strictly
+      # better evidence than re-running: it is the run whose result the job
+      # reports.
+      - name: Concurrent hash-chain linkage (must run, not merely pass)
+        run: |
+          set -uo pipefail
+          # libtest colours "ok" when CARGO_TERM_COLOR is set, so strip ANSI
+          # into a file first, or every line looks like a failure.
+          sed -E 's/\x1b\[[0-9;]*m//g' /tmp/workspace-tests.log > /tmp/workspace-tests-plain.log
+          missing=0
+          for t in concurrent_remember_produces_one_event_chain \
+                   concurrent_remember_produces_one_memory_chain \
+                   concurrent_remember_chains_within_an_explicit_thread; do
+            # grep reads the FILE. Piping into `grep -q` looks equivalent and is
+            # not: -q exits at the first match and closes the pipe, the writer
+            # dies of SIGPIPE, and under `pipefail` the pipeline reports that
+            # failure instead of grep's success — so every match read as a miss.
+            # That is how this step reported all three tests missing while the
+            # run above it had just passed them.
+            if grep -qE "^test ${t} \.\.\. ok$" /tmp/workspace-tests-plain.log; then
+              echo "ran and passed: $t"
+            else
+              echo "::error::${t} did not run and pass in the workspace test run"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
   # Dedicated job for the `onnx` feature. It builds and tests fine against the
   # pinned ort 2.0.0-rc.11 / ndarray 0.17 API, but `ort` compiles ONNX Runtime
@@ -194,6 +238,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p mnemo-postgres --test pgvector_ann -- --nocapture
+      # The PostgreSQL half of the concurrency fix. It uses a different
+      # mechanism from DuckDB's — `pg_advisory_xact_lock` rather than an
+      # in-process lock — so the mnemo-core test proves nothing about it, and
+      # without a live database it skips. This job is the only place it runs.
+      #
+      # (Only the two named tests run in this job. `write_provenance_pg` and
+      # `semantic_recall_fails_loud` are also MNEMO_TEST_POSTGRES_URL-gated and
+      # are not wired in here; that gap predates this change and is not closed
+      # by it.)
+      - run: cargo test -p mnemo-postgres --test concurrent_chain_linkage_pg -- --nocapture
 
   # Fails when the workspace version drifts MORE THAN ONE PATCH ahead of the
   # newest mnemo-core release on crates.io — the forcing function that stops

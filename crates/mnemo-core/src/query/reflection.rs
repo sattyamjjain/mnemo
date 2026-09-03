@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::hash::{compute_chain_hash, compute_content_hash};
+use crate::hash::compute_content_hash;
 use crate::model::event::{AgentEvent, EventType};
 use crate::model::memory::{ConsolidationState, MemoryRecord};
 use crate::model::relation::Relation;
@@ -460,12 +460,6 @@ async fn emit_rewrite_event(
     let now = chrono::Utc::now().to_rfc3339();
     let content_hash =
         compute_content_hash(&format!("rewrite:{memory_id}:{reason}"), agent_id, &now);
-    let prev_event_hash = engine
-        .storage
-        .get_latest_event_hash(agent_id, None)
-        .await
-        .ok()
-        .flatten();
     let event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: agent_id.to_string(),
@@ -493,13 +487,10 @@ async fn emit_rewrite_event(
         timestamp: now,
         logical_clock: 0,
         content_hash: content_hash.clone(),
-        prev_hash: Some(compute_chain_hash(
-            &content_hash,
-            prev_event_hash.as_deref(),
-        )),
+        prev_hash: None,
         embedding: None,
     };
-    let _ = engine.storage.insert_event(&event).await;
+    let _ = engine.storage.append_event_chained(&event).await;
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -590,12 +581,6 @@ async fn emit_reflection_completed(
         "total_scanned": report.total_scanned,
     });
     let content_hash = compute_content_hash(&payload.to_string(), agent_id, &now);
-    let prev_event_hash = engine
-        .storage
-        .get_latest_event_hash(agent_id, None)
-        .await
-        .ok()
-        .flatten();
     let event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: agent_id.to_string(),
@@ -614,13 +599,10 @@ async fn emit_reflection_completed(
         timestamp: now,
         logical_clock: 0,
         content_hash: content_hash.clone(),
-        prev_hash: Some(compute_chain_hash(
-            &content_hash,
-            prev_event_hash.as_deref(),
-        )),
+        prev_hash: None,
         embedding: None,
     };
-    let _ = engine.storage.insert_event(&event).await;
+    let _ = engine.storage.append_event_chained(&event).await;
 }
 
 /// Auto Dream organization-report trailer. Parser is permissive — matches
@@ -707,12 +689,6 @@ async fn ingest_dream_reports(engine: &MnemoEngine, agent_id: &str) -> Result<us
                 "reindexed": report.reindexed,
             });
             let content_hash = compute_content_hash(&payload.to_string(), agent_id, &now);
-            let prev_event_hash = engine
-                .storage
-                .get_latest_event_hash(agent_id, None)
-                .await
-                .ok()
-                .flatten();
             let event = AgentEvent {
                 id: Uuid::now_v7(),
                 agent_id: agent_id.to_string(),
@@ -731,13 +707,10 @@ async fn ingest_dream_reports(engine: &MnemoEngine, agent_id: &str) -> Result<us
                 timestamp: now,
                 logical_clock: 0,
                 content_hash: content_hash.clone(),
-                prev_hash: Some(compute_chain_hash(
-                    &content_hash,
-                    prev_event_hash.as_deref(),
-                )),
+                prev_hash: None,
                 embedding: None,
             };
-            let _ = engine.storage.insert_event(&event).await;
+            let _ = engine.storage.append_event_chained(&event).await;
         }
     }
     Ok(ingested)

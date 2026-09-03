@@ -313,17 +313,6 @@ pub async fn run_consolidation(
 
         let embedding = engine.embedding.embed(&content).await?;
 
-        let prev_hash_raw = engine
-            .storage
-            .get_latest_memory_hash(agent_id, None)
-            .await
-            .ok()
-            .flatten();
-        let prev_hash = Some(crate::hash::compute_chain_hash(
-            &content_hash,
-            prev_hash_raw.as_deref(),
-        ));
-
         let new_record = MemoryRecord {
             id: new_id,
             agent_id: agent_id.to_string(),
@@ -335,7 +324,7 @@ pub async fn run_consolidation(
             metadata: serde_json::json!({"consolidated_from": cluster.iter().map(|m| m.id.to_string()).collect::<Vec<_>>()}),
             embedding: Some(embedding.clone()),
             content_hash: content_hash.clone(),
-            prev_hash,
+            prev_hash: None,
             source_type: SourceType::Consolidation,
             source_id: None,
             consolidation_state: ConsolidationState::Active,
@@ -356,7 +345,7 @@ pub async fn run_consolidation(
             decay_function: None,
         };
 
-        engine.storage.insert_memory(&new_record).await?;
+        engine.storage.append_memory_chained(&new_record).await?;
         engine.index.add(new_id, &embedding)?;
         if let Some(ref ft) = engine.full_text {
             ft.add(new_id, &new_record.content)?;
@@ -485,22 +474,6 @@ pub async fn run_ttl_sweep(engine: &MnemoEngine) -> Result<TtlReport> {
 async fn emit_expiry_event(engine: &MnemoEngine, record: &MemoryRecord, now_str: &str) {
     let event_content_hash =
         compute_content_hash(&record.id.to_string(), &record.agent_id, now_str);
-    let prev_event_hash = match engine
-        .storage
-        .get_latest_event_hash(&record.agent_id, None)
-        .await
-    {
-        Ok(hash) => hash,
-        Err(e) => {
-            tracing::warn!(error = %e, "ttl sweep: failed to read prev event hash, starting new chain segment");
-            None
-        }
-    };
-    let event_prev_hash = Some(crate::hash::compute_chain_hash(
-        &event_content_hash,
-        prev_event_hash.as_deref(),
-    ));
-
     let event = AgentEvent {
         id: Uuid::now_v7(),
         agent_id: record.agent_id.clone(),
@@ -522,10 +495,10 @@ async fn emit_expiry_event(engine: &MnemoEngine, record: &MemoryRecord, now_str:
         timestamp: now_str.to_string(),
         logical_clock: 0,
         content_hash: event_content_hash,
-        prev_hash: event_prev_hash,
+        prev_hash: None,
         embedding: None,
     };
-    if let Err(e) = engine.storage.insert_event(&event).await {
+    if let Err(e) = engine.storage.append_event_chained(&event).await {
         tracing::error!(event_id = %event.id, error = %e, "ttl sweep: failed to insert MemoryExpired event");
     }
 }
