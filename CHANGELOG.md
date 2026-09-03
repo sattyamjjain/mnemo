@@ -156,6 +156,51 @@ in the entry below.
 No compliance claim is made anywhere in this change. mnemo produces a tamper-evident,
 independently verifiable event log; mapping that to an obligation is the reader's to do.
 
+### Disclosure (2026-09-04) - chain ORDER was not guaranteed under concurrent writes, 0.1.0 to 0.5.28
+
+This is the disclosure that belongs beside the fix below, written separately because a defect
+that stood for seven months in a property the project advertises deserves more than a bullet in
+a "Fixed" list.
+
+**The window.** SHA-256 hash chaining shipped in **0.1.0 (2026-02-07)**, the initial release,
+whose notes claimed "SHA-256 hash chain integrity verification". From that release through
+**0.5.28**, chain **order** was not guaranteed for concurrent writes to the same
+`(agent_id, thread_id)`. `remember()` read the chain head and then did TTL resolution, record
+construction, opaque-reasoning detection and encryption before inserting; any two calls that
+overlapped that window read the same head and each wrote itself as a fresh head. Writes issued
+one at a time chained correctly, which is why every worked example and every test in the suite
+looked right.
+
+**What was NOT affected.** Per-record integrity. Each record's
+`content_hash = SHA256(content ‖ agent_id ‖ created_at)` was computed and stored correctly
+throughout, so editing a record's content was detectable then and is detectable now. The
+256-trial single-byte mutation figure measured that property and it stands.
+
+**What WAS affected.** Ordering — which is the property that makes a chain a chain rather than
+a set of hashes. Between racing writes, a removal or a reordering was not detectable. Anyone
+relying on a mnemo log to show *sequence* under concurrent writes, rather than *content*, had
+less than the documentation implied.
+
+**How it was found, which is the part worth writing down.** Not by the test suite. The suite was
+green, and stayed green, for seven months. It was found by writing
+[`docs/verify-my-log.md`](docs/verify-my-log.md) — pointing the standalone Python verifier at
+our own log, through the real MCP surface, with no mnemo code in the loop — and watching it
+reject an untampered file.
+
+The source had *said* so the entire time, and this is checkable rather than rhetorical: commit
+`1daf819`, dated 2026-02-07, carries `get_latest_memory_hash` at line 72 and `insert_memory` at
+line 120 of `remember.rs` — forty-eight lines apart — with the comment *"Concurrent writes for
+the same agent_id may race on prev_hash lookup"* sitting at line 67, directly above the read it
+describes. The defect and the note acknowledging it shipped in the same commit, on day one, and
+neither the note nor seven months of green CI made anyone measure it. A comment is not a
+measurement. The verifier existed precisely so an auditor would not have to trust us, and the
+first thing it did was catch us.
+
+The general lesson is cheap to state and was expensive to learn: **a test suite written by the
+same people who wrote the implementation shares its blind spots.** An independent oracle — one
+that cannot see your assumptions because it does not link your code — is worth more than another
+test. This project now runs one against itself in CI.
+
 ### Fixed (2026-09-02) - concurrent writes now chain, and the head was being found the wrong way
 
 The defect deferred above. Reproduced first, as a failing test, then fixed —
@@ -268,6 +313,36 @@ standalone verifier's strict mode reports.
 strict mode calls them a break — the disagreement `--mnemo-compat` exists to surface. Folding
 telemetry ingest into the audit chain is a different decision with different consequences and
 is not made here.
+
+### Measured (2026-09-04) - what the per-key chain lock costs: nothing resolvable
+
+Serialising a write path is exactly the kind of correctness fix that can quietly cost an order
+of magnitude, so the cost was measured instead of argued.
+`cargo run --release -p mnemo-core --example concurrent_append_throughput` — 16 writes, median
+of 9 runs, DuckDB in-memory, release build:
+
+| shape | with the lock (shipped) | lock removed |
+|---|---|---|
+| contended — 16 concurrent writers, one key | **44.29 ms · 361 writes/sec** | 46.35 ms · 345 writes/sec |
+| sharded — 16 concurrent writers, 16 keys | 50.34 ms · 318 writes/sec | 50.33 ms · 318 writes/sec |
+| serial — 16 writes, no concurrency | 42.86 ms · 373 writes/sec | 43.07 ms · 371 writes/sec |
+
+The lock-removed configuration measured *nominally slower* on the contended shape, which is the
+finding: the difference is inside run-to-run variance, so the cost is below what the harness
+resolves.
+
+The reason is more useful than the number. DuckDB storage holds
+`conn: Arc<Mutex<duckdb::Connection>>`, so every database call already serialised on the
+connection; the chain lock wraps work that had no parallelism to lose. The table confirms it
+independently — **contended ≈ serial** (1.03x with the lock, 1.08x without), meaning 16
+concurrent writers to DuckDB were never meaningfully faster than 16 sequential ones. Concurrency
+was not buying throughput on this backend. It was only corrupting chain order.
+
+**Not measured, and not claimed:** PostgreSQL. It uses `pg_advisory_xact_lock` inside the
+inserting transaction and is reached by multiple processes, so its cost profile is different and
+a single-process harness cannot speak to it. Also single-machine, in-memory, and with
+`DeterministicEmbedding` — a real embedder dominates this workload, which shrinks the lock's
+share further rather than growing it.
 
 ### Added (2026-09-02) - the reproduction cannot quietly stop running
 
