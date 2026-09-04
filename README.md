@@ -256,13 +256,13 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (unreleased target): **`v0.5.29`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (released): **`v0.5.29`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
-| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.28` | 2026-08-27 |
-| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.28` | 2026-08-27 |
-| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.28` | 2026-08-27 |
+| crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.29` | 2026-09-04 |
+| crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.29` | 2026-09-04 |
+| crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.29` | 2026-09-04 |
 | PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.29` | 2026-09-03 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
@@ -306,7 +306,7 @@ docs.
 <!-- BEGIN generated: published-crate-roster -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. Of the **21** published `mnemo-*` crates, **21** are not yet on the workspace version `v0.5.29`: `mnemo-admin` (`0.5.28`), `mnemo-amp` (`0.5.28`), `mnemo-attention-state` (`0.5.28`), `mnemo-baseline` (`0.5.28`), `mnemo-cma` (`0.5.28`), `mnemo-codemode` (`0.5.28`), `mnemo-compliance` (`0.5.28`), `mnemo-core` (`0.5.28`), `mnemo-db` (`0.5.28`), `mnemo-deal` (`0.5.28`), `mnemo-embeddings-bench` (`0.5.28`), `mnemo-graph` (`0.5.28`), `mnemo-grpc` (`0.5.28`), `mnemo-letta` (`0.5.28`), `mnemo-mcp` (`0.5.28`), `mnemo-mcp-server` (`0.5.28`), `mnemo-md-sync` (`0.5.28`), `mnemo-mesh` (`0.5.28`), `mnemo-pgwire` (`0.5.28`), `mnemo-postgres` (`0.5.28`), `mnemo-rest` (`0.5.28`). That is either a release in flight or a stranded crate; [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) distinguishes the two by naming the crates rather than reporting a total.
+Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. All **21** published `mnemo-*` crates are on **`v0.5.29`**, the current workspace version — verified against the live registry when this block was generated, not asserted.
 
 The 21 are `mnemo-admin`, `mnemo-amp`, `mnemo-attention-state`, `mnemo-baseline`, `mnemo-cma`, `mnemo-codemode`, `mnemo-compliance`, `mnemo-core`, `mnemo-db`, `mnemo-deal`, `mnemo-embeddings-bench`, `mnemo-graph`, `mnemo-grpc`, `mnemo-letta`, `mnemo-mcp`, `mnemo-mcp-server`, `mnemo-md-sync`, `mnemo-mesh`, `mnemo-pgwire`, `mnemo-postgres` and `mnemo-rest`.
 
@@ -654,7 +654,6 @@ pip install mnemo-db
 > **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.29`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
 >
 > - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.29` *is* `mnemo-core` `v0.5.29`. There is no version-skew question to answer: the engine is the wheel.
-> - **`pip install mnemo-db` and `cargo add mnemo-core` do not currently resolve the same version.** PyPI has `v0.5.29`; crates.io has `v0.5.28`. The wheel publishes on merge to `main` while the crates publish on a tag, so the Python side leads inside an open release window. Pin deliberately if you embed both.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.
 <!-- END generated: python-sdk-compat -->
 
