@@ -11,6 +11,102 @@ The 0.5.30 window opens on the **v0.5.29** cut. The 0.5.29 release content lande
 [`c119e4b`](https://github.com/sattyamjjain/mnemo/commit/c119e4b), and the `v0.5.29` tag points
 at that commit, which is where the `## [0.5.29]` heading the publish gate requires first exists.
 
+### Added - the concurrency figure, in the same units as the serial one
+
+`bench/audit_conformance` published a single headline number: 100% single-byte-mutation
+detection over 256 trials. It wrote its chain **one record at a time**, so that figure
+covered a serially written log and said nothing about the case that actually broke — until
+v0.5.29 every overlapping `remember()` inserted itself as a fresh chain head. The
+structural regression test existed; the published figure did not.
+
+The same harness now runs a concurrency arm: 16 writers × 16 writes = 256 records on 8
+tokio worker threads, reporting the **linkage rate** — records naming a predecessor, over
+the count a correct chain would have — as successes over an explicit denominator with a
+Wilson 95% interval, the same shape as the tamper figure. Measured: **255/255 linked,
+100%, Wilson 95% [98.5%, 100.0%]**. Both rows are published together in `README.md`,
+`docs/POSITIONING.md` and the generated report, with the hardware (Apple M4, 10 cores) and
+the thread count stated, because a rate with no denominator and no thread count is not a
+measurement.
+
+The denominator is 255, not 256: exactly one record is legitimately the head, so a rate
+over the record count could never reach 100%. Alongside the rate the arm asserts what a
+rate cannot express — exactly one head, no fork, nothing dangling, every record reachable
+by walking links from that head — with no interval to hide behind.
+
+`main` builds its tokio runtime by hand rather than through `#[tokio::main]` so the worker
+count is one value, used by the runtime and printed in the report. On a single worker
+thread the writers never overlap and the arm would pass without testing anything. The
+report stays byte-stable: a correct chain of K records has one head and K−1 links however
+the writers interleave, and wall-clock is deliberately not reported.
+
+**The fork detector was wrong when first written, and a test caught it.** Grouping records
+by `prev_hash` looks like the way to find two records claiming one predecessor. It cannot
+be: `prev_hash = SHA256(content_hash ‖ predecessor_content_hash)` mixes in the record's
+*own* content hash, so two records following the same predecessor carry different
+`prev_hash` values and the group never collides. That implementation reported 0 forks on a
+deliberately forked chain. The diagnosis is now a pure function tested against four broken
+shapes — the original N-heads defect, a fork, a removed record, and a correct chain — so
+it is not a measurement that has only ever seen a passing case.
+
+### Added - `docs/verify-my-log.md` now runs in CI
+
+The page walks a reader through verifying a mnemo audit log with a standalone Python
+verifier, including tampering with a record and watching it get caught. It was a
+transcript. `.github/workflows/verify-my-log.yml` now executes it on every push to `main`
+and on pull requests: it writes three records through the MCP tool surface, exports the
+chain, requires the verifier to accept it, edits one record's retention period from 24
+months to 6 directly in the export, and requires the verifier to **reject** it with a
+non-zero exit and name record index 1.
+
+The negative case is the load-bearing half — a verifier that only ever runs against a good
+log would pass identically if it were `sys.exit(0)` — so the job fails loudly if the
+verifier accepts the edited log, and separately fails if the `sed` did not apply, which
+would make the negative case vacuous while looking green. A final step writes three records
+in **one** MCP session, the concurrent path that produced three unlinked heads before
+v0.5.29, and requires that log to verify too. The document now opens with a line pointing
+at the workflow, so a reader can see it is executed rather than described.
+
+### Fixed - `docs/roadmap/planned-crates.md` described a gap that had already closed
+
+The page listed eight crates as "exist, on crates.io at **0.4.4**", under a 2026-07-31
+decision to keep them out of the tag-gated publish closure, and separately described
+`mnemo-amp` as "intentionally not on crates.io … do not re-litigate publishing them".
+
+Checked against the crates.io API on 2026-09-04: `mnemo-admin`, `mnemo-baseline`,
+`mnemo-cma`, `mnemo-codemode`, `mnemo-deal`, `mnemo-letta`, `mnemo-md-sync` and
+`mnemo-mesh` all serve **0.5.29**, and so does `mnemo-amp`. All nine are in the `WALK` in
+`release-crate.yml`. The stale rows are deleted rather than annotated, and the page no
+longer mirrors per-crate published versions at all — the live table is generated into
+`README.md` from the registries, and a hand-maintained mirror of a generated table is
+exactly how these rows stayed wrong. The seven genuinely-planned entries were re-verified
+two ways (absent from `ls crates/`, absent from crates.io) and are unchanged.
+
+One note for whoever re-runs that check: crates.io rejects API requests without a
+`User-Agent`, and a naive loop reports **every** crate as unpublished — including
+`mnemo-core`. The first run of this reconciliation did exactly that, and the only reason it
+was not believed is that it also said `mnemo-core` was unpublished.
+
+### Added - the README security table is now pinned to the code
+
+`README.md` carries an "Enforced by default?" table. It was accurate and hand-maintained,
+which means nothing failed when a row stopped being true.
+`crates/mnemo-cli/tests/readme_enforcement_claims_are_real.rs` pins it: the conditional
+`✅` rows fail the build if `mnemo-cli` stops attaching the role filter or the lease store
+to the served MCP server, and the `❌` rows (consent-token guard, and the mesh / deal /
+baseline / CMA adapters) fail it if those surfaces are ever wired without the table being
+updated in the same change. Every check is guarded for non-vacuity — the README row it
+pins must still be present — and each was verified in the failing direction by mutation,
+not by inspection.
+
+**Both surfaces the audit asked about are wired**, contrary to the premise: `main.rs`
+calls `with_role_filter` and `with_lease_store`, and `hardened_mode_attaches_role_filter`
+drives a denied tool over JSON-RPC to a `-32601`. What was not stated plainly is that
+**wired and on are different claims**: the role filter does nothing without a
+`[role_filter]` manifest block, and capability-leased reads do nothing unless
+`--lease-ttl-seconds` is set non-zero — it defaults to `0`, so a stock server accepts
+`mnemo.forget_subject` with no lease at all. The README now says that above the table
+instead of leaving it to be inferred from the row text.
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)

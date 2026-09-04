@@ -52,53 +52,47 @@ concrete design + a consumer that wires it in.
   describe what `mnemo-bench-cf` *would* measure. Every number there is a `TBD`
   placeholder, not a run result.
 
-## Published-but-not-version-tracked crates (exist, on crates.io at 0.4.4)
+## Closed: the crates this page used to list as version-stranded
 
-> **Different category from the Planned list above.** These crates **do exist**
-> under `crates/`, **are** `[workspace] members`, and **are already on crates.io**
-> — but only at **0.4.4**, because they are **not** in the tag-gated publish
-> closure (`.github/workflows/release-crate.yml`) and so do not move with the
-> workspace version. A user reading crates.io sees 0.4.4 against a 0.5.x
-> workspace. This section exists so that gap is **recorded, not silent.**
+> **This section listed eight crates as "exist, on crates.io at **0.4.4**", under a
+> 2026-07-31 (v0.5.21) decision to keep them out of the tag-gated publish closure.
+> That gap has closed, and the rows are deleted rather than annotated** — a roadmap
+> describing a gap that no longer exists reads to a first-time visitor as an
+> abandoned repo.
 
-**Decision (2026-07-31, v0.5.21): keep them OUT of the publish closure.** The
-closure is scoped to exactly what `README.md` tells a user to install — the engine
-+ compliance + the three interface surfaces (`cargo add mnemo-core
-mnemo-compliance mnemo-mcp`; `mnemo-postgres` / `mnemo-rest` / `mnemo-grpc`) plus
-the `mnemo-db` name-pointer. The eight below are **advanced integration adapters**
-listed only in the README feature table (by repo path, "New in v0.4.x"), each an
-optional shim to an external system with **no in-workspace consumer** (verified:
-seven are depended on by nobody; `mnemo-admin` is a dep of the unpublishable
-`mnemo-cli` only). Widening the auto-publish set to carry eight adapters that no
-documented install path references would be scope creep, so they stay at 0.4.4 and
-are recorded here instead.
+Verified against the crates.io API on **2026-09-04**: `mnemo-admin`,
+`mnemo-baseline`, `mnemo-cma`, `mnemo-codemode`, `mnemo-deal`, `mnemo-letta`,
+`mnemo-md-sync` and `mnemo-mesh` each serve **0.5.29** — the workspace version.
+All eight are now in the `WALK` in
+[`.github/workflows/release-crate.yml`](../../.github/workflows/release-crate.yml),
+so they move with every tagged release instead of being stranded behind it.
 
-| Crate | crates.io | What it is | Why not in the closure |
-|---|---|---|---|
-| `mnemo-admin` | 0.4.4 | Admin dashboard API handlers | Dep of `mnemo-cli` only (itself unpublishable); no `cargo add` path |
-| `mnemo-baseline` | 0.4.4 | Per-agent behavioural baseline + OTel/OCSF drift emitters | Optional telemetry adapter; no workspace consumer |
-| `mnemo-cma` | 0.4.4 | Anthropic CMA-Memory drop-in compat shim | Optional external-format bridge; no workspace consumer |
-| `mnemo-codemode` | 0.4.4 | Sandboxed-WIT code-mode recall | Optional; no workspace consumer |
-| `mnemo-deal` | 0.4.4 | Chained-HMAC agent-deal ledger + discovery/reputation | Optional substrate; no workspace consumer |
-| `mnemo-md-sync` | 0.4.4 | Bidirectional Markdown-wiki ↔ Mnemo sync | Optional; no workspace consumer |
-| `mnemo-mesh` | 0.4.4 | SPIFFE-style identity + per-namespace ACL | Optional; no workspace consumer |
-| `mnemo-letta` | 0.4.4 | Letta-protocol-compatible REST surface | Optional; no workspace consumer |
+The same check found one claim wrong in the other direction. This page stated that
+`mnemo-amp` was **"intentionally not on crates.io … do not re-litigate publishing
+them."** It is published, at 0.5.29, and it is in `WALK`. That sentence is deleted
+rather than softened.
 
-**Not yanked.** Yanking is destructive to anyone who pinned `0.4.4`, buys nothing
-here (these are honest older cuts, not broken or malicious), and requires the same
-crates.io credential the closure publish is currently blocked on. If any is later
-judged genuinely dead, check its crates.io reverse-dependencies first, then yank
-deliberately — do not fold it into a routine release.
+Per-crate published versions are not tracked on this page at all any more: the
+live table is generated from the registries into
+[`README.md`](../../README.md) by
+[`scripts/gen_published_versions.py`](../../scripts/gen_published_versions.py),
+and [`scripts/check_version_drift.sh`](../../scripts/check_version_drift.sh) plus
+[`scripts/registry_parity.sh`](../../scripts/registry_parity.sh) fail a release if
+it drifts. A hand-maintained mirror of a generated table is how the 0.4.4 rows went
+on asserting a number the registry had already moved past.
 
-**Unpublished by design (leave alone).** `mnemo-amp`, `mnemo-golem-host`, and
-`mnemo-golem-wit` are **intentionally not on crates.io**: the two `golem-*` crates
-are the WASM-component vertical slice (`golem-wit` is a `wasm32-wasip2` cdylib whose
-version-script link the host toolchain rejects — the chronic Build/Test red), and
-`mnemo-amp` is a workspace-internal crate with no standalone publish story. They
-carry workspace version pins for lockstep builds but ship no crates.io release.
-Do not re-litigate publishing them.
+**Still unpublished, by design (leave alone).** `mnemo-golem-host` and
+`mnemo-golem-wit` are the WASM-component vertical slice — `golem-wit` is a
+`wasm32-wasip2` cdylib whose version-script link the host toolchain rejects, which
+is why it sits in `[workspace] exclude` and builds standalone. Both carry workspace
+version pins for lockstep builds but ship no crates.io release, and both were
+confirmed absent from crates.io on 2026-09-04.
 
-_Last reconciled: 2026-07-31 (v0.5.21). The seven Planned entries above were
-re-verified against `ls crates/` — none of `mnemo-envelope` / `mnemo-aas01` /
-`mnemo-mgt` / `mnemo-bench-cf` / `mnemo-langgraph` / `mnemo-purview` /
-`mnemo-toolhive` exists in the tree; the list is unchanged and still accurate._
+_Last reconciled: **2026-09-04**. The seven Planned entries above were re-verified
+two ways — against `ls crates/` (none exists in the tree) and against
+`https://crates.io/api/v1/crates/<name>` (none is published) — so the list is
+unchanged and still accurate. The eleven other crate names on this page were
+checked the same way, which is what surfaced the eight closed rows and the wrong
+`mnemo-amp` claim above. When re-running that check, send a `User-Agent` header:
+crates.io rejects requests without one, and a naive loop reports every crate as
+unpublished, including the ones that plainly are._

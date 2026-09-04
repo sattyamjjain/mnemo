@@ -23,10 +23,28 @@ That axis is not marketing — it is four already-shipped, reproducible benchmar
 | what | shipped number | reproduce |
 |---|---|---|
 | **Recall quality** (mnemo's own, honest) | LongMemEval_M, real embedder: **semantic recall@1 0.739, MRR 0.805, ~89% fewer context tokens** vs full history | `cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench` |
-| **Tamper-evident audit log** (EU AI Act Art.12) | **100% single-byte-mutation detection over 256 trials, Wilson 95% [98.5%, 100.0%]**; append-only retention verified; recomputable SHA-256 crypto vector | `cargo run --release -p mnemo-audit-conformance-bench` |
+| **Tamper-evident audit log, log written *serially*** (EU AI Act Art.12) | **256/256 single-byte mutations detected — 100%, Wilson 95% [98.5%, 100.0%]**; append-only retention verified; recomputable SHA-256 crypto vector | `cargo run --release -p mnemo-audit-conformance-bench` |
+| **Write-chain linkage, log written *concurrently*** | **255/255 records linked — 100%, Wilson 95% [98.5%, 100.0%]** across 16 writers × 16 writes (256 records) on 8 worker threads; structurally, exactly **1** chain head, 0 forks, 0 dangling, 256/256 reachable from that head | `cargo run --release -p mnemo-audit-conformance-bench` |
 | **Adversarial audit-log tamper-evidence** (EU AI Act Art.12) | **delete / reorder / forge-integrity-field each 100% detected over 200 trials, Wilson 95% [98.1%, 100.0%]**; 0/72 benign false-positives; honest **0%** on payload-only forge + tail truncation (disclosed gaps, shipped mitigations named) | `cargo run --release -p mnemo-audit-tamper-bench` |
 | **Memory-poisoning defense delta** (OWASP ASI06) | MINJA **100% → 0% (+100 pts)**; AgentPoison **100% → 3.5% (+96.5 pts)**; **benign control 0/200 false-quarantine** | `cargo run --release -p mnemo-poisoning-bench` |
 | **Reproducible-by-disclosure LoCoMo** | single-hop retrieval **recall@1 24.4% [Wilson 95% 14.2%, 38.7%]**, byte-stable, tabled against vendors' cited claims | `cargo run --release -p mnemo-locomo-bench --bin reproduction_bench` |
+
+**Reading the first two rows together.** They are the same bench and the same units —
+successes over an explicit denominator, with a Wilson 95% interval — but not the same
+property. The serial row measures whether a *mutation* is caught; the concurrent row
+measures whether the log is *one chain* at all. Serial writes cannot answer the second
+question, which is why it needed its own arm: until v0.5.29 concurrent writes each
+inserted themselves as a fresh head, so that arm scored 16 heads and 0/255 links while
+the serial row was already at 100%. The linkage denominator is 255 rather than 256
+because exactly one record is legitimately the head.
+
+Both figures were produced on an **Apple M4 (10 cores, arm64, macOS)** with the bench's
+tokio runtime pinned to **8 worker threads** — a thread count the report prints, because
+on a single worker thread the writers never overlap and the concurrency arm passes
+without testing anything. The counts are deterministic (a correct chain of K records has
+one head and K−1 links however the writers interleave), so the report stays byte-stable
+across runs and machines; wall-clock is deliberately not reported, because that would not
+be.
 
 Sources: [`bench/RESULTS.md`](../bench/RESULTS.md),
 [`bench/audit_conformance/results/conformance.md`](../bench/audit_conformance/results/conformance.md),
