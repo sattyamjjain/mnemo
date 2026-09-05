@@ -193,9 +193,17 @@ fi
 # GITHUB_REF_NAME is the tag being released; locally, fall back to the newest
 # reachable tag. Empty in a shallow checkout with no tags — reported as such
 # rather than silently treated as agreement.
+# --match 'v*' is load-bearing, not tidiness. This repo also carries Go module
+# tags of the form `sdks/go/vX.Y.Z`, which a bare `git describe` will happily
+# return as the newest tag — and it is newer, it is just not a tag about the
+# Rust workspace. Reporting it in the crates.io triple would put a Go SDK
+# version in the column a human reads while triaging a release. The other two
+# tag-facing guards (workspace_version_fence.rs, check_tag_release_parity.sh)
+# already filter `v*` for the same reason; this one had not needed to until the
+# Go SDK was tagged.
 newest_tag="${GITHUB_REF_NAME:-}"
 if [[ "$newest_tag" != v* ]]; then
-  newest_tag="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 2>/dev/null || echo "")"
+  newest_tag="$(git -C "$REPO_ROOT" describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")"
 fi
 : "${newest_tag:=none}"
 
