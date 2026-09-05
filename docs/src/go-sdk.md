@@ -5,7 +5,7 @@ The Go SDK communicates with Mnemo via MCP STDIO, spawning the `mnemo` binary as
 ## Installation
 
 ```bash
-go get github.com/mnemo-ai/mnemo-go
+go get github.com/sattyamjjain/mnemo/sdks/go
 ```
 
 ## Usage
@@ -17,7 +17,7 @@ import (
     "fmt"
     "log"
 
-    mnemo "github.com/mnemo-ai/mnemo-go"
+    mnemo "github.com/sattyamjjain/mnemo/sdks/go"
 )
 
 func main() {

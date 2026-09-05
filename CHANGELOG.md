@@ -146,6 +146,29 @@ release and printed a warning when it did.
 Both thresholds are pinned offline by `--self-test`, including the exact `0.4.8` vs
 `0.4.4` row, so restoring the old leniency reddens CI here instead of going quiet on npm.
 
+### Fixed - the Go SDK declared a module path that never existed
+
+`sdks/go/go.mod` declared `module github.com/mnemo-ai/mnemo-go`, and
+`docs/src/go-sdk.md` told users to `go get` it. That path returns 404 from
+`proxy.golang.org`. It was never a typo for a repo that moved: `mnemo-ai` **is** a real
+GitHub organisation — created 2025-11-10, zero public repositories — that this project
+does not own or belong to. No repo has ever existed under it. The documented install line
+could not have worked for any user at any point in the SDK's life.
+
+The module now declares the path the code actually lives at,
+`github.com/sattyamjjain/mnemo/sdks/go`, which is also what `README.md` has said in its
+import example all along — the README and the module it documented disagreed, and the
+README was the one that was right.
+
+Repointing alone is not enough to make `go get` work, and it is worth being precise about
+why. A Go module has no manifest version; the module path plus a git tag **is** the
+release. The corrected path resolves on the proxy but listed zero versions, because no
+`sdks/go/v*` tag had ever been pushed — all 28 tags in this repo are plain `vN.N.N`, which
+name the Rust workspace and say nothing about a module in a subdirectory. So the SDK is
+tagged `sdks/go/v0.5.29`, the form the proxy requires for a module nested in a monorepo.
+
+`go vet`, `go build` and `go test ./...` pass against the new path.
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)

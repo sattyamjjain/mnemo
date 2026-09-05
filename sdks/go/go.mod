@@ -1,3 +1,3 @@
-module github.com/mnemo-ai/mnemo-go
+module github.com/sattyamjjain/mnemo/sdks/go
 
 go 1.21
