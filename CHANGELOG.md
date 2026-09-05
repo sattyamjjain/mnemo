@@ -169,6 +169,34 @@ tagged `sdks/go/v0.5.29`, the form the proxy requires for a module nested in a m
 
 `go vet`, `go build` and `go test ./...` pass against the new path.
 
+### Added - `CITATION.cff`, with no DOI in it
+
+The repository had no citation metadata of any kind. That matters more here than for most
+software: `tools/verify_mnemo_chain.py` is a standalone, stdlib-only verifier written so an
+auditor can check a Mnemo hash chain **without running Mnemo to do it**, and an auditor who
+relies on that file has nothing to cite. GitHub now renders a "Cite this repository" widget
+from this file.
+
+**There is deliberately no `doi:` field.** A search of the Zenodo API returns zero records
+for this project, so any DOI written here would be invented. A placeholder DOI is worse
+than an absent one — it is a broken link that GitHub prints as authoritative, and it gets
+copied into reference lists before anyone tries to resolve it. The field goes in when a
+deposit exists. For the same reason there is no `preferred-citation:` block: there is no
+paper to redirect to, the software is the artifact.
+
+`version` and `date-released` are gated by `scripts/check_citation_version.sh` in the
+`doc-guards` job, which also fails if a `doi:` ever appears without the check being removed
+deliberately. The guard is there because of a specific, observed failure: the sibling
+`agent-audit-kit` repository carried these same two fields under a comment instructing a
+human to bump them each release, and the file sat at 0.3.83 while the repo shipped 0.3.93.
+A citation naming the wrong version is a wrong citation, and nothing else in the tree reads
+this file, so nothing else could notice.
+
+The guard self-tests first, and that was not ceremony: the self-test caught the check
+passing vacuously on every fixture, because the fixture path was being overwritten by the
+script's own default before the body ran. It would have shipped as coverage that could not
+fail.
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)

@@ -516,3 +516,14 @@ jobs:
         run: python3 scripts/gen_recall_number.py --self-test
       - name: README recall number matches the committed bench result
         run: python3 scripts/gen_recall_number.py --check
+
+      # CITATION.cff is rendered by GitHub as the "Cite this repository" widget,
+      # so its `version:` is what ends up in other people's reference lists, and
+      # nothing else in the tree reads the file — so nothing else notices when it
+      # rots. The sibling agent-audit-kit repo carried these same fields under a
+      # comment telling a human to bump them each release; the file sat ten patch
+      # versions behind what shipped. Self-test first, same as every guard here.
+      - name: Citation metadata guard self-test
+        run: bash scripts/check_citation_version.sh --self-test
+      - name: CITATION.cff names the shipped version and claims no DOI
+        run: bash scripts/check_citation_version.sh
