@@ -35,6 +35,14 @@
 #                      Used by release-crate.yml, NOT by cargo-publish.yml —
 #                      see "the severity floor" below for why the split matters.
 #
+#   --mode sdk         ONLINE, no crates.io, no publish walk. Checks ONLY the
+#                      independently-versioned SDK artifacts — npm, PyPI, and the
+#                      Go module proxy — against their own registries, and fails
+#                      on a strand. Cheap enough to run on every push, which is
+#                      the point: the npm SDK sat four patches behind for four
+#                      months because the only thing that looked at it ran during
+#                      a release, and printed a warning when it did.
+#
 #   --mode assert      Run AFTER the publish walk. Every crate named must now be
 #                      AT the workspace version on crates.io. A crate still
 #                      behind means the walk skipped it — the exact silent
@@ -111,7 +119,9 @@
 # ---------------------------------------------------------------------------
 # Division of labour with the other version guards (do not merge these)
 # ---------------------------------------------------------------------------
-#   scripts/registry_parity.sh          ONLINE. repo vs crates.io/npm/PyPI.
+#   scripts/registry_parity.sh          ONLINE. repo vs crates.io (crate modes)
+#                                       and vs npm / PyPI / the Go module proxy
+#                                       (--mode sdk).
 #   crates/mnemo-cli/tests/
 #     workspace_version_fence.rs        OFFLINE. Cargo.toml vs git tag vs
 #                                       CHANGELOG, every crate. Runs in
@@ -150,8 +160,8 @@ while [[ $# -gt 0 ]]; do
 done
 # --self-test needs no --mode; it runs offline against the threshold table and
 # exits. The block itself lives below, after minor_level_behind is defined.
-if [[ "${SELFTEST:-0}" -eq 0 ]] && [[ "$MODE" != "preflight" && "$MODE" != "assert" ]]; then
-  echo "::error::registry_parity.sh: --mode must be 'preflight' or 'assert' (got '${MODE:-}')" >&2
+if [[ "${SELFTEST:-0}" -eq 0 ]] && [[ "$MODE" != "preflight" && "$MODE" != "assert" && "$MODE" != "sdk" ]]; then
+  echo "::error::registry_parity.sh: --mode must be 'preflight', 'assert' or 'sdk' (got '${MODE:-}')" >&2
   exit 2
 fi
 # The floor is a preflight concept. `assert` is already unconditionally hard on
@@ -341,11 +351,37 @@ if [[ $SELFTEST -eq 1 ]]; then
 1.0.0 0.5.23 yes a whole major behind
 0.5.23 0.4.0 yes a whole minor behind at .0
 CASES
+  # The SDK severity threshold, pinned the same way and for the same reason.
+  # This one guards a rule that was WRONG in production: "manifest ahead of
+  # registry" was warn-only, so @mndfreek/mnemo-sdk showed `pending publish` in
+  # green CI for four months at 0.4.8-vs-0.4.4. The 0.4.8 row below is that
+  # exact strand. If someone restores the old leniency, this goes red here
+  # instead of going quiet on npm.
+  echo
+  echo "  SDK severity threshold (more_than_one_patch_behind):"
+  while read -r m r expect label; do
+    [[ -z "${m:-}" || "$m" == \#* ]] && continue
+    if more_than_one_patch_behind "$m" "$r"; then got=yes; else got=no; fi
+    if [[ "$got" == "$expect" ]]; then
+      printf '  ok    %-8s vs %-8s -> %-3s  %s\n' "$m" "$r" "$got" "$label"
+    else
+      printf '  FAIL  %-8s vs %-8s -> %-3s (expected %s)  %s\n' "$m" "$r" "$got" "$expect" "$label"
+      st_fail=1
+    fi
+  done <<'SDKCASES'
+0.4.5 0.4.4 no  fresh bump, publish genuinely in flight - must NOT redden a release PR
+0.4.4 0.4.4 no  at parity
+0.4.6 0.4.4 yes two patches behind
+0.4.8 0.4.4 yes THE npm STRAND - four patches, four months, previously warn-only
+1.0.0 0.4.4 yes a whole major behind
+0.4.4 0.4.8 no  registry AHEAD - the DRIFT branch owns this, not the lag branch
+SDKCASES
+
   if [[ $st_fail -ne 0 ]]; then
-    echo "::error::registry_parity.sh --self-test FAILED: the severity-floor threshold no longer matches its documented table. #140 was exactly ONE minor behind, so a '> 1 minor' threshold silently misses the incident this gate exists for." >&2
+    echo "::error::registry_parity.sh --self-test FAILED: a documented threshold no longer matches its table. #140 was exactly ONE minor behind, so a '> 1 minor' floor silently misses the incident this gate exists for; and the npm SDK sat four patches behind under a 'warn only' rule for four months." >&2
     exit 1
   fi
-  echo "registry_parity.sh --self-test OK (severity-floor threshold matches its documented table)"
+  echo "registry_parity.sh --self-test OK (severity floor + SDK threshold match their documented tables)"
   exit 0
 fi
 
@@ -354,12 +390,17 @@ in_walk() { case " $WALK " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
-if [[ ${#ARGS[@]} -gt 0 ]]; then
+if [[ "$MODE" == "sdk" ]]; then
+  # sdk mode checks ONLY the independently-versioned SDK artifacts. It touches
+  # neither crates.io nor the publish walk, so it is cheap enough to run on
+  # every push instead of only around a release.
+  crates=()
+elif [[ ${#ARGS[@]} -gt 0 ]]; then
   crates=("${ARGS[@]}")
 else
   mapfile -t crates < <(enumerate_publishable)
 fi
-if [[ ${#crates[@]} -eq 0 ]]; then
+if [[ "$MODE" != "sdk" && ${#crates[@]} -eq 0 ]]; then
   echo "::error::no publishable crates enumerated — the enumeration is broken, not the registry" >&2
   exit 2
 fi
@@ -368,14 +409,18 @@ echo "registry parity — mode=${MODE}"
 echo "  workspace version : ${ws}"
 echo "  newest git tag    : ${newest_tag}"
 [[ -n "$WALK" ]] && echo "  publish walk      : ${WALK}"
-if [[ $FLOOR -eq 1 ]]; then
+if [[ "$MODE" == "sdk" ]]; then
+  echo "  scope             : SDK artifacts only (npm, PyPI, Go module proxy) — no crates.io, no walk"
+elif [[ $FLOOR -eq 1 ]]; then
   echo "  severity floor    : ON — an out-of-walk crate a whole minor behind (or absent) FAILS this release"
 else
   echo "  severity floor    : off — lags outside this walk warn only"
 fi
 echo
-printf '  %-30s %-11s %-11s %-11s %s\n' "crate" "workspace" "git tag" "crates.io" "status"
-printf '  %-30s %-11s %-11s %-11s %s\n' "------------------------------" "-----------" "-----------" "-----------" "------"
+if [[ "$MODE" != "sdk" ]]; then
+  printf '  %-30s %-11s %-11s %-11s %s\n' "crate" "workspace" "git tag" "crates.io" "status"
+  printf '  %-30s %-11s %-11s %-11s %s\n' "------------------------------" "-----------" "-----------" "-----------" "------"
+fi
 
 fail=()      # hard failures
 repairing=() # lagging crates that this walk is about to fix
@@ -383,7 +428,7 @@ orphans=()   # publishable, never published, and in no walk -> can never ship
 stranded=()  # lagging, but not this walk's responsibility -> warn, never fail
 unreachable=0
 
-for c in "${crates[@]}"; do
+for c in ${crates[@]+"${crates[@]}"}; do
   rv="$(registry_version "$c")"
   status=""
   case "$rv" in
@@ -460,9 +505,34 @@ done
 # ---------------------------------------------------------------------------
 # Independently-versioned SDK artifacts. These do NOT track the Rust workspace
 # version (python/pyproject.toml and sdks/typescript/package.json say so), so
-# they are reported for visibility and checked only against THEIR OWN registry:
-# a registry AHEAD of the repo manifest is drift (a publish main never recorded);
-# a manifest ahead of the registry is just an unpublished bump.
+# they are checked only against THEIR OWN registry.
+#
+# THE SEVERITY RULE, AND WHY IT CHANGED.
+#
+# This section used to classify "manifest ahead of registry" as `pending publish
+# (warn only)`, on the reasoning that between a bump and its publish the repo is
+# legitimately ahead. That reasoning is sound for ONE patch and false for eight:
+# `@mndfreek/mnemo-sdk` sat at 0.4.4 on npm while package.json said 0.4.8 — four
+# patches, four months, including the whole provenance read + FORGET BY
+# PROVENANCE surface — and every CI run in that window printed `warn only` and
+# went green. That is #140's shape on a different registry: a lag whose only
+# symptom is a warning nobody reads.
+#
+# So the threshold now mirrors the crate side exactly: ONE patch of slack (a
+# publish genuinely in flight), and more than one patch is a hard failure. An
+# artifact absent from its registry entirely is also a failure — that is the
+# strongest form of the same bug, not a milder one.
+#
+#   manifest 0.4.5, registry 0.4.4  -> pass (one patch, publish in flight)
+#   manifest 0.4.8, registry 0.4.4  -> FAIL (the strand this rule exists for)
+#   manifest 0.4.4, registry 0.4.4  -> pass (at parity)
+#   manifest 0.4.4, registry 0.4.8  -> FAIL (registry ahead: a publish main
+#                                            never recorded — unchanged)
+#   manifest 0.1.0, registry absent -> FAIL (nothing has ever shipped it)
+#
+# The Go SDK has no version manifest at all — a Go module IS its git tag — so it
+# is checked against the module proxy for resolvability plus at least one
+# published version. See check_go_module below.
 # ---------------------------------------------------------------------------
 echo
 printf '  %-30s %-13s %-13s %s\n' "sdk artifact" "manifest" "registry" "status"
@@ -470,15 +540,26 @@ printf '  %-30s %-13s %-13s %s\n' "------------------------------" "------------
 
 check_sdk() {
   local label="$1" manifest="$2" registry="$3"
-  if [[ -z "$registry" || "$registry" == "absent" ]]; then
-    printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "absent" "never published"
+  if [[ -z "$registry" || "$registry" == "unreachable" ]]; then
+    printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "unreachable" "UNREACHABLE"
+    fail+=("${label}: registry did not answer — refusing to treat an unknown registry state as agreement")
+    return
+  fi
+  if [[ "$registry" == "absent" ]]; then
+    printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "absent" "NEVER PUBLISHED"
+    fail+=("${label}: absent from its registry entirely — the manifest says ${manifest} and nothing has ever shipped")
     return
   fi
   local rel; rel="$(cmp_semver "$manifest" "$registry")"
   if [[ "$rel" == "0" ]]; then
     printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "ok (independent of workspace ${ws})"
   elif [[ "$rel" == "1" ]]; then
-    printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "pending publish (warn only)"
+    if more_than_one_patch_behind "$manifest" "$registry"; then
+      printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "STRANDED — registry >1 patch behind"
+      fail+=("${label}: registry ${registry} is more than one patch behind manifest ${manifest} — a bump that was never published (the npm shape of #140)")
+    else
+      printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "pending publish (<=1 patch)"
+    fi
   else
     printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "DRIFT — registry ahead of repo"
     fail+=("${label}: registry ${registry} is AHEAD of manifest ${manifest} — a publish main never recorded")
@@ -490,19 +571,94 @@ py_manifest="$(awk '
   /^\[/          { in_p = 0 }
   in_p && /^[[:space:]]*version[[:space:]]*=/ { gsub(/.*=[[:space:]]*"|".*/, ""); print; exit }
 ' "$REPO_ROOT/python/pyproject.toml" 2>/dev/null || echo "")"
-py_registry="$(curl -sS --max-time 20 "https://pypi.org/pypi/mnemo-db/json" 2>/dev/null \
-  | python3 -c 'import sys,json
+# An empty body means the request never landed. Now that `absent` is a hard
+# failure it must not be reachable by a flaky network — an unreachable registry
+# is its own verdict, with its own message.
+py_body="$(curl -sS --max-time 20 -A "$UA" "https://pypi.org/pypi/mnemo-db/json" 2>/dev/null || echo "")"
+if [[ -z "$py_body" ]]; then
+  py_registry="unreachable"
+else
+  py_registry="$(printf '%s' "$py_body" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin)["info"]["version"])
 except Exception: print("absent")' 2>/dev/null || echo "absent")"
+fi
 check_sdk "mnemo-db (PyPI)" "${py_manifest:-unknown}" "${py_registry}"
 
 npm_name="$(python3 -c 'import json;print(json.load(open("'"$REPO_ROOT"'/sdks/typescript/package.json"))["name"])' 2>/dev/null || echo "")"
 npm_manifest="$(python3 -c 'import json;print(json.load(open("'"$REPO_ROOT"'/sdks/typescript/package.json"))["version"])' 2>/dev/null || echo "")"
-npm_registry="$(curl -sS --max-time 20 "https://registry.npmjs.org/${npm_name//\//%2F}" 2>/dev/null \
-  | python3 -c 'import sys,json
+npm_body="$(curl -sS --max-time 20 -A "$UA" "https://registry.npmjs.org/${npm_name//\//%2F}" 2>/dev/null || echo "")"
+if [[ -z "$npm_body" ]]; then
+  npm_registry="unreachable"
+else
+  npm_registry="$(printf '%s' "$npm_body" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin)["dist-tags"]["latest"])
 except Exception: print("absent")' 2>/dev/null || echo "absent")"
+fi
 check_sdk "${npm_name:-@mndfreek/mnemo-sdk} (npm)" "${npm_manifest:-unknown}" "${npm_registry}"
+
+# ---------------------------------------------------------------------------
+# The Go SDK. A Go module has no version manifest — the module path in go.mod
+# plus a git tag IS the release — so there is nothing to compare against, and
+# `check_sdk` does not apply. The two questions that matter are: does the
+# declared module path resolve on the module proxy at all, and has any version
+# of it ever been published.
+#
+# Both mattered here. `sdks/go/go.mod` declared `github.com/mnemo-ai/mnemo-go`
+# for the life of the SDK, and that path 404s on the proxy: `mnemo-ai` is a real
+# but empty GitHub organisation this project does not control, and no repo
+# exists under it. The documented `go get` line could never have worked for
+# anyone, and nothing said so, because nothing looked. A module that resolves
+# but carries no tag is the same failure one step later — `go get` on it can
+# only ever produce a pseudo-version off a commit.
+# ---------------------------------------------------------------------------
+check_go_module() {
+  local gomod="$REPO_ROOT/sdks/go/go.mod"
+  local path escaped code count newest tmp status
+  if [[ ! -f "$gomod" ]]; then
+    printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "-" "NO go.mod"
+    fail+=("sdks/go: no go.mod — the Go SDK is not a resolvable module at all")
+    return
+  fi
+  path="$(awk '$1 == "module" { print $2; exit }' "$gomod")"
+  if [[ -z "$path" ]]; then
+    printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "-" "NO module line"
+    fail+=("sdks/go/go.mod: no module path declared")
+    return
+  fi
+  # The proxy lowercases module paths, escaping each uppercase letter as !<lower>.
+  escaped="$(python3 -c 'import sys; print("".join("!"+c.lower() if c.isupper() else c for c in sys.argv[1]))' "$path")"
+  tmp="$(mktemp)"
+  code="$(curl -sS --max-time 20 -A "$UA" -o "$tmp" -w '%{http_code}' \
+    "https://proxy.golang.org/${escaped}/@v/list" 2>/dev/null || echo "000")"
+  count="$(grep -c '[^[:space:]]' "$tmp" 2>/dev/null || true)"
+  : "${count:=0}"
+  newest="$(grep '[^[:space:]]' "$tmp" 2>/dev/null | sort -V | tail -1 || true)"
+  rm -f "$tmp"
+
+  case "$code" in
+    200)
+      if [[ "$count" -gt 0 ]]; then
+        printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "${count} version(s)" "${newest}" "ok — ${path}"
+        return
+      fi
+      printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "0 versions" "none" "NEVER TAGGED"
+      fail+=("sdks/go: module path ${path} resolves but the proxy lists no version — nothing has ever been tagged, so \`go get ${path}\` can only resolve a pseudo-version off a commit. Tag it: git tag sdks/go/vX.Y.Z && git push origin sdks/go/vX.Y.Z")
+      ;;
+    404|410)
+      printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "404" "DOES NOT RESOLVE"
+      fail+=("sdks/go: module path ${path} does not resolve on proxy.golang.org (HTTP ${code}) — \`go get ${path}\` fails for every consumer. Point go.mod at the path the code actually lives at.")
+      ;;
+    000)
+      printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "unreachable" "UNREACHABLE"
+      fail+=("sdks/go: proxy.golang.org did not answer — refusing to treat an unknown registry state as agreement")
+      ;;
+    *)
+      printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "HTTP ${code}" "UNEXPECTED"
+      fail+=("sdks/go: proxy.golang.org answered HTTP ${code} for ${path} — unexpected, not treated as agreement")
+      ;;
+  esac
+}
+check_go_module
 
 # ---------------------------------------------------------------------------
 # Verdict
@@ -541,7 +697,9 @@ if [[ ${#orphans[@]} -gt 0 && "$MODE" == "preflight" ]]; then
 fi
 
 if [[ ${#fail[@]} -gt 0 ]]; then
-  if [[ "$MODE" == "assert" ]]; then
+  if [[ "$MODE" == "sdk" ]]; then
+    echo "::error::SDK registry parity FAILED — ${#fail[@]} SDK artifact(s) do not agree with their own registry. Each line below is a published surface a user cannot install at the version this repo documents."
+  elif [[ "$MODE" == "assert" ]]; then
     echo "::error::release parity FAILED — ${#fail[@]} artifact(s) did not reach ${ws}. A publish that reports success while leaving a member behind is the exact silent failure that stranded mnemo-mcp-server at 0.4.4 for 87 days (issue #140)."
   else
     if [[ $FLOOR -eq 1 ]]; then
@@ -559,9 +717,16 @@ if [[ ${#fail[@]} -gt 0 ]]; then
     if [[ $unreachable -eq 1 ]]; then
       echo "At least one failure is an UNREACHABLE registry, not a version lag. Re-run before concluding anything about the published state."
     fi
+    if [[ "$MODE" == "sdk" ]]; then
+      echo "These are SDK artifacts, published to npm / PyPI / the Go module proxy — **not** crates.io. The crates.io token runbook does not apply."
+    fi
     echo "**Triage in order: [\`docs/release/registry-token-runbook.md\`](https://github.com/sattyamjjain/mnemo/blob/main/docs/release/registry-token-runbook.md).** Do NOT rotate the token first — during [#140](https://github.com/sattyamjjain/mnemo/issues/140) the token was never the blocker, and the \`/api/v1/me\` 403 that anchored that diagnosis was advisory. Check walk membership and the tag/CHANGELOG gates before touching credentials."
   } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
   exit 1
 fi
 
-echo "registry parity OK (${MODE}): ${#crates[@]} crate(s) checked against workspace ${ws}; SDK artifacts consistent with their own registries."
+if [[ "$MODE" == "sdk" ]]; then
+  echo "registry parity OK (sdk): every SDK artifact agrees with its own registry (npm, PyPI, Go module proxy)."
+else
+  echo "registry parity OK (${MODE}): ${#crates[@]} crate(s) checked against workspace ${ws}; SDK artifacts consistent with their own registries."
+fi

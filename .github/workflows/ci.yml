@@ -267,6 +267,22 @@ jobs:
       - name: Registry-parity severity-floor self-test
         run: bash scripts/registry_parity.sh --self-test
 
+      # ONLINE, and deliberately in THIS job rather than a release workflow.
+      #
+      # The Rust crates have had a parity gate since #140. The SDKs published to
+      # other registries did not, and it showed: `@mndfreek/mnemo-sdk` sat at
+      # 0.4.4 on npm while package.json said 0.4.8 — four patches including the
+      # entire provenance read surface — and `sdks/go/go.mod` declared
+      # `github.com/mnemo-ai/mnemo-go`, a path that 404s on the module proxy
+      # because that repo does not exist. Both shipped as documented install
+      # instructions no user could follow.
+      #
+      # Neither was invisible for want of a check that could see them; they were
+      # invisible because the only thing that looked ran during a release and
+      # printed a warning. This runs on every push and exits non-zero.
+      - name: SDK registry parity (npm, PyPI, Go module proxy)
+        run: bash scripts/registry_parity.sh --mode sdk
+
   # Python test suite. Added 2026-08-15 — until then NOTHING ran pytest, so the
   # 138-test Python suite was unexecuted in CI and had been sitting on two
   # failures nobody could see: a version-alignment test red since 0.5.12, and a

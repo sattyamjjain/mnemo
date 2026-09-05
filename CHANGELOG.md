@@ -107,6 +107,45 @@ drives a denied tool over JSON-RPC to a `-32601`. What was not stated plainly is
 `mnemo.forget_subject` with no lease at all. The README now says that above the table
 instead of leaving it to be inferred from the row text.
 
+### Added - release parity now covers npm and the Go module proxy, not just crates.io
+
+`scripts/registry_parity.sh` grew out of [#140](https://github.com/sattyamjjain/mnemo/issues/140),
+where `mnemo-mcp-server` sat at 0.4.4 on crates.io for 87 days while every publish run
+reported success. It has guarded the Rust crates ever since. It did not guard the SDKs
+published to other registries, and both had drifted into exactly the same shape:
+
+- **npm.** The script *did* read `sdks/typescript/package.json` and compare it to
+  `registry.npmjs.org`. It classified "manifest ahead of registry" as
+  `pending publish (warn only)` — sound reasoning for one patch, false for four.
+  `@mndfreek/mnemo-sdk` published 0.4.4 and the manifest then went to 0.4.8, carrying the
+  whole provenance read + FORGET BY PROVENANCE surface, and every run since printed a
+  warning and went green.
+- **Go.** Nothing looked at the Go SDK at all. `sdks/go/go.mod` declared
+  `github.com/mnemo-ai/mnemo-go`, which returns 404 from `proxy.golang.org` — `mnemo-ai`
+  is a real but empty GitHub organisation this project does not control, and no repo
+  exists under it. The `go get` line in `docs/src/go-sdk.md` could never have worked for
+  any user, for the entire life of the SDK.
+
+The SDK threshold is now the crate threshold: one patch of slack for a publish genuinely
+in flight, and **more than one patch is a hard failure**. Absent-from-its-registry fails
+too — that is the strongest form of the same bug, not a milder one. A registry that does
+not answer is its own verdict rather than being folded into "absent", because an unknown
+state must never read as agreement.
+
+The Go SDK has no version manifest — a Go module *is* its git tag — so it is checked
+against the proxy for two things instead: that the declared module path resolves at all,
+and that at least one version has ever been published. A path that resolves but carries
+no tag fails, because `go get` on it can only ever produce a pseudo-version off a commit.
+
+New `--mode sdk` runs only this section: no crates.io, no publish walk, cheap enough to
+run on **every push**, wired into the `version-drift` job in `ci.yml`. That placement is
+the actual fix. Neither strand was invisible for want of a check that could see it — the
+npm check existed. They were invisible because the only thing that looked ran during a
+release and printed a warning when it did.
+
+Both thresholds are pinned offline by `--self-test`, including the exact `0.4.8` vs
+`0.4.4` row, so restoring the old leniency reddens CI here instead of going quiet on npm.
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)
