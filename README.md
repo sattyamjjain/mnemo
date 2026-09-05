@@ -40,10 +40,22 @@ cargo run --release -p mnemo-audit-conformance-bench
 # → bench/audit_conformance/results/conformance.md  (byte-stable report + recomputable SHA-256 crypto vector)
 ```
 
-Scope of that 256: the bench writes its chain one record at a time, so the figure
-covers mutation of a serially-written log and says nothing about concurrent
-writes — those are covered separately, and structurally rather than statistically,
-by [`concurrent_chain_linkage.rs`](crates/mnemo-core/tests/concurrent_chain_linkage.rs).
+Scope of that 256: it is mutation detection on a log the bench wrote **one record
+at a time**, and says nothing on its own about concurrent writes. So the same bench
+now runs a concurrency arm and reports it in the same units, side by side:
+
+| measurement | one trial is | successes / trials | rate | Wilson 95% |
+|---|---|---|---|---|
+| Tamper detection, **serially** written log | one single-byte mutation, caught and attributed to the right record | 256 / 256 | 100.0% | [98.5%, 100.0%] |
+| Chain linkage, **concurrently** written log | one record naming its predecessor, with 16 writers running at once | 255 / 255 | 100.0% | [98.5%, 100.0%] |
+
+16 writers × 16 writes = 256 records on 8 tokio worker threads, on an Apple M4
+(10 cores, arm64, macOS); the denominator is 255 because exactly one record is
+legitimately the chain head. Alongside the rate the arm asserts what a rate cannot
+express — exactly **1** head, 0 forks, 0 dangling records, and all 256 reachable by
+walking links from that head — with no interval to hide behind. Until v0.5.29 that
+arm produced 16 heads and 0 links; the structural regression test lives in
+[`concurrent_chain_linkage.rs`](crates/mnemo-core/tests/concurrent_chain_linkage.rs).
 
 **Reproducible-by-disclosure memory:** mnemo publishes its LoCoMo numbers with a
 fixed seed + a Wilson-95 you can re-run offline (`cargo run --release -p
@@ -913,6 +925,28 @@ request path yet. This table is the honest picture — verified against the code
 not the roadmap. "Enforced" means a live code path rejects/acts; "library /
 parsed-only" means the logic exists and is tested but nothing on the default
 path calls it.
+
+Two rows are `✅` **only under a condition, and that condition is off by default.**
+Stating it here rather than leaving it inside the row text, because a reader
+scanning the middle column will otherwise credit mnemo with a control their
+deployment is not actually running:
+
+- **MCP role-filter** does nothing until the manifest declares a `[role_filter]`
+  block. `mnemo mcp-server` started without one exposes every advertised tool.
+- **Capability-leased reads** do nothing until `--lease-ttl-seconds` is set
+  non-zero, which additionally requires `--capability-key` (the server refuses to
+  start with one and not the other). The default is `0`, so a stock server accepts
+  `mnemo.forget_subject` with no lease at all.
+
+Both are wired — the CLI attaches them to the served MCP server, and
+`hardened_mode_attaches_role_filter` drives a denied tool over JSON-RPC to a
+`-32601` — but wired and *on* are different claims, and only the first is true out
+of the box. The table itself is pinned by
+[`readme_enforcement_claims_are_real.rs`](crates/mnemo-cli/tests/readme_enforcement_claims_are_real.rs):
+the conditional `✅` rows fail the build if the CLI stops attaching the filter or
+the lease store, and the `❌` rows fail it if those surfaces are ever wired without
+this table being updated in the same change. Until that test it was hand-maintained
+and unpinned, which is the only way a row here can go stale.
 
 | Control | Enforced by default? | Where / how |
 |---|---|---|

@@ -1,0 +1,131 @@
+# Executes `docs/verify-my-log.md` end to end.
+#
+# The document walks a reader through verifying a mnemo audit log with a
+# standalone Python verifier that never links mnemo. This workflow runs that
+# walkthrough as written, so the page is executed rather than described: if the
+# CLI stops producing a log this verifier accepts, or the verifier stops
+# rejecting a tampered one, the build goes red and the document is wrong in CI
+# before it is wrong for a reader.
+#
+# The tamper step is the load-bearing half. A verifier that only ever runs
+# against a good log demonstrates nothing at all — it would pass identically if
+# it were `sys.exit(0)`. So the negative case asserts a NON-zero exit and the
+# expected diagnosis, and fails the job loudly if the verifier accepts a log
+# that was edited after the hashes were taken.
+name: Verify my log
+
+on:
+  push:
+    branches: [main]
+  # Also on PRs: a workflow that only runs post-merge is one whose first
+  # execution is on a branch nobody can fix without another merge.
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  verify-my-log:
+    name: docs/verify-my-log.md, executed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # A debug build deliberately: this job checks a hash chain, not a
+      # throughput number, and `--release` on a tree containing DuckDB is many
+      # minutes of compile for no signal here.
+      - name: Build the CLI the document tells the reader to run
+        run: cargo build -p mnemo-mcp-server
+
+      # docs/verify-my-log.md §1 — one MCP invocation per record.
+      - name: Write three records through the MCP tool surface
+        run: |
+          set -euo pipefail
+          for C in "Consent obtained from data subject 4471 on 2026-09-01." \
+                   "Retention period set to 24 months per policy R-12." \
+                   "Access request from subject 4471 fulfilled on 2026-09-01."; do
+            printf '%s\n' \
+             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+             "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mnemo.remember\",\"arguments\":{\"content\":\"$C\"}}}" \
+             | MNEMO_DB_PATH=./audit.db ./target/debug/mnemo >/dev/null
+          done
+
+      # docs/verify-my-log.md §2
+      - name: Export the chain
+        run: |
+          set -euo pipefail
+          ./target/debug/mnemo --db-path ./audit.db audit export --out chain.jsonl
+          test -s chain.jsonl
+          echo "exported $(wc -l < chain.jsonl) record(s)"
+
+      # docs/verify-my-log.md §3 — the positive case.
+      - name: Verify the pristine log — must PASS
+        run: |
+          set -euo pipefail
+          python3 tools/verify_mnemo_chain.py chain.jsonl | tee pristine.txt
+          grep -q '^OK: 3 records' pristine.txt
+
+      # docs/verify-my-log.md §4-5 — the negative case, and the reason this job
+      # exists. Shorten the retention period directly in the exported file, the
+      # way someone quietly rewriting history would, and require the verifier to
+      # reject it.
+      - name: Tamper with one record, then require the verifier to REJECT it
+        run: |
+          set -uo pipefail
+          grep -o '"content":"Retention[^"]*"' chain.jsonl
+          sed -i 's/24 months/6 months/' chain.jsonl
+
+          # Guard the guard: a sed that matched nothing would leave the log
+          # pristine, the verifier would rightly pass, and this step would
+          # report a failure that says nothing about the verifier.
+          if ! grep -q '6 months' chain.jsonl; then
+            echo "::error::the tamper did not apply — the negative case would be vacuous"
+            exit 1
+          fi
+          grep -o '"content":"Retention[^"]*"' chain.jsonl
+
+          # `if cmd; then` rather than capturing $? — under `set -e` an
+          # assignment from a failing command aborts the step, which is how a
+          # deliberately-failing check ends up reporting only an exit code.
+          if python3 tools/verify_mnemo_chain.py chain.jsonl > tampered.txt 2>&1; then
+            echo "::error::the standalone verifier ACCEPTED a log that was edited after its hashes were taken"
+            cat tampered.txt
+            exit 1
+          fi
+          cat tampered.txt
+
+          # Non-zero is necessary but not sufficient: a verifier that crashed on
+          # a missing file would also exit non-zero. Require the diagnosis, and
+          # require it to name the record that was actually edited (index 1, the
+          # second of the three written above, in a serially written log).
+          if ! grep -q '^BROKEN at record index 1$' tampered.txt; then
+            echo "::error::verifier exited non-zero but did not report the expected break at record index 1"
+            exit 1
+          fi
+          echo "the tampered record was caught and named"
+
+      # Not in the document as a numbered step, but it is what the document's
+      # "What writing this page found" section is about: three `tools/call`
+      # requests in ONE session are processed concurrently, and until v0.5.29
+      # that produced three unlinked heads rather than a chain of three. Written
+      # here so a regression fails this job rather than being rediscovered by a
+      # reader following the page.
+      - name: Three writes in one session must also chain
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+           '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+           '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+           '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mnemo.remember","arguments":{"content":"concurrent write one"}}}' \
+           '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"mnemo.remember","arguments":{"content":"concurrent write two"}}}' \
+           '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"mnemo.remember","arguments":{"content":"concurrent write three"}}}' \
+           | MNEMO_DB_PATH=./concurrent.db ./target/debug/mnemo >/dev/null
+
+          ./target/debug/mnemo --db-path ./concurrent.db audit export --out concurrent.jsonl
+          python3 tools/verify_mnemo_chain.py concurrent.jsonl | tee concurrent.txt
+          grep -q '^OK: 3 records' concurrent.txt

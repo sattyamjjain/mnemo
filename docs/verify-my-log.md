@@ -1,5 +1,7 @@
 # Verify a mnemo log yourself, without trusting mnemo
 
+> **This page is executed, not just described.** Every command below runs on each push to main in [`.github/workflows/verify-my-log.yml`](../.github/workflows/verify-my-log.yml) — including the tamper in §4, which fails the build if the verifier *accepts* the edited log.
+
 Five minutes, one Python file, no dependencies. At the end you will have watched
 a tampered record get caught by name.
 
