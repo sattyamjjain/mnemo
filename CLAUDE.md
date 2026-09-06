@@ -82,7 +82,7 @@ cd sdks/go && go test ./...
 python3 scripts/check_docs_links.py  # mdBook link check
 python3 scripts/gen_published_versions.py  # regenerate the published-version table
 bash scripts/check_publish_closure.sh   # no publishable crate is orphaned from the walk
-bash scripts/check_crate_name_refs.sh   # `cargo install mnemo-cli` installs someone else's crate
+bash scripts/check_crate_name_refs.sh   # blocks install lines naming crates other people own
 bash scripts/check_tag_release_parity.sh  # every release tag has a GitHub Release object
 bash scripts/check_readme_version_claims.sh  # release STATE is generated, never hand-asserted
 python3 scripts/gen_gpm_clause_table.py --check   # GPM clause table is generated
