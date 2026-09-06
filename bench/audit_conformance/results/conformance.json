@@ -8,6 +8,24 @@
     "mnemo_core::query::MnemoEngine::verify_integrity",
     "mnemo_core::query::MnemoEngine::verify_event_integrity"
   ],
+  "concurrency": {
+    "dangling": 0,
+    "event_chain_heads": 1,
+    "forks": 0,
+    "heads": 1,
+    "linkage_ci95": [
+      0.985159028085392,
+      1.0
+    ],
+    "linkage_denominator": 255,
+    "linkage_rate": 1.0,
+    "linked": 255,
+    "reachable_from_head": 256,
+    "records": 256,
+    "worker_threads": 8,
+    "writers": 16,
+    "writes_per_writer": 16
+  },
   "conformant": true,
   "crypto_vector": {
     "agent_id": "audit-conformance-agent",
@@ -63,6 +81,11 @@
     {
       "detail": "forget appended exactly 1 event (64→65), event chain still verifies=true, original write row retained (deleted_at set)=true, active chain still valid=true",
       "key": "append_only_retention",
+      "pass": true
+    },
+    {
+      "detail": "255/255 concurrent writes linked (rate 100.0%, Wilson95 [98.5%, 100.0%]) from 16 writers × 16 writes on 8 worker threads; 1 head, 0 fork(s), 0 dangling, 256/256 reachable from the head; event chain 1 head",
+      "key": "concurrent_writes_chain",
       "pass": true
     },
     {

@@ -4,7 +4,7 @@
 
 Reproduce: `cargo run --release -p mnemo-audit-conformance-bench`
 
-**Parameters:** 64 records written through the real `remember()` path; 256 single-byte tamper trials.
+**Parameters:** 64 records written serially through the real `remember()` path; 256 single-byte tamper trials; concurrency arm of 16 writers × 16 writes (256 records) on 8 runtime worker threads.
 
 ## Conformance
 
@@ -14,12 +14,24 @@ Reproduce: `cargo run --release -p mnemo-audit-conformance-bench`
 | `event_log_verifies` | ✅ PASS | 64 append-only events verify (one MemoryWrite per remember); engine.verify_event_integrity agrees=true |
 | `tamper_is_detected` | ✅ PASS | 256/256 single-byte mutations caught (rate 100.0%, Wilson95 [98.5%, 100.0%]) |
 | `append_only_retention` | ✅ PASS | forget appended exactly 1 event (64→65), event chain still verifies=true, original write row retained (deleted_at set)=true, active chain still valid=true |
+| `concurrent_writes_chain` | ✅ PASS | 255/255 concurrent writes linked (rate 100.0%, Wilson95 [98.5%, 100.0%]) from 16 writers × 16 writes on 8 worker threads; 1 head, 0 fork(s), 0 dangling, 256/256 reachable from the head; event chain 1 head |
 | `crypto_vector_pristine_verifies` | ✅ PASS | fixed 3-write chain verifies (3/3 records) |
 | `crypto_vector_tamper_detected` | ✅ PASS | one-byte content flip rejected; first_broken_at = fixed uuid 00000000-0000-0000-0000-000000000002 (record #2) |
 
 **Overall: CONFORMANT.**
 
-Tamper-detection rate over 256 trials: **100.0%** (Wilson 95% [98.5%, 100.0%]). A finite sample cannot *prove* 100%; the Wilson lower bound is the honest floor.
+## Serial and concurrent, side by side
+
+Both rates are successes over an explicit denominator with a Wilson 95% interval, so they read against each other — but they are **different properties**, and the middle column says which. A finite sample cannot *prove* 100%; the Wilson lower bound is the honest floor.
+
+| measurement | one trial is | successes / trials | rate | Wilson 95% |
+|---|---|---|---|---|
+| Tamper detection, **serially** written log | one single-byte mutation of one record, caught by the offline verifier and attributed to the right record | 256 / 256 | 100.0% | [98.5%, 100.0%] |
+| Chain linkage, **concurrently** written log | one record naming its predecessor, in a log written by 16 writers at once | 255 / 255 | 100.0% | [98.5%, 100.0%] |
+
+The linkage denominator is 255, not 256: exactly one record is legitimately the head, so a rate over the record count could never reach 100%.
+
+The concurrency arm also asserts, **structurally rather than statistically**, what a rate cannot express: exactly **1** head (not 16), **0** fork, **0** dangling, **256/256** records reachable by walking links from that head, and **1** head in the parallel `agent_events` chain. Those have no confidence interval — they either hold or the bench exits non-zero. Until v0.5.29 this arm produced 16 heads and 0 links; see `docs/verify-my-log.md`.
 
 ## Recomputable crypto vector
 

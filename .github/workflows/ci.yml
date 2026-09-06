@@ -267,6 +267,40 @@ jobs:
       - name: Registry-parity severity-floor self-test
         run: bash scripts/registry_parity.sh --self-test
 
+      # ONLINE, and deliberately in THIS job rather than a release workflow.
+      #
+      # The Rust crates have had a parity gate since #140. The SDKs published to
+      # other registries did not, and it showed: `@mndfreek/mnemo-sdk` sat at
+      # 0.4.4 on npm while package.json said 0.4.8 — four patches including the
+      # entire provenance read surface — and `sdks/go/go.mod` declared
+      # `github.com/mnemo-ai/mnemo-go`, a path that 404s on the module proxy
+      # because that repo does not exist. Both shipped as documented install
+      # instructions no user could follow.
+      #
+      # Neither was invisible for want of a check that could see them; they were
+      # invisible because the only thing that looked ran during a release and
+      # printed a warning. This runs on every push and exits non-zero.
+      #
+      # Hard on push-to-main and the nightly schedule; WARN on pull_request.
+      #
+      # That split is not leniency, it is the same argument this script's header
+      # already makes about deadlock #2: do not fail a lane for a artifact that
+      # lane is not responsible for and cannot repair. A pull request cannot
+      # repair a registry strand — only a publish can — so failing PRs on a
+      # pre-existing strand blocks unrelated work with no way to unblock it.
+      # Concretely: the npm SDK has been stranded since May, and on the first day
+      # this gate existed it would have reddened three Dependabot PRs that touch
+      # neither npm nor Go. This repo has already had that exact bug once, when
+      # the DCO check had no bot exemption and every dependency PR was red by
+      # construction. A gate that reddens work it cannot help gets disabled.
+      - name: SDK registry parity (npm, PyPI, Go module proxy)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bash scripts/registry_parity.sh --mode sdk --warn-only
+          else
+            bash scripts/registry_parity.sh --mode sdk
+          fi
+
   # Python test suite. Added 2026-08-15 — until then NOTHING ran pytest, so the
   # 138-test Python suite was unexecuted in CI and had been sitting on two
   # failures nobody could see: a version-alignment test red since 0.5.12, and a
@@ -500,3 +534,14 @@ jobs:
         run: python3 scripts/gen_recall_number.py --self-test
       - name: README recall number matches the committed bench result
         run: python3 scripts/gen_recall_number.py --check
+
+      # CITATION.cff is rendered by GitHub as the "Cite this repository" widget,
+      # so its `version:` is what ends up in other people's reference lists, and
+      # nothing else in the tree reads the file — so nothing else notices when it
+      # rots. The sibling agent-audit-kit repo carried these same fields under a
+      # comment telling a human to bump them each release; the file sat ten patch
+      # versions behind what shipped. Self-test first, same as every guard here.
+      - name: Citation metadata guard self-test
+        run: bash scripts/check_citation_version.sh --self-test
+      - name: CITATION.cff names the shipped version and claims no DOI
+        run: bash scripts/check_citation_version.sh

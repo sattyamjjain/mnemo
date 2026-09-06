@@ -81,6 +81,12 @@ cd sdks/go && go test ./...
 ./scripts/registry_parity.sh --self-test       # pins the lag table in CI
 python3 scripts/check_docs_links.py  # mdBook link check
 python3 scripts/gen_published_versions.py  # regenerate the published-version table
+bash scripts/check_publish_closure.sh   # no publishable crate is orphaned from the walk
+bash scripts/check_crate_name_refs.sh   # `cargo install mnemo-cli` installs someone else's crate
+bash scripts/check_tag_release_parity.sh  # every release tag has a GitHub Release object
+bash scripts/check_readme_version_claims.sh  # release STATE is generated, never hand-asserted
+python3 scripts/gen_gpm_clause_table.py --check   # GPM clause table is generated
+python3 scripts/gen_recall_number.py --check      # README recall number vs committed bench
 ```
 
 **Environment variables for CLI** (each also has a `--flag` equivalent unless noted):
@@ -191,6 +197,9 @@ mnemo/
 │   ├── asi06_poisoning/     # ASI06 cover-up/forgery resistance of the auditable layer
 │   ├── salami_poisoning/    # Compositional ("Salami") poisoning — save + assembly rates (#37)
 │   ├── forged_reasoning/    # Forged-chain-of-thought injection ASR, trust filter OFF vs ON
+│   ├── minja_phase3/        # Non-adaptive Phase-3 exploitation vs a digest-pinned real
+│   │                        #   embedder, with a matched benign floor — NOT a MINJA number
+│   │                        #   (#37, ADR 0003)
 │   ├── state_bench/         # Python harness (NOT a cargo crate)
 │   └── results/             # Committed dated JSON bench results
 ├── python/                  # PyO3 bindings + framework adapters (OpenAI Agents, CrewAI,
@@ -199,7 +208,11 @@ mnemo/
 ├── sdks/
 │   ├── typescript/          # TypeScript REST client SDK
 │   └── go/                  # Go REST client SDK
-├── scripts/                 # Version-drift, release-parity, docs-link, generated-versions gates
+├── scripts/                 # Version-drift, release-parity, docs-link, publish-closure,
+│                            #   crate-name, tag-release and generated-block gates
+├── tools/                   # verify_mnemo_chain.py — standalone chain verifier: Python
+│                            #   stdlib only, no mnemo import, so an auditor need not run
+│                            #   vendor code to check the vendor's log (#180)
 ├── examples/                # Python usage examples
 ├── deploy/helm/mnemo/       # Helm chart for Kubernetes
 ├── dashboards/              # Observability dashboards
@@ -267,8 +280,11 @@ mnemo/
 - CI jobs (see `.github/workflows/ci.yml`): `fmt`, `clippy`, `test`, `build`, `security`
   (`cargo audit`), `onnx-feature` (builds + tests `-p mnemo-core --features onnx` on its
   own so the feature cannot silently rot), `postgres` (live pgvector), `version-drift`
-  (crates.io vs workspace), `python-tests` (pytest), and `version-fence` (every crate's
-  version vs the tag + CHANGELOG)
+  (crates.io vs workspace), `python-tests` (pytest), `version-fence` (every crate's
+  version vs the tag + CHANGELOG), and `doc-guards` (crate-name refs, publish closure,
+  GPM clause table, published-versions table, README recall number — each guard runs its
+  own `--self-test` first so a matcher that can no longer fire fails loudly instead of
+  passing as clean coverage)
 - `python-tests` must run pytest **from the repo root**: running it from `python/` puts the
   source package ahead of the installed wheel on `sys.path`, and since a wheel install does
   not copy the native `.so` into `python/mnemo/` the way `maturin develop` does, the
