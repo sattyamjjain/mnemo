@@ -11,6 +11,192 @@ The 0.5.30 window opens on the **v0.5.29** cut. The 0.5.29 release content lande
 [`c119e4b`](https://github.com/sattyamjjain/mnemo/commit/c119e4b), and the `v0.5.29` tag points
 at that commit, which is where the `## [0.5.29]` heading the publish gate requires first exists.
 
+### Added - the concurrency figure, in the same units as the serial one
+
+`bench/audit_conformance` published a single headline number: 100% single-byte-mutation
+detection over 256 trials. It wrote its chain **one record at a time**, so that figure
+covered a serially written log and said nothing about the case that actually broke — until
+v0.5.29 every overlapping `remember()` inserted itself as a fresh chain head. The
+structural regression test existed; the published figure did not.
+
+The same harness now runs a concurrency arm: 16 writers × 16 writes = 256 records on 8
+tokio worker threads, reporting the **linkage rate** — records naming a predecessor, over
+the count a correct chain would have — as successes over an explicit denominator with a
+Wilson 95% interval, the same shape as the tamper figure. Measured: **255/255 linked,
+100%, Wilson 95% [98.5%, 100.0%]**. Both rows are published together in `README.md`,
+`docs/POSITIONING.md` and the generated report, with the hardware (Apple M4, 10 cores) and
+the thread count stated, because a rate with no denominator and no thread count is not a
+measurement.
+
+The denominator is 255, not 256: exactly one record is legitimately the head, so a rate
+over the record count could never reach 100%. Alongside the rate the arm asserts what a
+rate cannot express — exactly one head, no fork, nothing dangling, every record reachable
+by walking links from that head — with no interval to hide behind.
+
+`main` builds its tokio runtime by hand rather than through `#[tokio::main]` so the worker
+count is one value, used by the runtime and printed in the report. On a single worker
+thread the writers never overlap and the arm would pass without testing anything. The
+report stays byte-stable: a correct chain of K records has one head and K−1 links however
+the writers interleave, and wall-clock is deliberately not reported.
+
+**The fork detector was wrong when first written, and a test caught it.** Grouping records
+by `prev_hash` looks like the way to find two records claiming one predecessor. It cannot
+be: `prev_hash = SHA256(content_hash ‖ predecessor_content_hash)` mixes in the record's
+*own* content hash, so two records following the same predecessor carry different
+`prev_hash` values and the group never collides. That implementation reported 0 forks on a
+deliberately forked chain. The diagnosis is now a pure function tested against four broken
+shapes — the original N-heads defect, a fork, a removed record, and a correct chain — so
+it is not a measurement that has only ever seen a passing case.
+
+### Added - `docs/verify-my-log.md` now runs in CI
+
+The page walks a reader through verifying a mnemo audit log with a standalone Python
+verifier, including tampering with a record and watching it get caught. It was a
+transcript. `.github/workflows/verify-my-log.yml` now executes it on every push to `main`
+and on pull requests: it writes three records through the MCP tool surface, exports the
+chain, requires the verifier to accept it, edits one record's retention period from 24
+months to 6 directly in the export, and requires the verifier to **reject** it with a
+non-zero exit and name record index 1.
+
+The negative case is the load-bearing half — a verifier that only ever runs against a good
+log would pass identically if it were `sys.exit(0)` — so the job fails loudly if the
+verifier accepts the edited log, and separately fails if the `sed` did not apply, which
+would make the negative case vacuous while looking green. A final step writes three records
+in **one** MCP session, the concurrent path that produced three unlinked heads before
+v0.5.29, and requires that log to verify too. The document now opens with a line pointing
+at the workflow, so a reader can see it is executed rather than described.
+
+### Fixed - `docs/roadmap/planned-crates.md` described a gap that had already closed
+
+The page listed eight crates as "exist, on crates.io at **0.4.4**", under a 2026-07-31
+decision to keep them out of the tag-gated publish closure, and separately described
+`mnemo-amp` as "intentionally not on crates.io … do not re-litigate publishing them".
+
+Checked against the crates.io API on 2026-09-04: `mnemo-admin`, `mnemo-baseline`,
+`mnemo-cma`, `mnemo-codemode`, `mnemo-deal`, `mnemo-letta`, `mnemo-md-sync` and
+`mnemo-mesh` all serve **0.5.29**, and so does `mnemo-amp`. All nine are in the `WALK` in
+`release-crate.yml`. The stale rows are deleted rather than annotated, and the page no
+longer mirrors per-crate published versions at all — the live table is generated into
+`README.md` from the registries, and a hand-maintained mirror of a generated table is
+exactly how these rows stayed wrong. The seven genuinely-planned entries were re-verified
+two ways (absent from `ls crates/`, absent from crates.io) and are unchanged.
+
+One note for whoever re-runs that check: crates.io rejects API requests without a
+`User-Agent`, and a naive loop reports **every** crate as unpublished — including
+`mnemo-core`. The first run of this reconciliation did exactly that, and the only reason it
+was not believed is that it also said `mnemo-core` was unpublished.
+
+### Added - the README security table is now pinned to the code
+
+`README.md` carries an "Enforced by default?" table. It was accurate and hand-maintained,
+which means nothing failed when a row stopped being true.
+`crates/mnemo-cli/tests/readme_enforcement_claims_are_real.rs` pins it: the conditional
+`✅` rows fail the build if `mnemo-cli` stops attaching the role filter or the lease store
+to the served MCP server, and the `❌` rows (consent-token guard, and the mesh / deal /
+baseline / CMA adapters) fail it if those surfaces are ever wired without the table being
+updated in the same change. Every check is guarded for non-vacuity — the README row it
+pins must still be present — and each was verified in the failing direction by mutation,
+not by inspection.
+
+**Both surfaces the audit asked about are wired**, contrary to the premise: `main.rs`
+calls `with_role_filter` and `with_lease_store`, and `hardened_mode_attaches_role_filter`
+drives a denied tool over JSON-RPC to a `-32601`. What was not stated plainly is that
+**wired and on are different claims**: the role filter does nothing without a
+`[role_filter]` manifest block, and capability-leased reads do nothing unless
+`--lease-ttl-seconds` is set non-zero — it defaults to `0`, so a stock server accepts
+`mnemo.forget_subject` with no lease at all. The README now says that above the table
+instead of leaving it to be inferred from the row text.
+
+### Added - release parity now covers npm and the Go module proxy, not just crates.io
+
+`scripts/registry_parity.sh` grew out of [#140](https://github.com/sattyamjjain/mnemo/issues/140),
+where `mnemo-mcp-server` sat at 0.4.4 on crates.io for 87 days while every publish run
+reported success. It has guarded the Rust crates ever since. It did not guard the SDKs
+published to other registries, and both had drifted into exactly the same shape:
+
+- **npm.** The script *did* read `sdks/typescript/package.json` and compare it to
+  `registry.npmjs.org`. It classified "manifest ahead of registry" as
+  `pending publish (warn only)` — sound reasoning for one patch, false for four.
+  `@mndfreek/mnemo-sdk` published 0.4.4 and the manifest then went to 0.4.8, carrying the
+  whole provenance read + FORGET BY PROVENANCE surface, and every run since printed a
+  warning and went green.
+- **Go.** Nothing looked at the Go SDK at all. `sdks/go/go.mod` declared
+  `github.com/mnemo-ai/mnemo-go`, which returns 404 from `proxy.golang.org` — `mnemo-ai`
+  is a real but empty GitHub organisation this project does not control, and no repo
+  exists under it. The `go get` line in `docs/src/go-sdk.md` could never have worked for
+  any user, for the entire life of the SDK.
+
+The SDK threshold is now the crate threshold: one patch of slack for a publish genuinely
+in flight, and **more than one patch is a hard failure**. Absent-from-its-registry fails
+too — that is the strongest form of the same bug, not a milder one. A registry that does
+not answer is its own verdict rather than being folded into "absent", because an unknown
+state must never read as agreement.
+
+The Go SDK has no version manifest — a Go module *is* its git tag — so it is checked
+against the proxy for two things instead: that the declared module path resolves at all,
+and that at least one version has ever been published. A path that resolves but carries
+no tag fails, because `go get` on it can only ever produce a pseudo-version off a commit.
+
+New `--mode sdk` runs only this section: no crates.io, no publish walk, cheap enough to
+run on **every push**, wired into the `version-drift` job in `ci.yml`. That placement is
+the actual fix. Neither strand was invisible for want of a check that could see it — the
+npm check existed. They were invisible because the only thing that looked ran during a
+release and printed a warning when it did.
+
+Both thresholds are pinned offline by `--self-test`, including the exact `0.4.8` vs
+`0.4.4` row, so restoring the old leniency reddens CI here instead of going quiet on npm.
+
+### Fixed - the Go SDK declared a module path that never existed
+
+`sdks/go/go.mod` declared `module github.com/mnemo-ai/mnemo-go`, and
+`docs/src/go-sdk.md` told users to `go get` it. That path returns 404 from
+`proxy.golang.org`. It was never a typo for a repo that moved: `mnemo-ai` **is** a real
+GitHub organisation — created 2025-11-10, zero public repositories — that this project
+does not own or belong to. No repo has ever existed under it. The documented install line
+could not have worked for any user at any point in the SDK's life.
+
+The module now declares the path the code actually lives at,
+`github.com/sattyamjjain/mnemo/sdks/go`, which is also what `README.md` has said in its
+import example all along — the README and the module it documented disagreed, and the
+README was the one that was right.
+
+Repointing alone is not enough to make `go get` work, and it is worth being precise about
+why. A Go module has no manifest version; the module path plus a git tag **is** the
+release. The corrected path resolves on the proxy but listed zero versions, because no
+`sdks/go/v*` tag had ever been pushed — all 28 tags in this repo are plain `vN.N.N`, which
+name the Rust workspace and say nothing about a module in a subdirectory. So the SDK is
+tagged `sdks/go/v0.5.29`, the form the proxy requires for a module nested in a monorepo.
+
+`go vet`, `go build` and `go test ./...` pass against the new path.
+
+### Added - `CITATION.cff`, with no DOI in it
+
+The repository had no citation metadata of any kind. That matters more here than for most
+software: `tools/verify_mnemo_chain.py` is a standalone, stdlib-only verifier written so an
+auditor can check a Mnemo hash chain **without running Mnemo to do it**, and an auditor who
+relies on that file has nothing to cite. GitHub now renders a "Cite this repository" widget
+from this file.
+
+**There is deliberately no `doi:` field.** A search of the Zenodo API returns zero records
+for this project, so any DOI written here would be invented. A placeholder DOI is worse
+than an absent one — it is a broken link that GitHub prints as authoritative, and it gets
+copied into reference lists before anyone tries to resolve it. The field goes in when a
+deposit exists. For the same reason there is no `preferred-citation:` block: there is no
+paper to redirect to, the software is the artifact.
+
+`version` and `date-released` are gated by `scripts/check_citation_version.sh` in the
+`doc-guards` job, which also fails if a `doi:` ever appears without the check being removed
+deliberately. The guard is there because of a specific, observed failure: the sibling
+`agent-audit-kit` repository carried these same two fields under a comment instructing a
+human to bump them each release, and the file sat at 0.3.83 while the repo shipped 0.3.93.
+A citation naming the wrong version is a wrong citation, and nothing else in the tree reads
+this file, so nothing else could notice.
+
+The guard self-tests first, and that was not ceremony: the self-test caught the check
+passing vacuously on every fixture, because the fixture path was being overwritten by the
+script's own default before the body ran. It would have shipped as coverage that could not
+fail.
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)
