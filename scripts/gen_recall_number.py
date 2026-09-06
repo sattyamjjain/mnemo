@@ -35,6 +35,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 RESULT = REPO / "bench/results/locomo_v1.json"
 README = REPO / "README.md"
+BENCH_INDEX = REPO / "docs/benchmarks/index.md"
 
 BEGIN = "<!-- BEGIN generated: recall-number -->"
 END = "<!-- END generated: recall-number -->"
@@ -64,6 +65,22 @@ def fmt_p(p: float) -> str:
 
 PRIMARY = "semantic_vs_lexical"
 
+# The comparison against the strategy a user actually gets. `recall()` resolves
+# an unset strategy to "auto" (crates/mnemo-core/src/query/recall.rs:357,
+# `request.strategy.as_deref().unwrap_or("auto")`), so `auto` is not one option
+# among five — it is the shipped default and the path every caller who does not
+# name a strategy takes.
+#
+# The bench has measured semantic-vs-auto for as long as the keyed result shape
+# has existed, and this file rendered only semantic-vs-lexical. That published a
+# +0.267 gap over a control nobody runs while staying silent on the +0.058
+# [-0.031, 0.160] gap over the path everyone runs — the second one does not
+# separate. Publishing only the separating comparison is the exact selective
+# reporting docs/BENCH_POISONING.md and docs/security/known-limitations.md exist
+# to forbid, so both are rendered now and the non-separating one is labelled.
+SECONDARY = "semantic_vs_auto"
+DEFAULT_STRATEGY = "auto"
+
 
 def primary_paired(d: dict) -> dict | None:
     """The headline paired comparison, tolerating both result-file shapes.
@@ -76,6 +93,25 @@ def primary_paired(d: dict) -> dict | None:
     if not p:
         return None
     return p.get(PRIMARY, p if "mean_diff" in p else None)
+
+
+def secondary_paired(d: dict) -> dict | None:
+    """The comparison against the shipped default, when the bench recorded one.
+
+    Only the keyed result shape carries it. Early flat files have a single
+    comparison and no notion of a second one, so they render nothing here
+    rather than having a claim invented for them.
+    """
+    p = d.get("paired")
+    if not isinstance(p, dict):
+        return None
+    sec = p.get(SECONDARY)
+    return sec if isinstance(sec, dict) and "mean_diff" in sec else None
+
+
+def crosses_zero(ci: list) -> bool:
+    """True when a 95% interval spans zero, i.e. the sign is not established."""
+    return len(ci) == 2 and ci[0] <= 0.0 <= ci[1]
 
 
 def n_for_separation(d: dict, better: str = "semantic", baseline: str = "lexical") -> int | None:
@@ -116,6 +152,8 @@ def render(result_path: Path | None = None) -> str:
     # Older result files predate the paired block. Render nothing rather than
     # inventing a comparison the bench did not measure.
     paired = primary_paired(d)
+    vs_default = secondary_paired(d)
+    dflt = d.get("strategies", {}).get(DEFAULT_STRATEGY)
 
     sem_ci = sem["recall@1_ci95"]
     lex_ci = lex["recall@1_ci95"]
@@ -190,6 +228,30 @@ def render(result_path: Path | None = None) -> str:
             f"McNemar b={mc['b_better_only']}/c={mc['c_baseline_only']}, "
             f"exact p={fmt_p(mc['exact_p'])} |"
         )
+    # The default's own recall@1 belongs next to the control's, or the paired
+    # row below has no anchor a reader can check it against.
+    if dflt and "recall@1" in dflt:
+        dc = dflt.get("recall@1_ci95")
+        out.append(
+            f"| **shipped default (`{DEFAULT_STRATEGY}`)** | recall@1 {pct(dflt['recall@1'])}"
+            + (f" [{pct(dc[0])}, {pct(dc[1])}]" if dc else "")
+            + " |"
+        )
+    if vs_default:
+        mc = vs_default["mcnemar"]
+        ci = vs_default["mean_diff_ci95"]
+        out.append(
+            f"| **paired gap vs default** | {signed(vs_default['mean_diff'])} "
+            f"[{pct(ci[0])}, {pct(ci[1])}], "
+            f"McNemar b={mc['b_better_only']}/c={mc['c_baseline_only']}, "
+            f"exact p={fmt_p(mc['exact_p'])} — "
+            + (
+                "separates at 95%"
+                if vs_default.get("separates_at_95")
+                else "**does not separate at 95%**"
+            )
+            + " |"
+        )
     out.append(f"| hardware | {d.get('hardware', 'not recorded')} |")
     out.append(
         f"| measured | {d.get('generated_at_utc', 'not recorded')} "
@@ -214,6 +276,57 @@ def render(result_path: Path | None = None) -> str:
         )
     )
     out.append("")
+
+    # The comparison a reader actually needs. The headline gap is measured
+    # against a control nobody runs; this one is measured against the path
+    # every caller takes by default, and it does not separate. Publishing the
+    # first without the second is selective reporting, not brevity.
+    if vs_default:
+        mc = vs_default["mcnemar"]
+        ci = vs_default["mean_diff_ci95"]
+        seps = vs_default.get("separates_at_95")
+        nd = n_for_separation(d, "semantic", DEFAULT_STRATEGY)
+        out.append(
+            f"**Against the strategy you actually get.** `{DEFAULT_STRATEGY}` is the "
+            f"default: `recall()` resolves an unset `strategy` to `{DEFAULT_STRATEGY}`, "
+            "so unless a caller names one, this is the path they are on"
+            + (
+                f" — and it scores recall@1 {pct(dflt['recall@1'])} here, not "
+                f"{pct(sem['recall@1'])}."
+                if dflt and "recall@1" in dflt
+                else "."
+            )
+            + f" On the same {vs_default.get('n', d['n'])} queries semantic beats it by "
+            f"**{signed(vs_default['mean_diff'])}** "
+            f"[95% {pct(ci[0])}, {pct(ci[1])}], McNemar exact "
+            f"p={fmt_p(mc['exact_p'])} ({mc['b_better_only']} queries won, "
+            f"{mc['c_baseline_only']} lost)."
+            + (
+                f" That interval **separates at 95%**."
+                if seps
+                else (
+                    f" **That interval runs from {pct(ci[0])} to {pct(ci[1])}: it "
+                    "contains 0, so the gap does not separate at 95% and the sign "
+                    "of the difference is not established by this sample.**"
+                    if crosses_zero(ci)
+                    else " **The gap does not separate at 95%.**"
+                )
+                + (
+                    f" Roughly n={nd} paired queries would be needed at this effect "
+                    "size."
+                    if nd
+                    else ""
+                )
+            )
+            + f" The {signed(paired['mean_diff'])} headline above is against the "
+            "lexical control, which is not the default and which nobody runs by "
+            "choice; it is the embedder's contribution, not the improvement a user "
+            "sees over stock behaviour."
+            if paired
+            else ""
+        )
+        out.append("")
+
     out.append("Reproduce:")
     out.append("")
     out.append("```bash")
@@ -227,6 +340,7 @@ def render(result_path: Path | None = None) -> str:
     out.append("```")
     out.append("")
     prelim = d.get("preliminary")
+    records = d.get("corpus", {}).get("records")
     out.append(
         "**What this number is not.** It is not a LoCoMo leaderboard score and is "
         "not comparable to one: the corpus is the bundled LongMemEval_M slice, not "
@@ -236,6 +350,25 @@ def render(result_path: Path | None = None) -> str:
         + (
             f" **n={d['n']} is below 100, so the bench marks it `preliminary`;** "
             "treat the interval, not the point estimate, as the claim."
+            # `preliminary` is set by `n < 100` in locomo_v1_bench.rs, and the
+            # bundled corpus is the whole input, not a sample of it. So the label
+            # can never clear by re-running — it is a statement about the corpus,
+            # not about unfinished work, and a reader cannot tell those apart
+            # from the word alone.
+            + (
+                f" **This label cannot clear by re-running.** The corpus is the "
+                f"bundled `{Path(d['corpus']['dataset']).name}`, which is "
+                f"{records} records in full — not a sample of a larger local file "
+                f"— and the bench sets `preliminary` whenever n < 100. So it "
+                "reflects a corpus-size decision, not work in progress. Clearing "
+                "it honestly needs the larger public LongMemEval slice, which is "
+                "access-gated (see "
+                "[#44](https://github.com/sattyamjjain/mnemo/issues/44)); until "
+                "that is vendored under a recorded licence, this number stays "
+                f"`preliminary` at n={records}."
+                if records is not None and records == d.get("n")
+                else ""
+            )
             if prelim
             else ""
         )
@@ -291,7 +424,12 @@ def render_headline(result_path: Path | None = None) -> str:
     )
 
 
-def _fixture(sem_hits: list[int], lex_hits: list[int], paired: dict) -> dict:
+def _fixture(
+    sem_hits: list[int],
+    lex_hits: list[int],
+    paired: dict,
+    auto_hits: list[int] | None = None,
+) -> dict:
     """Minimal result file shaped like the real one, for the self-test."""
     n = len(sem_hits)
     return {
@@ -315,6 +453,17 @@ def _fixture(sem_hits: list[int], lex_hits: list[int], paired: dict) -> dict:
                 "recall@1_ci95": [0.3, 0.6],
                 "hits1_by_query": lex_hits,
             },
+            **(
+                {
+                    "auto": {
+                        "recall@1": sum(auto_hits) / (5 * n),
+                        "recall@1_ci95": [0.45, 0.7],
+                        "hits1_by_query": auto_hits,
+                    }
+                }
+                if auto_hits
+                else {}
+            ),
         },
     }
 
@@ -433,10 +582,26 @@ def self_test() -> int:
             "separates_at_95": False,
         },
     }
+    # This assertion used to read "flat and keyed render the same output", which
+    # was true only because the keyed shape's second comparison was never
+    # rendered. That is the bug, encoded as a test. The real invariant is
+    # narrower: the keyed shape must resolve the HEADLINE to the primary
+    # comparison rather than to whichever key iterates first — while also
+    # rendering the default comparison that a flat file cannot carry.
+    flat_out, keyed_out = render_fixture(flat), render_fixture(keyed)
+    headline_claim = "the paired gap is **+0.267**"
     check(
-        "flat and keyed result shapes render the same headline claim",
-        render_fixture(flat) == render_fixture(keyed),
-        "the keyed shape must pick the primary comparison, not the first key",
+        "keyed shape resolves the headline to the primary comparison",
+        headline_claim in keyed_out and headline_claim in flat_out,
+        "must not pick the first key",
+    )
+    check(
+        "keyed shape additionally publishes the default comparison",
+        "paired gap vs default" in keyed_out,
+    )
+    check(
+        "flat shape claims nothing about a default it never measured",
+        "paired gap vs default" not in flat_out,
     )
 
     # 5. The headline sentence at the top of the README renders from the same
@@ -483,11 +648,153 @@ def self_test() -> int:
         ("it separates." in head(sep_fx)) == ("separates at 95%" in sep),
     )
 
+    # 6. THE ROW THIS CHANGE EXISTS FOR: the comparison against the shipped
+    #    default. On the committed result it does NOT separate, and a null that
+    #    is rendered vaguely is worse than one rendered not at all — so the
+    #    phrasing for the null is tested, not just the code path.
+    auto_hits = [5 if i % 5 else 0 for i in range(45)]
+    with_default = _fixture(
+        [5] * 30 + [0] * 15,
+        [5] * 18 + [0] * 27,
+        {
+            PRIMARY: {
+                "n": 45,
+                "mean_diff": 0.267,
+                "mean_diff_ci95": [0.133, 0.4],
+                "mcnemar": {"b_better_only": 12, "c_baseline_only": 0, "exact_p": 0.000488},
+                "separates_at_95": True,
+            },
+            SECONDARY: {
+                "n": 45,
+                "mean_diff": 0.058,
+                "mean_diff_ci95": [-0.031, 0.16],
+                "mcnemar": {"b_better_only": 4, "c_baseline_only": 2, "exact_p": 0.6875},
+                "separates_at_95": False,
+            },
+        },
+        auto_hits=auto_hits,
+    )
+    wd = render_fixture(with_default)
+    check("default comparison is rendered at all", "paired gap vs default" in wd)
+    check(
+        "default comparison names the default strategy plainly",
+        "`auto` is the default" in wd and "resolves an unset `strategy`" in wd,
+        "a reader must not have to infer which strategy they get",
+    )
+    check(
+        "non-separating default SHOWS the interval crossing zero",
+        "runs from -0.031 to 0.160" in wd and "contains 0" in wd,
+        "shown, not merely described",
+    )
+    check(
+        "non-separating default is labelled as not separating at 95%",
+        "does not separate at 95%" in wd,
+    )
+    check(
+        "non-separating default does not claim the sign is established",
+        "sign of the difference is not established" in wd,
+    )
+    check(
+        "the separating headline is not weakened by the null row",
+        "the gap separates at 95%." in wd,
+        "both verdicts must coexist without contaminating each other",
+    )
+
+    # 6b. The positive branch of the same row: if the default gap ever DOES
+    #     separate, it must say so rather than reusing the null phrasing.
+    sep_default = json.loads(json.dumps(with_default))
+    sep_default["paired"][SECONDARY] = {
+        "n": 45,
+        "mean_diff": 0.21,
+        "mean_diff_ci95": [0.09, 0.33],
+        "mcnemar": {"b_better_only": 14, "c_baseline_only": 1, "exact_p": 0.001},
+        "separates_at_95": True,
+    }
+    sd = render_fixture(sep_default)
+    check("separating default says it separates", "That interval **separates at 95%**." in sd)
+    check("separating default drops the crosses-zero language", "contains 0" not in sd)
+
+    # 6c. A result with no default comparison must stay silent about one.
+    check("no default comparison -> no default claim", "paired gap vs default" not in sep)
+
+    # 7. The benchmark entry point must lead with the headline. Verified in the
+    #    FAILING direction against the real pre-fix ordering, because a guard
+    #    only ever exercised on a good page is not evidence of anything.
+    import tempfile as _tf
+
+    def idx_probe(rows: list[str]) -> list[str]:
+        body = "## The table\n\n| Benchmark | Headline |\n|---|---|\n" + "\n".join(rows)
+        with _tf.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+            fh.write(body)
+            q = Path(fh.name)
+        try:
+            return check_bench_index(index_path=q)
+        finally:
+            q.unlink(missing_ok=True)
+
+    good = ["| **HEADLINE** — MiniLM n=45 | recall@1 0.689 |", "| **Earlier** — nomic n=23 | 0.739 |"]
+    bad = ["| **Semantic recall** — nomic n=23 | 0.739 |", "| **ONNX MiniLM** n=45 | recall@1 0.689 |"]
+    check("bench index: headline-first page passes", idx_probe(good) == [])
+    check(
+        "bench index: headline-second page FAILS",
+        idx_probe(bad) != [],
+        "this is the exact ordering that shipped",
+    )
+    check(
+        "bench index: the failure names the ordering, not a typo",
+        any("must be row 1" in p for p in idx_probe(bad)),
+    )
+
     if failures:
         print(f"\nself-test FAILED ({len(failures)}): " + "; ".join(failures), file=sys.stderr)
         return 1
     print("\nself-test passed")
     return 0
+
+
+def check_bench_index(
+    result_path: Path | None = None, index_path: Path | None = None
+) -> list[str]:
+    """The benchmark entry point must lead with the README's headline number.
+
+    README.md calls docs/benchmarks/index.md "the single benchmark entry point"
+    and says of itself: "There is deliberately only one headline, and an older
+    measurement is kept below it under its own heading rather than beside it."
+    That page did the opposite — its first row was an *earlier* nomic-embed-text
+    measurement at recall@1 0.739 on n=23, with the n=45 headline of 0.689
+    second. A reader following the README's own pointer met a higher number from
+    a smaller sample first.
+
+    Unlike the README block, this page is hand-written prose with per-row
+    caveats, so it is not generated. This check is what stops the ordering
+    silently inverting again: the first data row of the table must carry the
+    headline recall@1 that the result file records.
+    """
+    problems: list[str] = []
+    ip = index_path or BENCH_INDEX
+    if not ip.exists():
+        return [f"{ip} is missing"]
+    d = json.loads((result_path or RESULT).read_text())
+    headline = pct(d["strategies"]["semantic"]["recall@1"])
+
+    rows = [ln for ln in ip.read_text().split("\n") if ln.startswith("| **")]
+    if not rows:
+        return [f"{ip.name}: no benchmark table rows found — has the table moved?"]
+    if headline not in rows[0]:
+        problems.append(
+            f"{ip.name}: the first table row does not carry the headline "
+            f"recall@1 {headline} from {RESULT.name}. README calls this page the "
+            "single benchmark entry point and states there is only one headline, "
+            "so the headline measurement must be row 1. Found instead: "
+            f"{rows[0][:110]}..."
+        )
+    for i, r in enumerate(rows[1:], start=2):
+        if headline in r and "arlier" not in r:
+            problems.append(
+                f"{ip.name}: the headline number {headline} also appears in row "
+                f"{i} without being marked as an earlier measurement."
+            )
+    return problems
 
 
 def main() -> int:
@@ -514,6 +821,9 @@ def main() -> int:
             lambda _, b=body: b, new
         )
     if mode == "--check":
+        idx_problems = check_bench_index()
+        for prob in idx_problems:
+            print(prob, file=sys.stderr)
         if new != text:
             print(
                 "README recall block(s) STALE vs bench/results/locomo_v1.json "
@@ -521,7 +831,9 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        print("README recall blocks are up to date.")
+        if idx_problems:
+            return 1
+        print("README recall blocks are up to date; benchmark index leads with the headline.")
         return 0
     README.write_text(new)
     print("Rewrote README recall-number block.")

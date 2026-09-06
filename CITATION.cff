@@ -42,7 +42,7 @@ authors:
 repository-code: "https://github.com/sattyamjjain/mnemo"
 url: "https://github.com/sattyamjjain/mnemo"
 license: Apache-2.0
-version: "0.5.29"
+version: "0.5.30"
 date-released: "2026-09-04"
 keywords:
   - agent-memory
