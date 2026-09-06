@@ -147,6 +147,7 @@ MODE=""
 WALK=""
 FLOOR=0
 SELFTEST=0
+WARN_ONLY=0
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -154,6 +155,7 @@ while [[ $# -gt 0 ]]; do
     --walk) WALK="${2:-}"; shift 2 ;;
     --fail-on-minor-lag) FLOOR=1; shift ;;
     --self-test) SELFTEST=1; shift ;;
+    --warn-only) WARN_ONLY=1; shift ;;
     -h|--help) sed -n '2,90p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) ARGS+=("$1"); shift ;;
   esac
@@ -164,6 +166,15 @@ if [[ "${SELFTEST:-0}" -eq 0 ]] && [[ "$MODE" != "preflight" && "$MODE" != "asse
   echo "::error::registry_parity.sh: --mode must be 'preflight', 'assert' or 'sdk' (got '${MODE:-}')" >&2
   exit 2
 fi
+# --warn-only exists for ONE caller: `pull_request` in ci.yml. Restricting it to
+# --mode sdk is the whole point — if it could be passed to preflight or assert it
+# would be a switch for turning off the release gates, which is not a thing this
+# file should own.
+if [[ $WARN_ONLY -eq 1 && "$MODE" != "sdk" ]]; then
+  echo "::error::registry_parity.sh: --warn-only applies to --mode sdk only. The crate release gates are not optional." >&2
+  exit 2
+fi
+
 # The floor is a preflight concept. `assert` is already unconditionally hard on
 # every crate in the walk, so accepting the flag there would imply it loosens or
 # changes something. Reject it rather than silently ignore it.
@@ -419,6 +430,7 @@ echo "  newest git tag    : ${newest_tag}"
 [[ -n "$WALK" ]] && echo "  publish walk      : ${WALK}"
 if [[ "$MODE" == "sdk" ]]; then
   echo "  scope             : SDK artifacts only (npm, PyPI, Go module proxy) — no crates.io, no walk"
+  [[ $WARN_ONLY -eq 1 ]] && echo "  severity          : WARN-ONLY — a pull request cannot repair a registry strand, so it is not failed for one"
 elif [[ $FLOOR -eq 1 ]]; then
   echo "  severity floor    : ON — an out-of-walk crate a whole minor behind (or absent) FAILS this release"
 else
@@ -705,6 +717,18 @@ if [[ ${#orphans[@]} -gt 0 && "$MODE" == "preflight" ]]; then
 fi
 
 if [[ ${#fail[@]} -gt 0 ]]; then
+  if [[ "$MODE" == "sdk" && $WARN_ONLY -eq 1 ]]; then
+    echo "::warning::SDK registry parity: ${#fail[@]} SDK artifact(s) do not agree with their own registry. NOT failing this run — see below."
+    for f in "${fail[@]}"; do echo "::warning::  ${f}"; done
+    {
+      echo "### ⚠️ SDK registry parity — ${#fail[@]} strand(s), not failing this pull request"
+      echo
+      for f in "${fail[@]}"; do echo "- ⚠️ \`${f}\`"; done
+      echo
+      echo "A pull request cannot repair a registry strand — only a publish can. Failing PRs on a pre-existing strand would block unrelated work with no way to unblock it, which is how a gate gets disabled within a week. The teeth are on \`push\` to main and the nightly schedule, where this is actionable."
+    } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+    exit 0
+  fi
   if [[ "$MODE" == "sdk" ]]; then
     echo "::error::SDK registry parity FAILED — ${#fail[@]} SDK artifact(s) do not agree with their own registry. Each line below is a published surface a user cannot install at the version this repo documents."
   elif [[ "$MODE" == "assert" ]]; then

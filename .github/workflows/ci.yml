@@ -280,8 +280,26 @@ jobs:
       # Neither was invisible for want of a check that could see them; they were
       # invisible because the only thing that looked ran during a release and
       # printed a warning. This runs on every push and exits non-zero.
+      #
+      # Hard on push-to-main and the nightly schedule; WARN on pull_request.
+      #
+      # That split is not leniency, it is the same argument this script's header
+      # already makes about deadlock #2: do not fail a lane for a artifact that
+      # lane is not responsible for and cannot repair. A pull request cannot
+      # repair a registry strand — only a publish can — so failing PRs on a
+      # pre-existing strand blocks unrelated work with no way to unblock it.
+      # Concretely: the npm SDK has been stranded since May, and on the first day
+      # this gate existed it would have reddened three Dependabot PRs that touch
+      # neither npm nor Go. This repo has already had that exact bug once, when
+      # the DCO check had no bot exemption and every dependency PR was red by
+      # construction. A gate that reddens work it cannot help gets disabled.
       - name: SDK registry parity (npm, PyPI, Go module proxy)
-        run: bash scripts/registry_parity.sh --mode sdk
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bash scripts/registry_parity.sh --mode sdk --warn-only
+          else
+            bash scripts/registry_parity.sh --mode sdk
+          fi
 
   # Python test suite. Added 2026-08-15 — until then NOTHING ran pytest, so the
   # 138-test Python suite was unexecuted in CI and had been sitting on two
