@@ -443,6 +443,7 @@ if [[ "$MODE" != "sdk" ]]; then
 fi
 
 fail=()      # hard failures
+sdk_fail=()  # SDK-registry problems; hard only in --mode sdk (see the verdict)
 repairing=() # lagging crates that this walk is about to fix
 orphans=()   # publishable, never published, and in no walk -> can never ship
 stranded=()  # lagging, but not this walk's responsibility -> warn, never fail
@@ -562,12 +563,12 @@ check_sdk() {
   local label="$1" manifest="$2" registry="$3"
   if [[ -z "$registry" || "$registry" == "unreachable" ]]; then
     printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "unreachable" "UNREACHABLE"
-    fail+=("${label}: registry did not answer — refusing to treat an unknown registry state as agreement")
+    sdk_fail+=("${label}: registry did not answer — refusing to treat an unknown registry state as agreement")
     return
   fi
   if [[ "$registry" == "absent" ]]; then
     printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "absent" "NEVER PUBLISHED"
-    fail+=("${label}: absent from its registry entirely — the manifest says ${manifest} and nothing has ever shipped")
+    sdk_fail+=("${label}: absent from its registry entirely — the manifest says ${manifest} and nothing has ever shipped")
     return
   fi
   local rel; rel="$(cmp_semver "$manifest" "$registry")"
@@ -576,13 +577,13 @@ check_sdk() {
   elif [[ "$rel" == "1" ]]; then
     if more_than_one_patch_behind "$manifest" "$registry"; then
       printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "STRANDED — registry >1 patch behind"
-      fail+=("${label}: registry ${registry} is more than one patch behind manifest ${manifest} — a bump that was never published (the npm shape of #140)")
+      sdk_fail+=("${label}: registry ${registry} is more than one patch behind manifest ${manifest} — a bump that was never published (the npm shape of #140)")
     else
       printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "pending publish (<=1 patch)"
     fi
   else
     printf '  %-30s %-13s %-13s %s\n' "$label" "$manifest" "$registry" "DRIFT — registry ahead of repo"
-    fail+=("${label}: registry ${registry} is AHEAD of manifest ${manifest} — a publish main never recorded")
+    sdk_fail+=("${label}: registry ${registry} is AHEAD of manifest ${manifest} — a publish main never recorded")
   fi
 }
 
@@ -636,7 +637,7 @@ check_go_module() {
   local path escaped code count newest tmp status
   if [[ ! -f "$gomod" ]]; then
     printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "-" "NO go.mod"
-    fail+=("sdks/go: no go.mod — the Go SDK is not a resolvable module at all")
+    sdk_fail+=("sdks/go: no go.mod — the Go SDK is not a resolvable module at all")
     return
   fi
   path="$(awk '$1 == "module" { print $2; exit }' "$gomod")"
@@ -662,19 +663,19 @@ check_go_module() {
         return
       fi
       printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "0 versions" "none" "NEVER TAGGED"
-      fail+=("sdks/go: module path ${path} resolves but the proxy lists no version — nothing has ever been tagged, so \`go get ${path}\` can only resolve a pseudo-version off a commit. Tag it: git tag sdks/go/vX.Y.Z && git push origin sdks/go/vX.Y.Z")
+      sdk_fail+=("sdks/go: module path ${path} resolves but the proxy lists no version — nothing has ever been tagged, so \`go get ${path}\` can only resolve a pseudo-version off a commit. Tag it: git tag sdks/go/vX.Y.Z && git push origin sdks/go/vX.Y.Z")
       ;;
     404|410)
       printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "404" "DOES NOT RESOLVE"
-      fail+=("sdks/go: module path ${path} does not resolve on proxy.golang.org (HTTP ${code}) — \`go get ${path}\` fails for every consumer. Point go.mod at the path the code actually lives at.")
+      sdk_fail+=("sdks/go: module path ${path} does not resolve on proxy.golang.org (HTTP ${code}) — \`go get ${path}\` fails for every consumer. Point go.mod at the path the code actually lives at.")
       ;;
     000)
       printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "unreachable" "UNREACHABLE"
-      fail+=("sdks/go: proxy.golang.org did not answer — refusing to treat an unknown registry state as agreement")
+      sdk_fail+=("sdks/go: proxy.golang.org did not answer — refusing to treat an unknown registry state as agreement")
       ;;
     *)
       printf '  %-30s %-13s %-13s %s\n' "sdks/go (module proxy)" "-" "HTTP ${code}" "UNEXPECTED"
-      fail+=("sdks/go: proxy.golang.org answered HTTP ${code} for ${path} — unexpected, not treated as agreement")
+      sdk_fail+=("sdks/go: proxy.golang.org answered HTTP ${code} for ${path} — unexpected, not treated as agreement")
       ;;
   esac
 }
@@ -683,6 +684,21 @@ check_go_module
 # ---------------------------------------------------------------------------
 # Verdict
 # ---------------------------------------------------------------------------
+# SDK strands are hard ONLY in --mode sdk, the mode whose subject they are.
+#
+# In preflight/assert the subject is the crates.io publish walk, and that walk
+# cannot publish an npm package or tag a Go module. Failing it over the npm SDK
+# is deadlock #2 from this file's header wearing a different hat: a lane blocked
+# for an artifact it is not responsible for and has no way to repair. It would
+# have blocked the next crates.io release outright, on a strand that only a
+# separate npm publish can clear.
+if [[ "$MODE" == "sdk" ]]; then
+  fail+=(${sdk_fail[@]+"${sdk_fail[@]}"})
+elif [[ ${#sdk_fail[@]} -gt 0 ]]; then
+  echo "::warning::${#sdk_fail[@]} SDK artifact(s) disagree with their own registry. NOT failing this ${MODE} run — the crates.io walk cannot publish an npm package or tag a Go module. Run 'registry_parity.sh --mode sdk' (it runs in CI on every push to main) for the hard gate."
+  for f in "${sdk_fail[@]}"; do echo "::warning::  ${f}"; done
+fi
+
 echo
 if [[ ${#repairing[@]} -gt 0 ]]; then
   echo "This walk REPAIRS ${#repairing[@]} lagging artifact(s):"

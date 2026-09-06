@@ -99,10 +99,14 @@ are in the benchmark tables below and [`bench/RESULTS.md`](bench/RESULTS.md).
 | corpus | `crates/mnemo-core/benches/data/longmemeval_m.jsonl`, n=45 queries, mean of 5 seeds |
 | **control (lexical)** | recall@1 0.422 [0.290, 0.567] |
 | **paired gap vs control** | +0.267 [0.133, 0.400], McNemar b=12/c=0, exact p=4.9e-4 |
+| **shipped default (`auto`)** | recall@1 0.631 [0.476, 0.749] |
+| **paired gap vs default** | +0.058 [-0.031, 0.160], McNemar b=4/c=2, exact p=0.6875 — **does not separate at 95%** |
 | hardware | arm64/darwin Apple M4 |
 | measured | 2026-08-24 at `3b876fc` |
 
 The lexical row is the control, not a second headline: it is the same corpus and the same harness with the vector lane switched off, so what the embedder buys is the difference between them. **Do not read that difference off the two intervals** — they overlap (0.543 sits below 0.567), and overlapping intervals neither establish nor rule out a difference. The paired row is the one that answers it: the same queries scored both ways, so each query is its own control.
+
+**Against the strategy you actually get.** `auto` is the default: `recall()` resolves an unset `strategy` to `auto`, so unless a caller names one, this is the path they are on — and it scores recall@1 0.631 here, not 0.689. On the same 45 queries semantic beats it by **+0.058** [95% -0.031, 0.160], McNemar exact p=0.6875 (4 queries won, 2 lost). **That interval runs from -0.031 to 0.160: it contains 0, so the gap does not separate at 95% and the sign of the difference is not established by this sample.** Roughly n=127 paired queries would be needed at this effect size. The +0.267 headline above is against the lexical control, which is not the default and which nobody runs by choice; it is the embedder's contribution, not the improvement a user sees over stock behaviour.
 
 Reproduce:
 
@@ -113,7 +117,7 @@ MNEMO_ONNX_MODEL_PATH=./model.onnx cargo run --release --features onnx \
   -p mnemo-locomo-bench --bin locomo_v1_bench
 ```
 
-**What this number is not.** It is not a LoCoMo leaderboard score and is not comparable to one: the corpus is the bundled LongMemEval_M slice, not full LoCoMo. It is retrieval quality only, with no LLM in the loop and no answer-correctness judge. It says nothing about poisoning resistance or audit integrity, which are measured separately. **n=45 is below 100, so the bench marks it `preliminary`;** treat the interval, not the point estimate, as the claim.
+**What this number is not.** It is not a LoCoMo leaderboard score and is not comparable to one: the corpus is the bundled LongMemEval_M slice, not full LoCoMo. It is retrieval quality only, with no LLM in the loop and no answer-correctness judge. It says nothing about poisoning resistance or audit integrity, which are measured separately. **n=45 is below 100, so the bench marks it `preliminary`;** treat the interval, not the point estimate, as the claim. **This label cannot clear by re-running.** The corpus is the bundled `longmemeval_m.jsonl`, which is 45 records in full — not a sample of a larger local file — and the bench sets `preliminary` whenever n < 100. So it reflects a corpus-size decision, not work in progress. Clearing it honestly needs the larger public LongMemEval slice, which is access-gated (see [#44](https://github.com/sattyamjjain/mnemo/issues/44)); until that is vendored under a recorded licence, this number stays `preliminary` at n=45.
 <!-- END generated: recall-number -->
 
 This block is generated from [`bench/results/locomo_v1.json`](bench/results/locomo_v1.json) by
@@ -268,7 +272,7 @@ cargo install mnemo-mcp-server          # server binary → `mnemo`
 <!-- BEGIN generated: published-versions -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Workspace `[workspace.package].version` (released): **`v0.5.29`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
+Workspace `[workspace.package].version` (unreleased target): **`v0.5.30`**. The Rust library line and the Python SDK both track the workspace (the wheel compiles `mnemo-core` into itself, so its version names the engine inside it). Only the TypeScript SDK versions independently. Published, per registry:
 
 | Registry | Artifact | Published version | Published |
 |---|---|---|---|
@@ -318,7 +322,7 @@ docs.
 <!-- BEGIN generated: published-crate-roster -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. All **21** published `mnemo-*` crates are on **`v0.5.29`**, the current workspace version — verified against the live registry when this block was generated, not asserted.
+Installing the right *name* is only half of it: `cargo install` resolves whatever crates.io actually has. Of the **21** published `mnemo-*` crates, **21** are not yet on the workspace version `v0.5.30`: `mnemo-admin` (`0.5.29`), `mnemo-amp` (`0.5.29`), `mnemo-attention-state` (`0.5.29`), `mnemo-baseline` (`0.5.29`), `mnemo-cma` (`0.5.29`), `mnemo-codemode` (`0.5.29`), `mnemo-compliance` (`0.5.29`), `mnemo-core` (`0.5.29`), `mnemo-db` (`0.5.29`), `mnemo-deal` (`0.5.29`), `mnemo-embeddings-bench` (`0.5.29`), `mnemo-graph` (`0.5.29`), `mnemo-grpc` (`0.5.29`), `mnemo-letta` (`0.5.29`), `mnemo-mcp` (`0.5.29`), `mnemo-mcp-server` (`0.5.29`), `mnemo-md-sync` (`0.5.29`), `mnemo-mesh` (`0.5.29`), `mnemo-pgwire` (`0.5.29`), `mnemo-postgres` (`0.5.29`), `mnemo-rest` (`0.5.29`). That is either a release in flight or a stranded crate; [`scripts/check_version_drift.sh`](scripts/check_version_drift.sh) distinguishes the two by naming the crates rather than reporting a total.
 
 The 21 are `mnemo-admin`, `mnemo-amp`, `mnemo-attention-state`, `mnemo-baseline`, `mnemo-cma`, `mnemo-codemode`, `mnemo-compliance`, `mnemo-core`, `mnemo-db`, `mnemo-deal`, `mnemo-embeddings-bench`, `mnemo-graph`, `mnemo-grpc`, `mnemo-letta`, `mnemo-mcp`, `mnemo-mcp-server`, `mnemo-md-sync`, `mnemo-mesh`, `mnemo-pgwire`, `mnemo-postgres` and `mnemo-rest`.
 
@@ -663,7 +667,7 @@ pip install mnemo-db
 <!-- BEGIN generated: python-sdk-compat -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.29`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
+> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.29`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`. The workspace is currently `v0.5.30` and PyPI is `v0.5.29`: that is an **open release window**, not drift. The version is bumped on merge and published on a tag, so the two differ between those events by design. `pip install mnemo-db` gives `v0.5.29` until `v0.5.30` is tagged.
 >
 > - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.29` *is* `mnemo-core` `v0.5.29`. There is no version-skew question to answer: the engine is the wheel.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.

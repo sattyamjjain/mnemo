@@ -1,5 +1,19 @@
 # Mnemo Version Skew Matrix
 
+> Updated 2026-09-06 for the **v0.5.30** cut - a **documentation and benchmark-reporting**
+> change with **no public API, wire, or storage change**. The README now publishes *both*
+> paired recall comparisons instead of one: the headline gap against the lexical control
+> (+0.267, separates) and the previously-unpublished gap against `auto`, the shipped default
+> (+0.058 [-0.031, 0.160], does **not** separate). The `preliminary` label now states that it
+> cannot clear by re-running, because the bundled corpus is 45 records in full and the bench
+> flags `n < 100`. `docs/benchmarks/index.md` was reordered so the entry point leads with the
+> same headline the README does, and that ordering is now gated by
+> `scripts/gen_recall_number.py --check`.
+>
+> **Nothing a consumer links against changes.** No crate gained or lost a symbol; the changes
+> are to generated documentation, one guard script, and one test's pinned version literal.
+> Version pins move 0.5.29 -> 0.5.30 in lockstep. **Not breaking for any consumer.**
+>
 > Updated 2026-08-25 for the **v0.5.27** cut - a **benchmark and documentation** change
 > with **no public API, wire, or storage change**. It adds
 > `bench/minja_phase3`, the non-adaptive Phase-3 exploitation measurement that closes

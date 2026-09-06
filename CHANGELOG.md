@@ -197,6 +197,124 @@ passing vacuously on every fixture, because the fixture path was being overwritt
 script's own default before the body ran. It would have shipped as coverage that could not
 fail.
 
+### Fixed - the README published the comparison that separates and hid the one that matters
+
+`bench/results/locomo_v1.json` has carried **two** paired comparisons for as long as the
+keyed result shape has existed. `scripts/gen_recall_number.py` rendered one of them.
+
+| comparison | mean diff | 95% | McNemar | separates? |
+|---|---|---|---|---|
+| semantic vs **lexical** | +0.267 | [0.133, 0.400] | b=12 c=0, p=4.9e-4 | yes — **was published** |
+| semantic vs **`auto`** | +0.058 | [-0.031, 0.160] | b=4 c=2, p=0.6875 | **no** — **was published nowhere** |
+
+`auto` is not one strategy among five. `recall()` resolves an unset `strategy` to `auto`
+(`crates/mnemo-core/src/query/recall.rs:357`), so it is what every caller who does not name
+one gets. The README therefore published a +0.267 gap over a lexical control **nobody runs
+by default**, and said nothing about the +0.058 [-0.031, 0.160] gap over the path everyone
+is actually on — an interval that contains zero, on a comparison that does not separate.
+
+The number was measured. It was computed by the same bench, in the same run, on the same 45
+queries, and stored in the same file. It was simply never rendered. That is not an omission
+of data, it is selection of the flattering half of it, which is precisely what
+`docs/BENCH_POISONING.md` and `docs/security/known-limitations.md` commit this project
+against. The repo was on the wrong side of its own rule.
+
+Both comparisons now render. The headline stays `semantic_vs_lexical`; the default
+comparison is a second row and a paragraph that names `auto` as the shipped default, prints
+the interval **shown** crossing zero rather than described as doing so, states that the sign
+of the difference is not established by this sample, and gives the n (~127) that would be
+needed at this effect size.
+
+One assertion in the self-test had to be deleted rather than extended: it checked that the
+flat and keyed result shapes render *identical* output, which was only true because the
+keyed shape's second comparison was never rendered. The test encoded the bug. It is replaced
+by the narrower invariant that actually mattered — the keyed shape must resolve the
+*headline* to the primary comparison rather than to whichever key iterates first — plus a
+new assertion that it also publishes the default comparison, and that a flat file claims
+nothing about a default it never measured.
+
+### Changed - `preliminary` now says it can never clear by re-running (item 2, option b)
+
+`locomo_v1_bench.rs` sets `preliminary` when `n < 100`. The bundled corpus is 45 records and
+that file **is** the whole input, not a sample of a larger local one — so the label was
+permanent, and a reader could not tell "preliminary because we have not finished" from
+"preliminary because the corpus is 45 rows and always will be".
+
+**Option (b) was taken — state the ceiling — and option (a) was not available.** Enlarging
+the slice to >=100 requires the larger public LongMemEval slice, which is access-gated: the
+repo's own [#44](https://github.com/sattyamjjain/mnemo/issues/44) lists `HF_TOKEN`
+("LongMemEval rate limits - gated dataset") among its prerequisites, and that secret is not
+configured on this repository (the only Actions secrets are `CARGO_REGISTRY_TOKEN` and
+`NPM_TOKEN`). Vendoring rows from a gated dataset is also a licensing decision that is not
+mine to make silently. Taking option (a) would have meant either fabricating rows or
+committing data under an unrecorded licence; the honest move is to say why the label is
+stuck. The gated slice is 116 questions, which *would* clear the n>=100 threshold — so the
+path exists, it is just credentialed.
+
+The generated text now states the record count, that it is the entire bundled file, that the
+label reflects a corpus-size decision rather than work in progress, and what clearing it
+would take.
+
+### Fixed - the benchmark entry point led with a higher number from a smaller sample
+
+`README.md` states: "There is deliberately only one headline, and an older measurement is
+kept below it under its own heading rather than beside it", and points at
+`docs/benchmarks/index.md` as "the single benchmark entry point". That page did the
+opposite. Its first table row was the **earlier** nomic-embed-text measurement — recall@1
+**0.739** at n=23 — with the actual headline, MiniLM 0.689 at n=45, second. A reader
+following the README's own pointer met a higher number from a smaller sample first, and the
+0.689 row's caveat called itself "**Not** the 0.739 headline", which inverted which one was
+load-bearing.
+
+The headline is now row 1, the nomic row is labelled **"Earlier measurement, not the
+headline"** in the row itself rather than only in the caveat column, and the caveat now says
+plainly that the earlier number is higher but not better and not comparable.
+
+That page is hand-written prose with per-row caveats, so it is not generated and cannot be.
+Instead `scripts/gen_recall_number.py --check` — already wired into the `doc-guards` job —
+now also asserts that the first row of that table carries the headline `recall@1` from the
+result file, and that the headline number does not reappear in a later row without being
+marked as earlier. The guard was verified in the failing direction against the real pre-fix
+page, not just against the fixed one.
+
+### Fixed - an SDK strand could block the crates.io release walk
+
+Making the SDK registry checks hard failures (this cycle's npm/Go parity work) had a
+consequence that only surfaced when `registry_parity.sh --mode preflight` was run against
+the bumped workspace: the **crates.io** publish preflight failed because the **npm** SDK is
+stranded at 0.4.4.
+
+That is deadlock #2 from this script's own header wearing a different hat — a lane blocked
+for an artifact it is not responsible for and cannot repair. The crates.io walk cannot
+publish an npm package or tag a Go module, so failing it on an npm strand blocks a release
+that has nothing to do with the problem and no way to fix it.
+
+SDK strands are now hard **only** in `--mode sdk`, the mode whose subject they are, and in
+preflight/assert they emit a named `::warning::` pointing at the mode that does gate them.
+The gate is not weakened: `--mode sdk` runs on every push to main and is currently, and
+correctly, red on npm.
+
+### Changed - workspace 0.5.29 -> 0.5.30
+
+Version pins move in lockstep across `Cargo.toml` (workspace + 14 internal path-dep pins),
+`python/pyproject.toml` and `CITATION.cff`.
+
+Two bump steps are not mechanical and are worth writing down, because both were found by a
+failing check rather than by inspection:
+
+- `crates/mnemo-core/tests/version_metadata.rs` pins the version **in the test's own name**
+  (`cargo_pkg_version_matches_v0_5_29`), so a bump renames a test. Its docstring says it is
+  "bumped each cut alongside the workspace version"; it is a deliberate speed bump that makes
+  a human acknowledge the cut, and it aborted the suite until updated.
+- Only that literal moves. `v0.5.29` also appears in `remember.rs`, `event_builder.rs` and
+  `bench/audit_conformance/src/main.rs` as **history** ("the pre-v0.5.29 defect", "until
+  v0.5.29"), which is correct prose about when the concurrent-chain bug was fixed. A
+  find-and-replace across the tree would silently rewrite the project's own record of that
+  fix.
+
+`docs/compat/version-skew-matrix.md`, which that test's failure message tells you to update,
+had not been touched since the v0.5.27 cut; it now carries a v0.5.30 entry.
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)
