@@ -1,0 +1,56 @@
+# Citation metadata for Mnemo.
+#
+# GitHub renders this as the "Cite this repository" widget.
+#
+# THERE IS DELIBERATELY NO `doi:` FIELD. Mnemo has no Zenodo deposit — a search
+# of the Zenodo API for this project returns zero records — and a DOI is a
+# resolvable identifier, not a formatting convention. A placeholder DOI in a
+# citation file is worse than an absent one: it is a broken link that looks
+# authoritative, printed by GitHub's own widget, and it would be copied into
+# reference lists before anyone checked it. Add this field when a deposit
+# actually exists, and not before.
+#
+# For the same reason there is no `preferred-citation:` block. There is no paper
+# to redirect a citation to; this software IS the artifact being cited.
+#
+# `version` and `date-released` are asserted against the workspace by
+# `scripts/check_citation_version.sh` in the `doc-guards` CI job. That guard is
+# not decoration — the sibling agent-audit-kit repository carried the same two
+# fields under a comment telling a human to bump them each release, which was
+# duly obeyed until it wasn't, and the file sat ten patch versions behind what
+# the repo was shipping. A citation that names the wrong version is a wrong
+# citation.
+cff-version: 1.2.0
+message: >-
+  If you use Mnemo, or cite its audit log or the standalone chain verifier,
+  please cite this repository.
+title: "Mnemo"
+abstract: >-
+  MCP-native memory database for AI agents, written in Rust. Provides
+  persistent, searchable, versioned agent memory with vector similarity,
+  full-text search, graph relations, ACLs, at-rest encryption, per-request
+  caller identity and capability-leased reads. Every memory write is recorded
+  in a SHA-256 hash-chained, append-only log, and the repository ships
+  tools/verify_mnemo_chain.py — a standalone verifier that depends on nothing
+  but the Python standard library and imports no Mnemo code, so an auditor can
+  check the log without running the vendor's software to do it.
+type: software
+authors:
+  - family-names: "Jain"
+    given-names: "Sattyam"
+    alias: "sattyamjjain"
+repository-code: "https://github.com/sattyamjjain/mnemo"
+url: "https://github.com/sattyamjjain/mnemo"
+license: Apache-2.0
+version: "0.5.29"
+date-released: "2026-09-04"
+keywords:
+  - agent-memory
+  - model-context-protocol
+  - mcp
+  - audit-log
+  - tamper-evidence
+  - hash-chain
+  - vector-database
+  - retrieval
+  - rust
