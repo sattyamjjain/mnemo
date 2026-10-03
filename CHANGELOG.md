@@ -352,6 +352,18 @@ to 0.5.30 minutes after `0d5f1d8`'s own CI run and the generated README blocks s
 header still calls `v0.5.30` an unreleased target because crates.io serves 0.5.29, which is
 the generator being right.
 
+### Changed (2026-10-03) - eight Dependabot bumps as one change
+
+- `wasmtime` and `wasmtime-wasi` 48 -> 49 (#196, #195). Bumped one at a time, each PR
+  resolves two wasmtime majors into the tree; together `cargo tree` shows wasmtime 49.0.2
+  only. `mnemo-golem-host` does not call the wasmtime API yet, so this is compile-only.
+- `duckdb` `=1.10505.0` -> `=1.10506.0` (#199).
+- `sattyamjjain/agent-audit-kit` action 0.3.92 -> 0.6.10 (#197). Same tree, both versions:
+  0 critical and 5 high on each; 0.6.10 drops 14 AAK-AGENT-005 false positives on the
+  CLAUDE.md `AUTO-MANAGED` markers and reports nothing new. Recorded in `security.yml`.
+- TypeScript SDK lockfile: `jest` 30.5.2 (#194), `@types/node` 26.6.3 (#198), `@swc/core`
+  1.16.13 (#200), `@modelcontextprotocol/sdk` 1.31.0 (#201).
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)

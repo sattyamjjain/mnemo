@@ -20,7 +20,7 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-# wasmtime is the WASM-component runtime. Tracks the stable v48
+# wasmtime is the WASM-component runtime. Tracks the stable v49
 # component-model release. NOTE: this crate's source does not yet call the
 # wasmtime API (the Linker/Store/bindgen wiring is deferred — see the lib.rs
 # module doc), so the version is a forward-looking pin; bumps are
@@ -34,9 +34,10 @@ tracing = { workspace = true }
 #   wasmtime 48 + wasmtime-wasi 47  ->  wasmtime 47.0.4 AND wasmtime 48.0.1
 #   wasmtime 48 + wasmtime-wasi 48  ->  wasmtime 48.0.1 only
 #
-# Verified by resolving both arrangements before merging either.
-wasmtime = { version = "48.0", features = ["component-model"] }
-wasmtime-wasi = "48.0"
+# Verified by resolving both arrangements before merging either. The 49 bump
+# arrived the same way (#195 and #196) and lands here as one change.
+wasmtime = { version = "49.0", features = ["component-model"] }
+wasmtime-wasi = "49.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

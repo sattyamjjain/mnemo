@@ -104,15 +104,26 @@ jobs:
         # verification for a version that is not the pinned one would be exactly
         # the stale claim this comment exists to prevent.
         #
+        # 0.3.92 -> 0.6.10 (2026-10-03, Dependabot #197) was a bigger jump, so
+        # both versions scanned one clean copy of the tree (tracked files only,
+        # so no target/ or node_modules/) with the CI parameters:
+        #   0.3.92 -> Findings 42, Critical 0, High 5, exit 0 (329 rules)
+        #   0.6.10 -> Findings 28, Critical 0, High 5, exit 0 (363 rules)
+        # Not identical this time, and the whole difference is one rule: 0.6.10
+        # no longer reports AAK-AGENT-005 ("hidden content") on the 14
+        # `<!-- AUTO-MANAGED -->` markers in CLAUDE.md. The other 28 findings
+        # match rule for rule and file for file. Fewer false positives, no new
+        # finding, same gate.
+        #
         # The gate stays `fail-on: critical` with the .agent-audit-kit.yml
         # suppression baseline (e.g. the AAK-AGENT-001 CLAUDE.md false positive).
         # If a future rule surfaces a NEW critical, this job fails loudly and the
         # baseline must be re-derived — that is the intended signal, not a reason
         # to unpin. Reproduce the comparison locally with:
-        #   pipx run --spec agent-audit-kit==0.3.90 aak scan . \
+        #   pipx run --spec agent-audit-kit==0.6.10 aak scan . \
         #     --config .agent-audit-kit.yml --severity low --fail-on critical \
         #     --ignore-paths target   # a local tree has target/; CI's checkout does not
-        uses: sattyamjjain/agent-audit-kit@v0.3.92
+        uses: sattyamjjain/agent-audit-kit@v0.6.10
         with:
           path: .
           config: .agent-audit-kit.yml
