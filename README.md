@@ -279,7 +279,7 @@ Workspace `[workspace.package].version` (unreleased target): **`v0.5.30`**. The 
 | crates.io | `mnemo-core` — engine + hash-chain verify | `v0.5.29` | 2026-09-04 |
 | crates.io | `mnemo-mcp-server` — the `mnemo` server binary | `v0.5.29` | 2026-09-04 |
 | crates.io | `mnemo-embeddings-bench` — bench crate the server binary depends on | `v0.5.29` | 2026-09-04 |
-| PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.29` | 2026-09-03 |
+| PyPI | `mnemo-db` — Python SDK (tracks the workspace) | `v0.5.30` | 2026-09-06 |
 | npm | `@mndfreek/mnemo-sdk` — TypeScript SDK (independent) | `v0.4.4` | 2026-05-18 |
 
 _Table generated from the live registries by [`scripts/gen_published_versions.py`](scripts/gen_published_versions.py); `scripts/registry_parity.sh` fails a release if these drift from what the release actually published._
@@ -609,10 +609,11 @@ requires `Mcp-Method` / `Mcp-Name` headers and `ttlMs` / `cacheScope` on list
 results, and deprecates Roots, Sampling, Logging and the HTTP+SSE transport.
 
 **mnemo negotiates `2025-11-25`, not `2026-07-28`.** mnemo speaks MCP through
-the [`rmcp = "3.0"`][rmcp] workspace dep (resolving to 3.1.3), and follows
-rmcp's implementation as it lands rather than racing the spec. rmcp knows the
-newer revision but its `ProtocolVersion::LATEST` is still `2025-11-25`, so that
-is what a handshake settles on.
+the [`rmcp = "3.0"`][rmcp] workspace dep (CI resolves 3.5.0 as of 2026-10-03),
+and follows rmcp's implementation as it lands rather than racing the spec.
+rmcp 3.5.0 made `2026-07-28` its `ProtocolVersion::LATEST`, but mnemo
+advertises nothing past `2025-11-25` and `2026-07-28` has no handshake, so
+`2025-11-25` is what a handshake settles on.
 
 Where mnemo already satisfies the new revision it is because of decisions taken
 earlier, not because it tracked the spec. Cross-call state has always travelled
@@ -667,9 +668,10 @@ pip install mnemo-db
 <!-- BEGIN generated: python-sdk-compat -->
 <!-- Regenerate with: python3 scripts/gen_published_versions.py -->
 
-> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.29`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`. The workspace is currently `v0.5.30` and PyPI is `v0.5.29`: that is an **open release window**, not drift. The version is bumped on merge and published on a tag, so the two differ between those events by design. `pip install mnemo-db` gives `v0.5.29` until `v0.5.30` is tagged.
+> **Version line & wire compatibility.** `pip install mnemo-db` gives **`v0.5.30`**. The Python SDK is **not** independently versioned: `python/` is PyO3 bindings that compile `mnemo-core` *into the wheel*, so the wheel version names the engine inside it, and [`workspace_version_fence.rs`](crates/mnemo-cli/tests/workspace_version_fence.rs) fails CI if `pyproject.toml` and `mnemo/__init__.py` drift from `[workspace.package].version`.
 >
-> - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.29` *is* `mnemo-core` `v0.5.29`. There is no version-skew question to answer: the engine is the wheel.
+> - **In-process, `MnemoClient` (the PyO3 extension).** `mnemo-db` `v0.5.30` *is* `mnemo-core` `v0.5.30`. There is no version-skew question to answer: the engine is the wheel.
+> - **`pip install mnemo-db` and `cargo add mnemo-core` do not currently resolve the same version.** PyPI has `v0.5.30`; crates.io has `v0.5.29`. The wheel publishes on merge to `main` while the crates publish on a tag, so the Python side leads inside an open release window. Pin deliberately if you embed both.
 > - **Over MCP, the `agno` / `camel` / `agno-memory` adapters.** These embed no engine; they spawn the external `mnemo` server binary you install and bind to its **MCP tool surface** (the 23 registered tools), not to a `mnemo-core` version. They are wire-compatible with any **0.5.x** `mnemo-mcp-server`. Server properties such as the rmcp 3.0 transport and the tool-catalog attestation come from **that binary**, not from the SDK, so run a current one to get them.
 <!-- END generated: python-sdk-compat -->
 

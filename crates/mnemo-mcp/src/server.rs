@@ -2013,8 +2013,8 @@ impl ServerHandler for MnemoServer {
     /// knows - as of rmcp 3.1.3 that includes `2026-07-28`. rmcp derives
     /// `server/discover` from this list, so taking the default made mnemo
     /// advertise a revision it does not serve: it answers `initialize` with
-    /// `2025-11-25` (rmcp's `ProtocolVersion::LATEST`) while telling a
-    /// discovering client it also speaks `2026-07-28`.
+    /// `2025-11-25` while telling a discovering client it also speaks
+    /// `2026-07-28`.
     ///
     /// That is a machine-readable claim that was not true, and it is the same
     /// claimed-but-not-wired shape this repo has repaired before (`role_filter`
@@ -2042,8 +2042,17 @@ impl ServerHandler for MnemoServer {
         ])
     }
 
-    fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::default();
+    // `InitializeResult` is the type both names alias: `ServerInfo` (deprecated
+    // in rmcp 3.4, a build error under -Dwarnings) and `ServerConfig` (added in
+    // 3.4). Naming it directly compiles on every 3.x that `rmcp = "3.0"` allows.
+    fn get_info(&self) -> InitializeResult {
+        let mut info = InitializeResult::default();
+        // Pinned, not inherited. rmcp 3.5 moved `ProtocolVersion::LATEST` (the
+        // default here) to `2026-07-28`, a revision mnemo does not implement
+        // (see `supported_protocol_versions` above). rmcp's negotiation still
+        // answers `initialize` with `2025-11-25` either way, but the version
+        // mnemo states should not move when the SDK's default does.
+        info.protocol_version = ProtocolVersion::V_2025_11_25;
         info.instructions = Some(
             "Mnemo is an MCP-native memory database for AI agents. \
              Use mnemo.remember to store memories, mnemo.recall to search them, \

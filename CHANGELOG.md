@@ -315,6 +315,55 @@ failing check rather than by inspection:
 `docs/compat/version-skew-matrix.md`, which that test's failure message tells you to update,
 had not been touched since the v0.5.27 cut; it now carries a v0.5.30 entry.
 
+### Fixed (2026-10-03) - every pull request was red, for reasons no PR could see
+
+Everything above this entry is what `mnemo-db` 0.5.30 shipped to PyPI on 2026-09-06, built
+from `0d5f1d8`. This entry landed after that publish.
+
+None of the four causes below is in a diff. `Cargo.lock` is not committed and the toolchain
+is `stable`, so every CI run resolves the newest `rmcp` 3.x on the newest Rust, and the
+tree went red while nobody touched it, Dependabot PRs that change only the TypeScript
+lockfile included.
+
+**`rmcp` 3.4.0 (2026-09-15) deprecated `ServerInfo`** in favour of `ServerConfig`, and
+`-Dwarnings` turns a deprecated name into a build error: Build, Clippy, Test and the version
+fence, red on every PR since 2026-09-19. `get_info()` now names `InitializeResult`, the type
+both of those alias. `ServerConfig` would have forced the requirement from `rmcp = "3.0"`
+to `"3.4"` and broken a downstream lockfile still on 3.0 to 3.3; the real type compiles on
+every 3.x the requirement already allows, and the docs that name `rmcp 3.0` stay true.
+
+**`rmcp` 3.5.0 (2026-09-27) moved `ProtocolVersion::LATEST` to `2026-07-28`**, and
+`get_info()` inherited it from `InitializeResult::default()`. On the wire nothing changed: rmcp
+still answers `initialize` with `2025-11-25`, because `2026-07-28` has no handshake and
+mnemo's supported list stops at `2025-11-25`. But `initialize_still_settles_on_2025_11_25`
+failed, which is that test doing its job. `get_info()` now pins `2025-11-25` instead of
+inheriting the SDK default. `docs/src/integrations/mcp-2026-07-28.md` now says that the
+upstream move its UPSTREAM-BLOCKED rows wait on has happened and that those rows have not
+been re-checked against 3.5.0, and the README paragraph that said rmcp's `LATEST` was still
+`2025-11-25` says why a handshake still settles there.
+
+**Rust 1.99.0 (2026-09-28) deprecated `AtomicUsize::fetch_update`** (renamed `try_update`):
+Clippy and the Postgres integration job. `PgVectorIndex::remove` now calls `update`, since
+its closure can never refuse.
+
+**Doc guards**, red on `main` since 2026-09-07 and on every PR since 2026-09-12. PyPI moved
+to 0.5.30 minutes after `0d5f1d8`'s own CI run and the generated README blocks still said
+0.5.29. Regenerated with `scripts/gen_published_versions.py`, nothing hand-edited. The
+header still calls `v0.5.30` an unreleased target because crates.io serves 0.5.29, which is
+the generator being right.
+
+### Changed (2026-10-03) - eight Dependabot bumps as one change
+
+- `wasmtime` and `wasmtime-wasi` 48 -> 49 (#196, #195). Bumped one at a time, each PR
+  resolves two wasmtime majors into the tree; together `cargo tree` shows wasmtime 49.0.2
+  only. `mnemo-golem-host` does not call the wasmtime API yet, so this is compile-only.
+- `duckdb` `=1.10505.0` -> `=1.10506.0` (#199).
+- `sattyamjjain/agent-audit-kit` action 0.3.92 -> 0.6.10 (#197). Same tree, both versions:
+  0 critical and 5 high on each; 0.6.10 drops 14 AAK-AGENT-005 false positives on the
+  CLAUDE.md `AUTO-MANAGED` markers and reports nothing new. Recorded in `security.yml`.
+- TypeScript SDK lockfile: `jest` 30.5.2 (#194), `@types/node` 26.6.3 (#198), `@swc/core`
+  1.16.13 (#200), `@modelcontextprotocol/sdk` 1.31.0 (#201).
+
 ## [0.5.29] - 2026-09-04
 
 ### Landing trace (2026-08-27)

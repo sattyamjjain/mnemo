@@ -172,10 +172,11 @@ impl VectorIndex for PgVectorIndex {
     }
 
     fn remove(&self, _id: Uuid) -> Result<()> {
-        let _ = self
-            .count
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                Some(n.saturating_sub(1))
+        // `update`, not `fetch_update`: this closure can never refuse, and
+        // Rust 1.99 deprecates `fetch_update` (renamed `try_update`).
+        self.count
+            .update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                n.saturating_sub(1)
             });
         Ok(())
     }
