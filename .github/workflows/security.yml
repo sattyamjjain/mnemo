@@ -123,7 +123,7 @@ jobs:
         #   pipx run --spec agent-audit-kit==0.6.10 aak scan . \
         #     --config .agent-audit-kit.yml --severity low --fail-on critical \
         #     --ignore-paths target   # a local tree has target/; CI's checkout does not
-        uses: sattyamjjain/agent-audit-kit@v0.6.10
+        uses: sattyamjjain/agent-audit-kit@v0.6.17
         with:
           path: .
           config: .agent-audit-kit.yml
