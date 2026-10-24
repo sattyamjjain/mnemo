@@ -37,7 +37,7 @@ tracing = { workspace = true }
 # Verified by resolving both arrangements before merging either. The 49 bump
 # arrived the same way (#195 and #196) and lands here as one change.
 wasmtime = { version = "50.0", features = ["component-model"] }
-wasmtime-wasi = "49.0"
+wasmtime-wasi = "50.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
