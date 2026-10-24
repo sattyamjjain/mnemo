@@ -14,6 +14,13 @@ organization.
 For background on Mnemo's security features, see the
 [Security](../security.md) page and the [Compliance Overview](./README.md).
 
+> **Integrity scope.** The hash chains have no key and no anchor outside the
+> store. They catch an edit made without recomputing them, not someone with write
+> access to the store, who can recompute them, cut their tail or restore an older
+> copy. [SECURITY.md](https://github.com/sattyamjjain/mnemo/blob/main/SECURITY.md) puts that attacker out of scope, and the
+> mappings below are scoped to match. Details:
+> [known limitations](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless).
+
 ---
 
 ## Administrative Safeguards (Section 164.308)
@@ -63,7 +70,7 @@ and correct security violations.
 |---|---|
 | **HIPAA Reference** | 164.308(a)(1)(ii)(D) |
 | **Requirement** | Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports. |
-| **Mnemo Implementation** | The `AgentEvent` log (`crates/mnemo-core/src/model/event.rs`) provides an immutable, hash-chained audit trail. It captures 15 event types covering all data operations. Events include OpenTelemetry fields for correlation. The `StorageBackend` trait provides query methods: `list_events(agent_id, limit, offset)`, `get_events_by_thread(thread_id, limit)`, `list_child_events(parent_event_id, limit)`. The `mnemo.verify` MCP tool enables integrity verification of the event chain. |
+| **Mnemo Implementation** | The `AgentEvent` log (`crates/mnemo-core/src/model/event.rs`) provides an append-only, hash-chained audit trail (a trigger enforces append-only on PostgreSQL; nothing does on DuckDB). It captures 15 event types covering all data operations. Events include OpenTelemetry fields for correlation. The `StorageBackend` trait provides query methods: `list_events(agent_id, limit, offset)`, `get_events_by_thread(thread_id, limit)`, `list_child_events(parent_event_id, limit)`. The `mnemo.verify` MCP tool enables integrity verification of the event chain. |
 | **Status** | **Implemented** |
 | **Gaps** | Add scheduled activity review reports and dashboards. Implement automated alerting for suspicious activity patterns. |
 
@@ -178,9 +185,9 @@ members of the workforce.
 |---|---|
 | **HIPAA Reference** | 164.308(a)(6)(ii) |
 | **Requirement** | Identify and respond to suspected or known security incidents; mitigate harmful effects; document incidents and outcomes. |
-| **Mnemo Implementation** | Quarantine mechanism automatically responds to detected anomalies. Hash chain verification (`mnemo.verify`) identifies data tampering incidents. The event log provides a forensic trail for incident investigation. Checkpoint restore enables rollback to pre-incident state. Delegation revocation enables immediate access termination. |
+| **Mnemo Implementation** | Quarantine mechanism automatically responds to detected anomalies. Hash chain verification (`mnemo.verify`) identifies records changed without recomputing the chain. The event log provides a forensic trail for incident investigation. Checkpoints and `replay` reconstruct an earlier state; checkpoints live in the same store and are not signed, so they cannot show that the store itself was not rewritten. Delegation revocation enables immediate access termination. |
 | **Status** | **Partially Implemented** |
-| **Gaps** | Implement a formal incident tracking system within Mnemo (incident records, severity levels, resolution status). Add automated incident notification capabilities. |
+| **Gaps** | Implement a formal incident tracking system within Mnemo (incident records, severity levels, resolution status). Add automated incident notification capabilities. Keep chain exports outside the store, so an incident review has something the store's writers could not change. |
 
 ---
 
@@ -372,9 +379,9 @@ improper alteration or destruction.
 |---|---|
 | **HIPAA Reference** | 164.312(c)(2) |
 | **Requirement** | Implement electronic mechanisms to corroborate that ePHI has not been altered or destroyed in an unauthorized manner. |
-| **Mnemo Implementation** | The hash chain system (`crates/mnemo-core/src/hash.rs`) provides two levels of integrity verification: (1) **Content hash** -- `compute_content_hash(content, agent_id, timestamp)` produces a SHA-256 hash of each memory's content, agent, and timestamp. (2) **Chain hash** -- `compute_chain_hash(content_hash, prev_hash)` links each record to its predecessor, creating a tamper-evident chain. `verify_chain()` validates both content hashes and chain linkage, reporting `ChainVerificationResult` with the exact record where tampering is detected. The encryption module adds a 16-byte HMAC tag to ciphertext, verified on decryption. Memory versioning (`version`, `prev_version_id`) tracks all modifications. |
-| **Status** | **Implemented** |
-| **Gaps** | Add automated periodic integrity verification. Consider adding digital signatures for non-repudiation. |
+| **Mnemo Implementation** | The hash chain system (`crates/mnemo-core/src/hash.rs`) provides two levels of integrity verification: (1) **Content hash** -- `compute_content_hash(content, agent_id, timestamp)` produces a SHA-256 hash of each memory's content, agent, and timestamp. (2) **Chain hash** -- `compute_chain_hash(content_hash, prev_hash)` links each record to its predecessor's content hash. `verify_chain()` validates both content hashes and chain linkage, reporting `ChainVerificationResult` with the first record that fails. This catches changes made without recomputing the chain; a writer with access to the store can recompute it, cut its tail or restore an older copy (see the integrity scope note above). With at-rest encryption on, AES-256-GCM adds a 16-byte authentication tag, checked on decryption, so an altered ciphertext fails to decrypt. Memory versioning (`version`, `prev_version_id`) tracks all modifications. |
+| **Status** | **Partially Implemented** |
+| **Gaps** | Make each link commit to the whole prefix and anchor each chain head outside the store. Add automated periodic integrity verification. Consider adding digital signatures for non-repudiation. |
 
 ---
 

@@ -1,16 +1,19 @@
 # ASI06 — auditable memory-poisoning resistance
 
 > **The number:** across three ASI06 poisoning attack families, mnemo's
-> **auditable layer rejects 100% of cover-up / forgery attempts**
-> (1500/1500, **Wilson 95% [99.7%, 100.0%]**), at **0% benign false-positive**
+> **auditable layer rejects 100% of cover-up / forgery attempts** made
+> without recomputing the chain (1500/1500, **Wilson 95% [99.7%, 100.0%]**), at **0% benign false-positive**
 > (0/300, [0.0%, 1.3%]). A naive store with no cryptographic layer catches
 > **0%** — it has no primitive that *could*.
 >
 > **Read this honestly.** "Resistance" here is **tamper-evidence + attribution**,
 > not write-time prevention. The auditable layer does **not** stop a poison from
-> being written; it makes poisoning **impossible to hide** — any attempt to erase
-> the true fact, forge a clean provenance, or splice the drift trail out of the
-> history is cryptographically rejected by an *offline* verifier. Write-time
+> being written; it makes these cover-ups **visible**: erasing the true fact,
+> forging a clean provenance, or splicing the drift trail out of the history is
+> rejected by an *offline* verifier, as long as the adversary does not recompute
+> the chain. One who can write the store and re-hashes after the edit is not
+> caught by families 1 and 3; family 2's receipts use a key the store does not
+> hold ([known limitations](../security/known-limitations.md#the-hash-chains-are-keyless)). Write-time
 > *quarantine* is a **separate** layer, measured elsewhere (see
 > [Two different layers](#two-different-layers)).
 
@@ -40,7 +43,7 @@ The bench never re-implements crypto — it drives two shipped functions:
 
 | primitive | file | what it proves |
 |---|---|---|
-| `hash::verify_chain` | [`crates/mnemo-core/src/hash.rs`](../../crates/mnemo-core/src/hash.rs) | every write is a SHA-256 `content_hash` chained by `prev_hash`; recompute detects any content edit, hash edit, splice, reorder, or back-date |
+| `hash::verify_chain` | [`crates/mnemo-core/src/hash.rs`](../../crates/mnemo-core/src/hash.rs) | every write is a SHA-256 `content_hash` chained by `prev_hash`; recompute detects a content edit, hash edit, splice, reorder, or back-date that was not re-hashed |
 | `provenance::verify_read_provenance` | [`crates/mnemo-core/src/provenance.rs`](../../crates/mnemo-core/src/provenance.rs) | every audited recall carries an HMAC receipt binding the answer to the exact records (+ their hashes) it derived from; recompute detects a forged receipt or a post-recall record swap |
 
 ## Threat model & metric
@@ -48,8 +51,9 @@ The bench never re-implements crypto — it drives two shipped functions:
 A realistic ASI06 adversary does not just poison — they **cover their tracks**,
 because a poisoning that shows up in a signed audit trail is a poisoning the
 regulator (or the clinician, or the incident responder) will catch. For each
-attack family the bench builds a tamper-evident store, injects a poison, applies
-the adversary's **cover-up**, and records whether the auditable verifier
+attack family the bench builds a hash-chained store, injects a poison, applies
+the adversary's **cover-up** (an edit that does not recompute the chain), and
+records whether the auditable verifier
 **rejects** it.
 
 > **resistance = rejected / attempts**, per family, over deterministic trials,
@@ -118,21 +122,25 @@ mnemo has **two** independent poisoning defenses; do not conflate them:
 | layer | mechanism | blocks the write? | benchmark |
 |---|---|---|---|
 | **Write-time quarantine** | anomaly detector (lexical + embedding z-score) skips flagged writes at recall | yes (when it fires) | [`docs/BENCH_POISONING.md`](../BENCH_POISONING.md), [`bench/poisoning`](../../bench/poisoning); ASI06 quarantine-resistance micro-bench [`bench/locomo/src/bin/asi06_resistance.rs`](../../bench/locomo/src/bin/asi06_resistance.rs) |
-| **Auditable layer** (*this bench*) | SHA-256 hash-chain + read-provenance HMAC | **no** — makes poisoning tamper-evident & attributable | this document |
+| **Auditable layer** (*this bench*) | SHA-256 hash-chain + read-provenance HMAC | **no** — makes cover-ups that skip re-hashing visible & attributable | this document |
 
 The honest, complete story: the quarantine layer *tries to stop* poison at write
 time (and, as its own bench shows, has real blind spots — marker-free semantic
-poison survives); the auditable layer *guarantees* that whatever gets through
-**cannot be hidden or denied**. Defense-in-depth for regulated AI.
+poison survives); the auditable layer makes whatever gets through **hard to hide
+or deny**, short of an adversary who can rewrite the store. Defense-in-depth for
+regulated AI.
 
 ## Limitations — what this is **NOT**
 
 - **Not write-time prevention.** This layer detects/attributes; it does not stop
   the initial poisoned write. See the table above.
-- **Cryptographic, not semantic.** It proves the *record log* wasn't tampered; it
-  does not judge whether a (validly-written) memory is *true*. Truth-checking is
+- **Not against a writer with store access.** An adversary who can write the
+  store and recomputes the chain after the edit defeats families 1 and 3. See
+  [known limitations](../security/known-limitations.md#the-hash-chains-are-keyless).
+- **Cryptographic, not semantic.** It proves the *record log* wasn't edited without
+  re-hashing; it does not judge whether a (validly-written) memory is *true*. Truth-checking is
   OWASP's other ASI06 control — "evaluation against ground truth" — which is an
-  operator responsibility on top of the tamper-evident substrate.
+  operator responsibility on top of the hash-chained substrate.
 - **HMAC receipts are keyholder-verifiable.** For externally-auditable,
   non-repudiable receipts, pair with the `mnemo-compliance` Ed25519-signed
   audit-log export.

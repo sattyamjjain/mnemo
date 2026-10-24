@@ -69,7 +69,7 @@ simply carries no harm-completing fragment, so its assembly rate is ~0.
 ## Relationship to the other poisoning benches
 
 - [ASI06 auditable resistance](asi06-poisoning.md) — tamper-evidence +
-  attribution over the audit layer (poisoning cannot be *hidden*).
+  attribution over the audit layer (a cover-up that skips re-hashing is caught).
 - [`bench/poisoning`](../../bench/poisoning) — write-time quarantine defense-delta.
 - **This bench** — the *compositional* gap: individually-benign writes that no
   per-write layer rejects, reassembled at read time.

@@ -8,6 +8,13 @@ identifies any gaps or recommendations.
 For background on Mnemo's security features, see the
 [Security](../security.md) page and the [Compliance Overview](./README.md).
 
+> **Integrity scope.** The hash chains have no key and no anchor outside the
+> store. They catch an edit made without recomputing them, not someone with write
+> access to the store, who can recompute them, cut their tail or restore an older
+> copy. [SECURITY.md](https://github.com/sattyamjjain/mnemo/blob/main/SECURITY.md) puts that attacker out of scope, and the
+> mappings below are scoped to match. Details:
+> [known limitations](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless).
+
 ---
 
 ## CC1 -- Control Environment
@@ -220,9 +227,9 @@ architectures over protected information assets.
 |---|---|
 | **Control ID** | CC6.3 |
 | **Description** | The entity protects data in transit and at rest using encryption. |
-| **Mnemo Implementation** | **At rest:** The `ContentEncryption` module (`crates/mnemo-core/src/encryption.rs`) provides AES-256-based content encryption. Keys are 256-bit (32 bytes), loaded from the `MNEMO_ENCRYPTION_KEY` environment variable or provided directly as hex-encoded strings. Each encryption operation produces `nonce \|\| ciphertext \|\| tag` with a 12-byte nonce and 16-byte HMAC integrity tag. Decryption verifies the tag before returning plaintext, detecting any tampering. **In transit:** When deployed with PostgreSQL mode, TLS is recommended. The Docker deployment guide recommends reverse proxy with TLS termination. |
+| **Mnemo Implementation** | **At rest:** The `ContentEncryption` module (`crates/mnemo-core/src/encryption.rs`) provides AES-256-GCM content encryption (the `aes-gcm` crate). Keys are 256-bit (32 bytes), loaded from the `MNEMO_ENCRYPTION_KEY` environment variable or provided directly as hex-encoded strings. Each encryption operation produces `nonce \|\| ciphertext \|\| tag` with a 12-byte nonce and a 16-byte GCM authentication tag. Decryption checks the tag before returning plaintext, so an altered ciphertext fails to decrypt. **In transit:** When deployed with PostgreSQL mode, TLS is recommended. The Docker deployment guide recommends reverse proxy with TLS termination. |
 | **Status** | **Partially Implemented** |
-| **Gaps / Recommendations** | Upgrade the encryption implementation from the current simplified XOR-based cipher to the `aes-gcm` crate for production-grade AES-256-GCM (the code contains a comment noting this: "In production, use `aes-gcm` crate"). Implement key rotation support. Add envelope encryption for per-record keys. Enforce TLS for all network transports. |
+| **Gaps / Recommendations** | Implement key rotation support. Add envelope encryption for per-record keys. Pass the record id as associated data, so a ciphertext is bound to its record. Enforce TLS for all network transports. |
 
 ### CC6.4 -- Restriction of Physical Access
 
@@ -250,7 +257,7 @@ architectures over protected information assets.
 |---|---|
 | **Control ID** | CC6.6 |
 | **Description** | The entity implements controls to prevent or detect and act upon the introduction of unauthorized or malicious software. |
-| **Mnemo Implementation** | Memory poisoning detection (`crates/mnemo-core/src/query/poisoning.rs`) monitors all incoming memories against agent behavioral baselines. Anomalous memories are automatically quarantined. The hash chain prevents injection of fabricated historical records. Content hashing detects any post-insertion modification. Source type tracking (`SourceType` enum with 9 variants) identifies the provenance of each memory. |
+| **Mnemo Implementation** | Memory poisoning detection (`crates/mnemo-core/src/query/poisoning.rs`) monitors all incoming memories against agent behavioral baselines. Anomalous memories are automatically quarantined. The hash chain and content hashes catch a fabricated or modified historical record when the hashes were not recomputed; someone with write access to the store can recompute them (see the integrity scope note above). Source type tracking (`SourceType` enum with 9 variants) identifies the provenance of each memory. |
 | **Status** | **Implemented** |
 | **Gaps / Recommendations** | Add content validation rules (e.g., maximum content length, prohibited patterns). Consider integrating with external threat intelligence feeds. |
 
@@ -267,9 +274,9 @@ configurations and system components that may indicate an attack.
 |---|---|
 | **Control ID** | CC7.1 |
 | **Description** | The entity detects changes to system components and configurations. |
-| **Mnemo Implementation** | The hash chain verification system (`crates/mnemo-core/src/hash.rs`) enables detection of any tampering with stored memories. `verify_chain()` iterates through all records, verifying both content hashes and chain linkage. The `ChainVerificationResult` reports: `valid` (boolean), `total_records`, `verified_records`, `first_broken_at` (UUID of first tampered record), and `error_message`. The `mnemo.verify` MCP tool exposes this capability to agents. The checkpoint system tracks state changes with `state_diff` fields. |
-| **Status** | **Implemented** |
-| **Gaps / Recommendations** | Add automated periodic verification (cron-based or event-triggered). Implement alerting on verification failures. |
+| **Mnemo Implementation** | The hash chain verification system (`crates/mnemo-core/src/hash.rs`) detects edits to stored memories that were made without recomputing the chain. It does not detect a writer with access to the store who recomputes it, cuts its tail or restores an older copy (see the integrity scope note above). `verify_chain()` iterates through all records, verifying both content hashes and chain linkage. The `ChainVerificationResult` reports: `valid` (boolean), `total_records`, `verified_records`, `first_broken_at` (UUID of the first record that fails verification), and `error_message`. The `mnemo.verify` MCP tool exposes this capability to agents. The checkpoint system tracks state changes with `state_diff` fields. |
+| **Status** | **Partially Implemented** |
+| **Gaps / Recommendations** | Make each link commit to the whole prefix and anchor each chain head outside the store (signed or published), so a writer with store access cannot rewrite, truncate or roll back a chain unnoticed. Add automated periodic verification (cron-based or event-triggered). Implement alerting on verification failures. |
 
 ### CC7.2 -- Monitoring for Anomalies
 
@@ -297,9 +304,9 @@ configurations and system components that may indicate an attack.
 |---|---|
 | **Control ID** | CC7.4 |
 | **Description** | The entity responds to identified security incidents. |
-| **Mnemo Implementation** | The delegation revocation mechanism (`revoke_delegation()`) enables immediate access termination. The event log provides a complete forensic trail. Hash chain verification can identify the exact point of any data tampering. Checkpoint restore enables rollback to a known-good state. |
+| **Mnemo Implementation** | The delegation revocation mechanism (`revoke_delegation()`) enables immediate access termination. The event log provides a forensic trail. Hash chain verification names the first record that fails, for edits made without recomputing the chain. Checkpoints and `replay` reconstruct an earlier state, but checkpoints live in the same store and are not signed, so an earlier state is only as trustworthy as the store's writers. |
 | **Status** | **Partially Implemented** |
-| **Gaps / Recommendations** | Implement a formal incident response runbook. Add bulk quarantine and bulk revocation capabilities. Create forensic export tools for incident investigation. |
+| **Gaps / Recommendations** | Implement a formal incident response runbook. Add bulk quarantine and bulk revocation capabilities. Create forensic export tools for incident investigation, and keep chain exports outside the store so a review has something the store's writers could not change. |
 
 ---
 

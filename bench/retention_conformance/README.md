@@ -6,7 +6,7 @@ survives every deletion / compaction / cold-tier path within a configurable
 [`mnemo_compliance::RetentionProfile`](../../crates/mnemo-compliance/src/retention.rs).
 
 It is the sibling of [`bench/audit_conformance`](../audit_conformance) (which
-proves the log is *tamper-evident*); this one proves the log is *retained*.
+proves the log catches edits made without re-hashing); this one proves the log is *retained*.
 
 ## What it drives
 

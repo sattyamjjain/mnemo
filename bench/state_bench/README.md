@@ -100,7 +100,7 @@ past trajectories improve task completion, **not** mnemo's retrieval quality in
 isolation (that is what mnemo's [LoCoMo / LongMemEval retrieval benches](../RESULTS.md)
 report). This is a worthwhile entry — it is the **on-prem / embedded / auditable**
 memory shape nobody has posted — and it is evidence *for* mnemo's regulated-AI
-wedge (the same store carries the hash-chained, tamper-evident audit log), **not**
+wedge (the same store carries the hash-chained audit log), **not**
 a repositioning. The learnings extraction here is deterministic (no LLM); an
 LLM-distilled extraction is a documented future improvement that would likely
 raise the number.

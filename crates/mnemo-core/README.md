@@ -6,14 +6,17 @@
 Core engine of **[Mnemo](https://github.com/sattyamjjain/mnemo)** — an
 on-prem, MCP-native, cryptographically-auditable memory database for AI agents.
 This crate is the storage, data model, query engine, vector/full-text indexing,
-encryption, and **tamper-evident hash-chain** substrate that the higher-level
+encryption, and **hash-chain** substrate that the higher-level
 crates build on.
 
 It runs **in-process** (embedded DuckDB + USearch HNSW + Tantivy BM25) with no
 hosted tier to trust. Every memory write and delete is a SHA-256 hash-chained
-event, and an external verifier can detect any post-hoc mutation offline —
-without consulting the store. That is the record-keeping substrate regulated AI
-deployments need (EU AI Act Art.12, India DPDP, HIPAA §164.312(b)).
+event, and an external verifier catches any edit that was not re-hashed, offline,
+without consulting the store. The chains have no key and no outside anchor yet, so
+they do not stop someone who can rewrite the store
+([details](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless)).
+That is the record-keeping substrate regulated AI deployments need (EU AI Act
+Art.12, India DPDP, HIPAA §164.312(b)).
 
 ## Install
 

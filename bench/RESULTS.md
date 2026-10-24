@@ -167,7 +167,7 @@ score — sourced from each vendor's own docs and the
 
 | system | audit model | tamper-evident | offline-verifiable (no vendor/store trust) |
 |---|---|---|---|
-| **mnemo** (this repo) | append-only SHA-256 **hash-chained** `agent_events` log; `verify_event_integrity` names the first broken link | **yes** — proven by [`bench/audit_conformance`](audit_conformance/) (100% single-byte-mutation detection over 256 trials, Wilson 95% ≥ 98.5%) | **yes** — an external verifier reads the exported log; the store is not consulted, and there is no hosted tier to trust |
+| **mnemo** (this repo) | append-only SHA-256 **hash-chained** `agent_events` log; `verify_event_integrity` names the first broken link | **against edits that are not re-hashed**: [`bench/audit_conformance`](audit_conformance/) (100% single-byte-mutation detection over 256 trials, Wilson 95% ≥ 98.5%); not against a writer with store access, who can recompute the chain ([details](../docs/security/known-limitations.md#the-hash-chains-are-keyless)) | **partly**: an external verifier reads the exported log without running mnemo code or a hosted tier, but the export comes from the store, so it is only as trustworthy as the store's writers |
 | **Mem0** | vector store + extract-and-retrieve; no cryptographic / tamper-evident audit-log model documented (governance/audit is not a documented Mem0 primitive) | not documented | n/a |
 | **Zep** | ABAC + retention policies + **audit in the managed platform** (SOC 2 Type II / HIPAA service) | not a documented public hash-chain model; audit is a managed-service feature | **no** — audit is tied to the hosted Zep platform (or BYOC), not a self-verifiable local hash-chain |
 

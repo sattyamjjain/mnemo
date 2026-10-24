@@ -33,9 +33,9 @@
 //!   in the pure verifier too.
 //! - **truncate (tail)** — the surviving prefix is itself a valid chain, and a
 //!   pure chain verifier has no expected length/head anchor, so tail truncation
-//!   is **NOT detected**. Mitigations mnemo ships: a signed `checkpoint` records
-//!   the expected latest hash + count, and the PostgreSQL append-only trigger
-//!   blocks tail deletion.
+//!   is **NOT detected**. On PostgreSQL the append-only trigger blocks tail
+//!   deletion through ordinary SQL; on DuckDB nothing does yet. Checkpoints are
+//!   not an anchor: they are unsigned and record no head hash or count.
 //!
 //! Everything is deterministic and offline (no network, no LLM); the emitted
 //! report carries only counts/rates/intervals, so it is **byte-stable** across
@@ -267,8 +267,9 @@ pub async fn run_bench(cfg: &BenchConfig) -> BenchOutcome {
             n: cfg.trials,
             caught_by_chain: false,
             note: "GAP: the surviving prefix is a valid chain; a pure verifier has no expected \
-                   length/head anchor. Mitigations mnemo ships: a signed checkpoint records the \
-                   expected latest hash + count; Postgres append-only trigger blocks tail deletion"
+                   length/head anchor. Postgres' append-only trigger blocks tail deletion through \
+                   ordinary SQL; on DuckDB nothing does yet (checkpoints are unsigned and record \
+                   no head hash or count)"
                 .into(),
         },
     ];
@@ -344,9 +345,10 @@ pub fn render_markdown(o: &BenchOutcome, date: &str) -> String {
     }
     s.push_str(
         "\nThe pure chain verifier is tamper-**evidence** for deletion, reordering, and any edit of \
-         the hashed integrity fields — not a guarantee against every edit. Payload-only forgery and \
-         tail truncation are disclosed gaps with the shipped mitigations named above; they are not \
-         claimed as caught. No \"best\"/\"first\" claim.\n\n",
+         the hashed integrity fields that is not re-hashed — not a guarantee against every edit. \
+         Payload-only forgery and tail truncation are disclosed gaps, with what narrows them named \
+         above; they are not claimed as caught. None of this holds against a writer with access to \
+         the store, who can recompute the chain. No \"best\"/\"first\" claim.\n\n",
     );
     s.push_str(&format!(
         "Reproduce: `cargo run --release -p mnemo-audit-tamper-bench` (report dated {date}).\n",

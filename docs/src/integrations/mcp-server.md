@@ -259,7 +259,7 @@ A fan-out `AmpRouter` broadcasts writes to several backends and fuses
 multi-adapter recall with **Reciprocal Rank Fusion**. An optional
 **HITL diff-and-approve hook** gates long-term (`semantic` /
 `procedural`) writes and records each approval as a `Decision` event in
-mnemo's hash-chained audit log, so the approve trail is tamper-evident
+mnemo's hash-chained audit log, so the approve trail is auditable
 and replayable.
 
 Conformance mirrors the cross-adapter suite: **recall@5** on a small

@@ -23,7 +23,7 @@ and acts on the lie without re-deriving it.
 
 This is **distinct** from the 2026-07-24 ASI06 content-poisoning bench
 ([`bench/asi06_poisoning`](../asi06_poisoning)). There the *content* is poisoned
-and the auditable layer proves it cannot be *hidden*. Here the content can be
+and the auditable layer catches a cover-up that does not recompute the chain. Here the content can be
 perfectly plausible — what is forged is the entry's **reasoning provenance** (who
 actually produced the reasoning). The two benches target different attack
 surfaces and are not duplicates.

@@ -58,7 +58,11 @@ Not part of the supported surface, and out of scope below:
   operator's own configuration.
 - Anything requiring host or filesystem access the threat model already assumes
   the operator controls. The manifest and keystore files gate every capability,
-  so their permissions are the operator's responsibility.
+  so their permissions are the operator's responsibility. That includes write
+  access to the store itself: the hash chains have no key, so whoever can write
+  the DuckDB file or the PostgreSQL tables can recompute them, cut their tail or
+  roll them back. What the chains do and do not catch is in
+  [known limitations](docs/security/known-limitations.md#the-hash-chains-are-keyless).
 - The benchmark harnesses under `bench/` and the example code.
 - The feature-gated experimental surfaces listed above.
 - Version lag on crates.io by itself. That is tracked by the drift guard and is a

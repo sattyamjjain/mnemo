@@ -64,9 +64,15 @@ classes are disclosed gaps, **not** claimed as caught:
   `agent_events`. Binding the full event into `content_hash` would close it in the
   pure verifier too.
 - **truncate (tail) — NOT caught.** The surviving prefix is itself a valid chain,
-  and a pure chain verifier has no expected length or head anchor. Mitigations
-  mnemo ships: a signed **checkpoint** records the expected latest hash + count,
-  and the PostgreSQL append-only trigger blocks tail deletion.
+  and a pure chain verifier has no expected length or head anchor. On PostgreSQL
+  the append-only trigger blocks tail deletion through ordinary SQL; on DuckDB
+  nothing does yet. (Until 2026-10-25 this page also named a signed checkpoint as
+  a mitigation. Checkpoints are not signed and record no head hash or count, so
+  that was wrong.)
+
+Both gaps, and the larger one behind them (no chain has a key, so a writer with
+store access can recompute it), are written up in
+[known limitations](../security/known-limitations.md#the-hash-chains-are-keyless).
 
 No "best" / "first" claim. The bench proves the *mechanism* a record-keeping
 obligation depends on — it is not itself a conformity assessment and does not
@@ -84,6 +90,6 @@ Writes a byte-stable report to
 contract (100% on the three structural attacks, 0% on the two disclosed gaps,
 0 benign false positives) is pinned by `bench/audit_tamper/tests/tamper.rs`.
 
-Companion proof that the memory-write log itself is tamper-evident and carries a
+Companion proof that the memory-write log catches single-byte edits and carries a
 recomputable SHA-256 crypto vector:
 [`docs/benchmarks`](.) → `cargo run --release -p mnemo-audit-conformance-bench`.

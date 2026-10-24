@@ -7,11 +7,11 @@
 
 **On-prem, MCP-native, cryptographically-auditable memory for regulated AI** (EU AI Act Art.12 · India DPDP · HIPAA §164.312(b)).
 
-Mnemo runs on your own infrastructure and writes a memory log an auditor can verify offline, without trusting the store or any hosted tier — see [Positioning](docs/POSITIONING.md) for how that compares to Mem0 and Letta.
+Mnemo runs on your own infrastructure and writes a hash-chained memory log an auditor can check offline with their own code, without running mnemo or trusting a hosted tier. The chain catches edits made without recomputing it, not someone who can rewrite the store file ([what it does and does not prove](docs/security/known-limitations.md#the-hash-chains-are-keyless)). See [Positioning](docs/POSITIONING.md) for how that compares to Mem0 and Letta.
 
 📖 **Documentation:** <https://sattyamjjain.github.io/mnemo/> — the full mdBook (quickstart, architecture, MCP tool reference, REST/SDK guides, compliance docs), deployed from [`docs/`](docs/) on every push to `main`.
 
-Mnemo (from Greek *mneme* — memory) is an **embedded** database (DuckDB in-process, or your own PostgreSQL) whose primitives — **REMEMBER**, **RECALL**, **FORGET**, **SHARE** — are exposed as [MCP](https://modelcontextprotocol.io/) tools any AI agent connects to directly. What sets it apart for regulated deployments: every write and delete is a **SHA-256 hash-chained `agent_events` entry an external verifier can check offline** (no store, no hosted tier to trust), and [`mnemo-compliance`](crates/mnemo-compliance) layers signed audit-log export + DPDPA consent records on top.
+Mnemo (from Greek *mneme* — memory) is an **embedded** database (DuckDB in-process, or your own PostgreSQL) whose primitives — **REMEMBER**, **RECALL**, **FORGET**, **SHARE** — are exposed as [MCP](https://modelcontextprotocol.io/) tools any AI agent connects to directly. What sets it apart for regulated deployments: every write and delete is a **SHA-256 hash-chained `agent_events` entry an external verifier can check offline** (no mnemo code, no hosted tier), and [`mnemo-compliance`](crates/mnemo-compliance) layers signed audit-log export + DPDPA consent records on top.
 
 **→ [Verify a mnemo log yourself, without trusting mnemo](docs/verify-my-log.md)** — a five-minute
 transcript: write three records, export the chain, run a **standalone** verifier whose only
@@ -23,17 +23,23 @@ name. Includes what a PASS does *not* mean, and a concurrency defect the exercis
 ## On-prem, MCP-native, cryptographically-auditable memory for regulated AI
 
 Mnemo runs **in-process on your own infrastructure** (embedded DuckDB or your
-PostgreSQL) with **no hosted tier to trust** — and its memory-write log is
-**tamper-evident**: every write and delete is a SHA-256 hash-chained
-`agent_events` entry, and an **external verifier can detect any post-hoc
-mutation offline**, without consulting the store. That is the record-keeping
-substrate regulated AI deployments need (EU AI Act Art.12 / Art.26(6), India
-DPDPA, HIPAA §164.312(b) audit controls).
+PostgreSQL) with **no hosted tier to trust**, and every write and delete lands in
+a SHA-256 hash-chained `agent_events` log. An **external verifier catches any
+edit that was not re-hashed**, offline, without consulting the store. That is the
+record-keeping substrate regulated AI deployments need (EU AI Act Art.12 /
+Art.26(6), India DPDPA, HIPAA §164.312(b) audit controls).
 
-This is **proven, not asserted** — a deterministic, offline bench writes memories
+The chain has a limit, and it matters for that use: it has no key and no anchor
+outside the store yet, so someone who can write the store file can recompute it,
+cut its tail or put back an older copy, and it still verifies.
+[SECURITY.md](SECURITY.md) puts that attacker out of scope, and
+[known limitations](docs/security/known-limitations.md#the-hash-chains-are-keyless)
+has the details and the planned fix.
+
+The detection is **proven, not asserted** — a deterministic, offline bench writes memories
 through the real path, then shows an outside verifier accepts the pristine log,
 catches 100% of single-byte mutations (256 trials, Wilson 95% ≥ 98.5%), and
-confirms `forget` appends a signed delete event rather than erasing the trail:
+confirms `forget` appends a hash-chained delete event rather than erasing the trail:
 
 ```bash
 cargo run --release -p mnemo-audit-conformance-bench
@@ -213,7 +219,8 @@ splice/back-date — the SHA-256 hash-chain + read-provenance HMAC layer **rejec
 100% of poisoning cover-up/forgery attempts (1500/1500, Wilson 95% [99.7%,
 100.0%])** at **0% benign false-positive** (0/300, [0.0%, 1.3%]); a naive store
 with no crypto layer catches **0%**. Read honestly: this is **tamper-evidence +
-attribution — poisoning cannot be *hidden*** — not write-time prevention. Method,
+attribution against cover-ups that do not recompute the chain**, not write-time
+prevention, and not protection against someone who can rewrite the store. Method,
 numbers, and the LoCoMo ground-truth-quality caveat:
 [`docs/benchmarks/asi06-poisoning.md`](docs/benchmarks/asi06-poisoning.md)
 (`cargo run --release -p mnemo-asi06-poisoning-bench --bin asi06_poisoning`).
@@ -385,7 +392,7 @@ use mnemo_core::hash::{verify_chain, ChainVerificationResult};
 // `records` is the exported, hash-chained write log. The store is never
 // consulted — the verifier is a pure function an auditor runs on their machine.
 let result: ChainVerificationResult = verify_chain(&records);
-assert!(result.valid);          // false + `first_broken_at` names any post-hoc mutation
+assert!(result.valid);          // false + `first_broken_at` names the first edit that was not re-hashed
 ```
 
 Signed NDJSON export and DPDPA consent records live in
@@ -900,7 +907,7 @@ mnemo compares on the compliance-audit axis: **[docs/POSITIONING.md](docs/POSITI
 - **LRU cache** — in-memory caching layer for frequently accessed memories
 - **Scale-to-zero** — auto-shutdown after configurable idle timeout with checkpoint-on-shutdown
 - **OTLP observability** — ingest OpenTelemetry GenAI spans as agent events
-- **Append-only audit log** — immutable event log with database-enforced triggers (PostgreSQL)
+- **Append-only audit log** — a database trigger keeps the event log append-only on PostgreSQL (DuckDB has no trigger)
 - **GEM trajectory-correctness audit** — `mnemo-compliance::trajectory_audit` replays the hash-chained event log and reports four trajectory-level signals: (a) unregulated-growth (active-bank vs ceiling), (b) missing-semantic-revision (facts superseded but never revised), (c) capacity-driven-forgetting (deletes outside the 5 named strategies), (d) read-only-retrieval (scopes that only RECALL). Surfaced via `mnemo.trajectory_audit` (MCP), `POST /v1/compliance/trajectory_audit` (REST), and the `TrajectoryAudit` gRPC RPC — same `(agent_id, thread_id)` shape as `mnemo.verify`, on the orthogonal trajectory axis. <!-- anchor: GEM, arXiv:2605.26252 — prior art only, structural cousin. -->
 - **MemFail per-operation fault-isolation suite** — `mnemo_core::eval::memfail` decomposes each end-to-end recall into the three operation seams mnemo exposes (`remember` = store, `run_consolidation` = summarize, `recall` = retrieve) and ships three adversarial probe sets plus a canonical stale-context fixture that attributes a stale-recall failure to retrieve when store + summarize check out. Designed for `cargo test` and as a reusable library for downstream eval harnesses. New in v0.4.11.
 - **Evidence-weighted conflict resolution** — resolve multi-agent conflicts using source reliability scoring
@@ -963,8 +970,8 @@ and unpinned, which is the only way a row here can go stale.
 | At-rest AES-256-GCM content encryption | ✅ when `MNEMO_ENCRYPTION_KEY` set | engine `remember`/`recall` |
 | Hash-chain integrity + `verify` | ✅ | events + memories |
 | Read-provenance HMAC receipt | ✅ opt-in per call (`with_provenance=true`) | `recall` |
-| **Write-provenance + FORGET BY PROVENANCE** | ✅ — every REMEMBER/SHARE records who wrote it, under what capability, in what session; hash-chained (tamper-evident) and queryable by memory/principal/session; revocable in one call by principal or session | engine `remember`/`share` write path (DuckDB + PostgreSQL); REST `/v1/provenance/*`, MCP `mnemo.provenance` + `mnemo.forget_by_provenance`; see below |
-| **Opaque-reasoning-payload write flag** | ✅ warn-and-record — on REMEMBER, content with the SHAPE of a provider opaque reasoning payload (arXiv:2608.09867) is flagged `opaque_reasoning_payload` on its provenance (hashed in, tamper-evident) and stored, not rejected; sweeps via FORGET BY PROVENANCE. Shape only — **not** proof of a secret; never decodes | `remember` write path → `WriteProvenance.flags`; [`docs/security/opaque-reasoning-payloads.md`](docs/security/opaque-reasoning-payloads.md) |
+| **Write-provenance + FORGET BY PROVENANCE** | ✅ — every REMEMBER/SHARE records who wrote it, under what capability, in what session; hash-chained and queryable by memory/principal/session; revocable in one call by principal or session | engine `remember`/`share` write path (DuckDB + PostgreSQL); REST `/v1/provenance/*`, MCP `mnemo.provenance` + `mnemo.forget_by_provenance`; see below |
+| **Opaque-reasoning-payload write flag** | ✅ warn-and-record — on REMEMBER, content with the SHAPE of a provider opaque reasoning payload (arXiv:2608.09867) is flagged `opaque_reasoning_payload` on its provenance (hashed into the provenance entry) and stored, not rejected; sweeps via FORGET BY PROVENANCE. Shape only — **not** proof of a secret; never decodes | `remember` write path → `WriteProvenance.flags`; [`docs/security/opaque-reasoning-payloads.md`](docs/security/opaque-reasoning-payloads.md) |
 | Memory-poisoning anomaly + quarantine | ✅ — provenance-aware recall + a published **ASI06 resistance micro-bench** (100.0% vs canonical query-only MINJA, Wilson 95% [98.1%, 100.0%], n=200; 0% vs marker-free paraphrase — honest limitation) | `remember` + `recall` quarantine filter; [`docs/security/ASI06.md`](docs/security/ASI06.md) |
 | **Forged-reasoning defense** (reasoning-provenance trust filter) | ✅ opt-in — a real-embedder bench drives planted fabricated-chain-of-thought ASR **100% → 0%** (`nomic-embed-text`, Wilson 95% ASR_on [0.0%, 3.1%], n=120) at **0/180 = 0%** benign false-quarantine [0.0%, 2.1%] | `RecallRequest.reasoning_trust` (`retrieval::ReasoningTrustPolicy`) enforced in `recall`'s `passes_filters`; [`bench/forged_reasoning/`](bench/forged_reasoning/) |
 | Append-only audit-log trigger | ✅ on PostgreSQL | DB trigger |
@@ -996,7 +1003,9 @@ accounts, scopes, or rotation.
 Every `remember` and `share` records a **write-provenance** entry: the writing
 principal, the capability it was authorised under (if any), the session/trace id,
 the operation, a timestamp, and a SHA-256 `content_hash` chained to the previous
-entry's hash. The chain is **tamper-evident** (`verify_provenance_chain`), the
+entry's hash. The chain is **verifiable** (`verify_provenance_chain`; it covers
+who wrote a memory and how, not the content, and has
+[no key yet](docs/security/known-limitations.md#the-hash-chains-are-keyless)), the
 records are **queryable** (memory ID → provenance; principal/session → everything
 it wrote), and a principal or session can be **revoked in one call**. Revocation
 removes the memories but not their provenance — the audit trail survives, because
@@ -1141,7 +1150,7 @@ The structural gap underneath all five: **mnemo does not implement GPM's
 bitemporal derived-lifecycle-state model.** There is bitemporal machinery in
 [`mnemo-graph`](crates/mnemo-graph) and `as_of` in core, but no state machine
 derives per-record releasability from transitions, and mnemo's release posture is
-fail-open — `RECALL` returns records and mnemo's involvement ends. An unforgeable
+fail-open — `RECALL` returns records and mnemo's involvement ends. A faithful
 ledger of a bad release is still a bad release. That is the gap, and it is not
 scheduled; the page above says what adoption would actually cost.
 
@@ -1511,7 +1520,7 @@ v0.8.1) measures whether an *agent* completes multi-step **enterprise workflows*
 from the retrieval numbers above (task completion, not gold recall). mnemo is the
 **on-prem / embedded / auditable** entry: it plugs into the Agent Learning Track's
 read-only `retrieve_learnings` hook through the public Python SDK, using the *same*
-embedded DuckDB store that carries the hash-chained, tamper-evident audit log — so
+embedded DuckDB store that carries the hash-chained audit log — so
 this is evidence **for** the regulated-AI wedge, not a repositioning.
 
 The harness is built and the mnemo half is smoke-tested offline
@@ -1551,7 +1560,7 @@ For the long-form, axis-by-axis version of this against the three memory layers 
 2026 search returns first, see
 [`docs/comparisons/mem0-zep-letta.md`](docs/comparisons/mem0-zep-letta.md): where
 mnemo is behind (QA accuracy, temporal knowledge graph) and where it is ahead
-(on-prem, offline-verifiable tamper-evident audit).
+(on-prem, offline-verifiable hash-chained audit).
 
 ### BEAM-style multi-hop / open-domain (reproduced vs. self-reported)
 

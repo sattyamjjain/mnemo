@@ -25,7 +25,7 @@ modest. If the only thing that matters for a deployment is the headline QA
 number, one of the other three is the honest recommendation.
 
 What mnemo has that they do not document is a memory that runs entirely on the
-operator's own infrastructure and whose every write is a tamper-evident,
+operator's own infrastructure and whose every write is a hash-chained,
 offline-verifiable audit record. That is the axis the table below is built on.
 
 ## mnemo's own number, cited not claimed
@@ -52,7 +52,7 @@ are not comparable. Do not read 0.739 against a 92.5.
 
 The rows are chosen to be true, not flattering. mnemo loses the QA-accuracy row
 and the temporal-KG row, which is Zep's whole design. It wins the on-prem row and
-the tamper-evident-audit row, which is the reason it exists: a memory a regulated
+the hash-chain-audit row, which is the reason it exists: a memory a regulated
 operator can run and verify without trusting anyone else's store.
 
 ## When to pick which

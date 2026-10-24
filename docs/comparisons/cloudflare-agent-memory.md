@@ -183,7 +183,7 @@ needs underneath:
 | Reconstruct what context each decision saw | RECALL with `with_provenance=true` returns an HMAC-SHA256 receipt naming the cited records; offline-verifiable months later |
 | Reconstruct exact context state at decision time | Bitemporal graph + `as_of` point-in-time queries replay the substrate as it existed at decision time |
 | Distinguish trusted from poisoned context | `quarantine_reason` field + memory-poisoning detector quarantines flagged content; envelope chain records who quarantined and when |
-| Detect context-aware injection adversaries post-hoc | Append-only audit log + envelope chain integrity verification (`mnemo verify`) provides the immutable substrate ARGUS reads from |
+| Detect context-aware injection adversaries post-hoc | Append-only audit log + envelope chain integrity verification (`mnemo verify`) provides the append-only substrate ARGUS reads from |
 | Write-side authorship forensics | Per-record `source_type` + `created_by` + envelope chain identifies write-side actor on every memory record |
 
 The two layers compose without coupling: mnemo records the substrate

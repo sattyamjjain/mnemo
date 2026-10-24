@@ -36,7 +36,7 @@ use mnemo_mcp::MnemoServer; // see crate docs for the exact builder surface
 // stdio; optionally attach an attention-state store with `.with_attention_state`.
 ```
 
-Every write flows through the same hash-chained, tamper-evident path as the core
+Every write flows through the same hash-chained path as the core
 engine, so the MCP surface is auditable end-to-end.
 
 ## Cross-call state: explicit handles, never sessions

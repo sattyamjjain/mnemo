@@ -59,7 +59,9 @@ LIMITS — what a PASS here does and does not mean
 ------------------------------------------------
 It means: the file is internally consistent under the two rules above. Nobody
 edited a record's content, and nobody reordered or removed a record, without
-also recomputing every subsequent hash.
+also recomputing the hashes around it. Each link covers only the record before
+it, so that is a handful of hashes, not the rest of the file, and anyone who
+holds the file can compute them.
 
 It does NOT mean:
 

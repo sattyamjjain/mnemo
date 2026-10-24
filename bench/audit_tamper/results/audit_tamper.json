@@ -57,7 +57,7 @@
       "detected": 0,
       "n": 200,
       "name": "truncate (tail)",
-      "note": "GAP: the surviving prefix is a valid chain; a pure verifier has no expected length/head anchor. Mitigations mnemo ships: a signed checkpoint records the expected latest hash + count; Postgres append-only trigger blocks tail deletion",
+      "note": "GAP: the surviving prefix is a valid chain; a pure verifier has no expected length/head anchor. Postgres' append-only trigger blocks tail deletion through ordinary SQL; on DuckDB nothing does yet (checkpoints are unsigned and record no head hash or count)",
       "rate_pct": 0.0,
       "threat": "drop the last k events from the log",
       "wilson95_pct": [
