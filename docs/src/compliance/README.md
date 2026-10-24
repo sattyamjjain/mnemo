@@ -13,16 +13,25 @@ following capabilities form the foundation of its compliance story:
 
 | Capability | Module | Description |
 |---|---|---|
-| Encryption at rest | `encryption.rs` | AES-256-GCM content encryption with HMAC-based integrity tags |
-| Hash chain verification | `hash.rs` | SHA-256 content hashes linked into a tamper-evident chain |
+| Encryption at rest | `encryption.rs` | AES-256-GCM content encryption; the GCM tag rejects an altered ciphertext |
+| Hash chain verification | `hash.rs` | SHA-256 content hashes linked into a chain that catches edits made without recomputing it |
 | Role-based access control | `acl.rs` | Six-level permission hierarchy (Read through Admin) |
 | Delegation model | `delegation.rs` | Transitive, scoped, time-bounded permission delegation |
 | Memory poisoning detection | `poisoning.rs` | Anomaly scoring against agent behavioral baselines |
-| Immutable audit log | `event.rs` | Append-only AgentEvent log with OpenTelemetry fields |
+| Append-only audit log | `event.rs` | AgentEvent log with OpenTelemetry fields; a trigger enforces append-only on PostgreSQL, nothing does on DuckDB |
 | TTL enforcement | `MemoryRecord.expires_at` | Automatic expiration filtering during recall |
 | Quarantine | `MemoryRecord.quarantined` | Flagged memories excluded from recall results |
 | Checkpoint/Branch/Merge | `checkpoint.rs` | Git-like state management with full version history |
 | Cognitive forgetting | `lifecycle.rs` | Ebbinghaus-inspired decay with configurable functions |
+
+## Scope of the integrity controls
+
+The hash chains have no key and no anchor outside the store. They catch an edit
+made without recomputing them: a bug, a bad migration, a hand edit to a row. They
+do not catch someone with write access to the store, who can recompute them, cut
+their tail or restore an older copy. [SECURITY.md](https://github.com/sattyamjjain/mnemo/blob/main/SECURITY.md) puts that attacker
+out of scope, and every mapping in this section is scoped the same way. The
+details, and what is planned, are in [known limitations](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless).
 
 ## Documents in This Section
 

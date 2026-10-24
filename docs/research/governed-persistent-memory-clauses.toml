@@ -42,16 +42,20 @@ surfaced = "2026-08-16"
 [[clause]]
 id = "ledger-integrity"
 name = "Ledger integrity"
-status = "ships"
+status = "partial"
 statement = "The write log is append-only and tamper-evident, verifiable without trusting the store."
+weakness = "keyless: a writer with store access can recompute the chain, cut its tail or roll it back, and it still verifies"
 notes = """
-SHA-256 hash-chained `agent_events` with an offline verifier that needs no trust \
-in the store. Measured: **100% single-byte-mutation detection over 256 trials** \
+SHA-256 hash-chained `agent_events` with an offline verifier that runs no mnemo \
+code. Measured: **100% single-byte-mutation detection over 256 trials** \
 ([`bench/audit_conformance`](../../bench/audit_conformance)), and delete / reorder / \
 forge-integrity-field each 100% over 200 trials \
-([`bench/audit_tamper`](../../bench/audit_tamper)), with two **disclosed 0% gaps** — \
-payload-only forge and tail truncation. This is the one clause where mnemo is on \
-comparable ground.\
+([`bench/audit_tamper`](../../bench/audit_tamper)), with two **disclosed 0% gaps**: \
+payload-only forge and tail truncation. **But the chain has no key and no anchor \
+outside the store, so it is not verifiable without trusting the store**: a writer \
+with access to it can recompute the chain, cut its tail or roll it back, and it \
+still verifies ([known limitations](../security/known-limitations.md#the-hash-chains-are-keyless)). \
+Of the five clauses this is still the one where mnemo is closest.\
 """
 implementation = [
   { path = "crates/mnemo-core/src/hash.rs", symbol = "verify_event_chain" },

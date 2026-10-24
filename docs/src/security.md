@@ -38,7 +38,7 @@ The REST `/v1/delegate` endpoint verifies the caller has `Delegate` permission o
 Every memory record includes a SHA-256 hash chain:
 - `content_hash = SHA256(content + agent_id + timestamp)`
 - `prev_hash` links to the previous record's hash via `SHA256(content_hash + prev_content_hash)`
-- The `verify` tool checks the entire chain for tampering
+- The `verify` tool checks the entire chain and names the first record that fails. It catches edits made without re-hashing. The chain has no key, so it does not stop someone with write access to the store ([details](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless))
 - Hash comparisons use constant-time operations (`subtle::ConstantTimeEq`) to prevent timing side-channels
 
 ## Memory Poisoning Detection

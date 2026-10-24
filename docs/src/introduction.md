@@ -7,7 +7,7 @@ Mnemo is an MCP-native memory database for AI agents. It provides persistent, st
 - **21 MCP Tools**: core memory ops (remember, recall, forget, forget_subject, share, consolidate), git-like state (checkpoint, branch, merge, replay), delegation & verification (delegate, verify, trajectory_audit), attention state, agent-controlled `mem_*`, and plan memory — see the [tools reference](./tools/README.md)
 - **Hybrid Retrieval**: Vector similarity (USearch/pgvector) + BM25 full-text (Tantivy) + recency + graph signals fused via Reciprocal Rank Fusion
 - **Access Control**: Owner-based permissions, ACL sharing, transitive delegation with time bounds
-- **Integrity Verification**: SHA-256 hash chains over memory records with tamper detection
+- **Integrity Verification**: SHA-256 hash chains over memory records that catch edits made without re-hashing
 - **Git-like State Management**: Checkpoint, branch, merge, and replay agent memory states
 - **Cognitive Forgetting**: Ebbinghaus decay curves, consolidation, archival strategies
 - **Memory Poisoning Detection**: Anomaly scoring with automatic quarantine
@@ -19,7 +19,7 @@ Mnemo is an MCP-native memory database for AI agents. It provides persistent, st
 
 - **Agent Memory**: Give LLM agents persistent memory across conversations
 - **Multi-Agent Collaboration**: Share memories between agents with fine-grained permissions
-- **Audit Trails**: Immutable event logs with hash-chain integrity verification
+- **Audit Trails**: Append-only event logs with hash-chain integrity verification
 - **Knowledge Management**: Store, retrieve, and organize agent-generated knowledge
 
 ## Architecture

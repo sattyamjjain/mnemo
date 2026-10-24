@@ -16,16 +16,23 @@ race (see [Where mnemo does not lead](#where-mnemo-does-not-lead)). mnemo leads 
 *different* axis that funded recall-quality teams have largely skipped:
 
 **on-prem, MCP-native, cryptographically-auditable memory a regulator or auditor
-can verify offline, without trusting the store or any hosted tier.**
+can check offline with their own code, without running mnemo or trusting a hosted
+tier.**
+
+The check has a limit, stated up front: the hash chains have no key and no anchor
+outside the store yet, so they catch edits that were not re-hashed, not someone
+who can rewrite the store file.
+[Known limitations](security/known-limitations.md#the-hash-chains-are-keyless)
+says exactly what they catch and what the fix is.
 
 That axis is not marketing — it is four already-shipped, reproducible benchmarks:
 
 | what | shipped number | reproduce |
 |---|---|---|
 | **Recall quality** (mnemo's own, honest) | LongMemEval_M, real embedder: **semantic recall@1 0.739, MRR 0.805, ~89% fewer context tokens** vs full history | `cargo run --release -p mnemo-locomo-bench --bin semantic_recall_bench` |
-| **Tamper-evident audit log, log written *serially*** (EU AI Act Art.12) | **256/256 single-byte mutations detected — 100%, Wilson 95% [98.5%, 100.0%]**; append-only retention verified; recomputable SHA-256 crypto vector | `cargo run --release -p mnemo-audit-conformance-bench` |
+| **Hash-chained audit log, log written *serially*** (EU AI Act Art.12) | **256/256 single-byte mutations detected — 100%, Wilson 95% [98.5%, 100.0%]**; append-only retention verified; recomputable SHA-256 crypto vector | `cargo run --release -p mnemo-audit-conformance-bench` |
 | **Write-chain linkage, log written *concurrently*** | **255/255 records linked — 100%, Wilson 95% [98.5%, 100.0%]** across 16 writers × 16 writes (256 records) on 8 worker threads; structurally, exactly **1** chain head, 0 forks, 0 dangling, 256/256 reachable from that head | `cargo run --release -p mnemo-audit-conformance-bench` |
-| **Adversarial audit-log tamper-evidence** (EU AI Act Art.12) | **delete / reorder / forge-integrity-field each 100% detected over 200 trials, Wilson 95% [98.1%, 100.0%]**; 0/72 benign false-positives; honest **0%** on payload-only forge + tail truncation (disclosed gaps, shipped mitigations named) | `cargo run --release -p mnemo-audit-tamper-bench` |
+| **Adversarial audit-log tamper-evidence** (EU AI Act Art.12) | **delete / reorder / forge-integrity-field each 100% detected over 200 trials, Wilson 95% [98.1%, 100.0%]**; 0/72 benign false-positives; honest **0%** on payload-only forge + tail truncation (disclosed gaps; the report says what narrows them) | `cargo run --release -p mnemo-audit-tamper-bench` |
 | **Memory-poisoning defense delta** (OWASP ASI06) | MINJA **100% → 0% (+100 pts)**; AgentPoison **100% → 3.5% (+96.5 pts)**; **benign control 0/200 false-quarantine** | `cargo run --release -p mnemo-poisoning-bench` |
 | **Reproducible-by-disclosure LoCoMo** | single-hop retrieval **recall@1 24.4% [Wilson 95% 14.2%, 38.7%]**, byte-stable, tabled against vendors' cited claims | `cargo run --release -p mnemo-locomo-bench --bin reproduction_bench` |
 
@@ -64,7 +71,7 @@ feature); `➖` = partial / conditional; `❌` = not a documented capability
 |---|---|---|---|---|
 | **On-prem / self-host, no hosted tier to trust** | ✅ in-process (embedded DuckDB or your PostgreSQL); no SaaS | ➖ OSS core self-hostable, plus a hosted platform | ➖ OSS self-hostable, plus Letta Cloud | ❌ hosted-only; memory lives in the provider |
 | **MCP-native primitives** | ✅ REMEMBER / RECALL / FORGET / SHARE *are* MCP tools | ➖ MCP server offered over the store | ➖ integrates MCP tool servers | ❌ provider-internal; not a portable MCP primitive |
-| **Cryptographic hash-chain audit log (offline-verifiable)** | ✅ SHA-256 `agent_events` chain; external verifier detects any post-hoc mutation without consulting the store — **proven, 100%/256 trials** | ❌ no tamper-evident / cryptographic audit primitive documented | ❌ not a documented cryptographic audit primitive | ❌ no self-verifiable local audit log exposed to the user |
+| **Cryptographic hash-chain audit log (offline-verifiable)** | ✅ SHA-256 `agent_events` chain; external verifier catches any edit that was not re-hashed, without consulting the store (**100%/256 single-byte trials**); no key or outside anchor yet, so not proof against a writer with store access | ❌ no tamper-evident / cryptographic audit primitive documented | ❌ not a documented cryptographic audit primitive | ❌ no self-verifiable local audit log exposed to the user |
 | **Memory-poisoning defense (measured delta)** | ✅ write-time quarantine + recall skip; **MINJA +100 pts, AgentPoison +96.5 pts, 0/200 benign FPR** (ASR ON vs OFF) | ❌ no benchmarked poisoning-defense primitive documented | ❌ no benchmarked poisoning-defense primitive documented | ❌ opaque; no published poisoning-defense benchmark |
 | **Regulatory mapping (EU AI Act Art.12 · India DPDP · OWASP ASI06)** | ✅ per-clause mapping docs wired to the audit bench | ❌ no equivalent published mapping | ❌ no equivalent published mapping | ➖ provider SOC 2 / DPA, but not a self-verifiable memory-log mapping |
 | **Recall / answer quality on public leaderboards** | ➖ modest & honest (retrieval metric; see below) | ✅ funded team; strong **published** LLM-judged QA (92.5 claimed) | ✅ established recall/agent-memory research line | ✅ tightly integrated with the frontier model |
@@ -102,17 +109,21 @@ Stated plainly, because the honesty is the credibility:
   general poisoning immunity.
 - **The audit bench proves a *mechanism*, not legal compliance.** It does not
   enforce a retention calendar (e.g. Art.26(6)'s six-month clock) and is not a
-  conformity assessment. It proves the log is complete and tamper-evident — the
-  precondition a record-keeping obligation depends on, not the obligation itself.
+  conformity assessment. It proves the chain catches edits that were not
+  re-hashed, the mechanism a record-keeping obligation depends on, not the
+  obligation itself. It does not prove the log is complete (a truncated tail still
+  verifies), and it does not stop someone who can rewrite the store; that needs an
+  outside anchor mnemo does not ship yet.
 - **There is no release gate — mnemo's release posture is fail-open.** `RECALL`
   returns ranked records and mnemo's involvement ends; nothing decides whether a
   contradictory, superseded, retracted, deleted or stale record may support an
   agent's outgoing claim. **Governed Persistent Memory**
   ([arXiv:2608.12476](https://arxiv.org/abs/2608.12476)) is the academic
   statement of exactly this gap, and mnemo does **not** implement its bitemporal
-  derived-lifecycle-state model. Of its five clauses some ship, some ship in
-  weaker partial forms, and some are absent — one in direct conflict with a
-  shipped feature. An unforgeable ledger of a bad release is still a bad release.
+  derived-lifecycle-state model. None of its five clauses ships
+  in full: three ship in weaker partial forms, and two are not implemented, one
+  of them in direct conflict with a shipped feature. A faithful ledger of a bad
+  release is still a bad release.
   Which clause is in which state is stated once, in the generated, test-asserted
   [clause-by-clause table](research/governed-persistent-memory-2608.12476.md#where-mnemo-actually-lands),
   and deliberately not repeated here.
@@ -132,10 +143,11 @@ procurement question, not a someday-nice-to-have:
   automatic-log **retention of at least six months** (Art.19(1) provider,
   Art.26(6) deployer). Breach of these provider/deployer obligations sits in the
   Art.99(4) penalty tier: **up to €15,000,000 or 3% of total worldwide annual
-  turnover, whichever is higher.** That is the exposure a tamper-evident log
-  offsets — proven by the [adversarial tamper-evidence bench](benchmarks/audit-log-tamper-evidence.md)
-  (delete / reorder / forge-integrity-field each 100% detected, honest about the
-  two disclosed gaps). *Hedge:* a **May-2026 Digital Omnibus** simplification
+  turnover, whichever is higher.** That is the exposure a hash-chained log
+  helps with. The [adversarial tamper-evidence bench](benchmarks/audit-log-tamper-evidence.md)
+  shows what it catches (delete / reorder / forge-integrity-field each 100%) and
+  what it does not (payload-only forge, tail truncation, and anyone who can
+  rewrite the store). *Hedge:* a **May-2026 Digital Omnibus** simplification
   proposal may move several high-risk application dates toward **December 2027** —
   a proposal, not enacted law. Source & per-clause mapping:
   [`docs/compliance/eu-ai-act-art12.md`](compliance/eu-ai-act-art12.md).
@@ -154,12 +166,12 @@ procurement question, not a someday-nice-to-have:
 Each signal maps to a shipped bench: Art.12 → the audit-conformance report plus
 the adversarial [tamper-evidence bench](benchmarks/audit-log-tamper-evidence.md),
 ASI06 → the poisoning defense delta, DPDP → the same append-only,
-tamper-evident, encrypted log plus `Redact`/`HardDelete` erasure primitives.
+hash-chained, encrypted log plus `Redact`/`HardDelete` erasure primitives.
 
 ## Reproduce everything (Apache-2.0, offline)
 
 ```bash
-# Tamper-evident audit log (EU AI Act Art.12) — byte-stable report + crypto vector
+# Hash-chained audit log (EU AI Act Art.12) — byte-stable report + crypto vector
 cargo run --release -p mnemo-audit-conformance-bench
 
 # Adversarial audit-log tamper-evidence (EU AI Act Art.12) — delete/reorder/forge/truncate, Wilson-95

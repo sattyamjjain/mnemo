@@ -30,8 +30,8 @@ If the content matches, it:
    [`WriteFlag::OpaqueReasoningPayload`](../../crates/mnemo-core/src/model/write_provenance.rs)
    on the same `WriteProvenance` record that already captures the principal and
    session (the 2026-08-11 provenance work). The flag is **hashed into** the
-   record's `content_hash`, so it is tamper-evident — it cannot be stripped
-   without breaking the chain.
+   record's `content_hash`, so stripping it breaks the chain unless the chain is
+   recomputed ([known limitations](known-limitations.md#the-hash-chains-are-keyless)).
 2. **emits a `tracing::warn!`** naming the memory id and the matched shape.
 3. **stores the write anyway.** The default is **warn-and-record, not reject**: a
    memory database that silently drops writes is worse than one that stores a

@@ -1,6 +1,6 @@
 # mnemo audit-conformance report
 
-> **Deterministic, offline proof** that mnemo's memory-write log is tamper-evident and externally verifiable without trusting the store. Built entirely on shipped `mnemo-core` primitives (`hash::verify_chain`, `hash::verify_event_chain`, `MnemoEngine::verify_integrity`, `verify_event_integrity`). No network, no LLM. This file is **byte-stable**: re-run and `diff` — it will not change.
+> **Deterministic, offline proof** that mnemo's hash-chained memory-write log catches edits made without re-hashing, checked by a verifier that does not consult the store. It does not model a writer with store access who recomputes the chain; see [known limitations](../../../docs/security/known-limitations.md#the-hash-chains-are-keyless). Built entirely on shipped `mnemo-core` primitives (`hash::verify_chain`, `hash::verify_event_chain`, `MnemoEngine::verify_integrity`, `verify_event_integrity`). No network, no LLM. This file is **byte-stable**: re-run and `diff` — it will not change.
 
 Reproduce: `cargo run --release -p mnemo-audit-conformance-bench`
 
@@ -75,5 +75,6 @@ Fixed inputs → fixed SHA-256, so you can recompute the hex offline with any SH
 
 ## What this does and does NOT claim
 
-- **Does:** the write log is an append-only SHA-256 hash chain; an external verifier detects any post-hoc mutation and names the first broken record; `forget` appends a signed delete event and retains the original write (row + event), so the audit trail survives deletion.
+- **Does:** the write log is an append-only SHA-256 hash chain; an external verifier detects any edit that was not re-hashed and names the first broken record; `forget` appends a hash-chained delete event and retains the original write (row + event), so the audit trail survives deletion.
+- **Does NOT:** catch a writer with access to the store who recomputes the chain, cuts its tail or restores an older copy. Nothing in mnemo does yet; see [known limitations](../../../docs/security/known-limitations.md#the-hash-chains-are-keyless).
 - **Does NOT:** enforce a calendar retention window (e.g. the EU AI Act Art.26(6) six-month clock) — that is a deployment policy on top of this log — and does NOT itself constitute legal compliance. It proves the *mechanism* a record-keeping obligation depends on. See [`docs/compliance/eu-ai-act-art12.md`](../../../docs/compliance/eu-ai-act-art12.md) and [`docs/compliance/dpdp-2027.md`](../../../docs/compliance/dpdp-2027.md).

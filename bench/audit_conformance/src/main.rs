@@ -4,9 +4,12 @@
 //!
 //! Regulated deployments (EU AI Act Art.12 record-keeping, DPDPA record of
 //! processing, HIPAA §164.312(b) audit controls) need a memory store whose
-//! write log is **tamper-evident** and **externally verifiable without trusting
-//! the store**. This bench demonstrates — deterministically, offline, with no
-//! network and no LLM — that mnemo's *already-shipped* primitives deliver that:
+//! write log is **tamper-evident** and **externally verifiable**. This bench
+//! demonstrates, deterministically and offline with no network and no LLM, the
+//! part of that mnemo's *already-shipped* primitives deliver: an edit made
+//! without re-hashing is caught by a verifier that does not consult the store.
+//! It does not model a writer with store access who recomputes the chain;
+//! nothing in mnemo catches that yet. What it checks:
 //!
 //! 1. **write-chain verifies** — every memory written through the real
 //!    [`MnemoEngine::remember`] path carries a SHA-256 content hash chained to
@@ -90,7 +93,7 @@ const WORKER_THREADS: usize = 8;
 #[derive(Parser, Debug)]
 #[command(
     name = "audit_conformance",
-    about = "Offline, deterministic proof that mnemo's memory-write log is tamper-evident and externally verifiable."
+    about = "Offline, deterministic proof of what mnemo's hash-chained memory-write log catches."
 )]
 struct Cli {
     /// Memories written through the real engine to build the audited chain.
@@ -716,8 +719,11 @@ fn write_report(
     // reported, because that would not be stable.
     let md = format!(
         "# mnemo audit-conformance report\n\n\
-         > **Deterministic, offline proof** that mnemo's memory-write log is tamper-evident and \
-         externally verifiable without trusting the store. Built entirely on shipped `mnemo-core` \
+         > **Deterministic, offline proof** that mnemo's hash-chained memory-write log catches \
+         edits made without re-hashing, checked by a verifier that does not consult the store. It \
+         does not model a writer with store access who recomputes the chain; see \
+         [known limitations](../../../docs/security/known-limitations.md#the-hash-chains-are-keyless). \
+         Built entirely on shipped `mnemo-core` \
          primitives (`hash::verify_chain`, `hash::verify_event_chain`, `MnemoEngine::verify_integrity`, \
          `verify_event_integrity`). No network, no LLM. This file is **byte-stable**: re-run and \
          `diff` — it will not change.\n\n\
@@ -756,9 +762,12 @@ fn write_report(
          ```json\n{vector}\n```\n\n\
          ## What this does and does NOT claim\n\n\
          - **Does:** the write log is an append-only SHA-256 hash chain; an external verifier \
-         detects any post-hoc mutation and names the first broken record; `forget` appends a signed \
-         delete event and retains the original write (row + event), so the audit trail survives \
-         deletion.\n\
+         detects any edit that was not re-hashed and names the first broken record; `forget` \
+         appends a hash-chained delete event and retains the original write (row + event), so the \
+         audit trail survives deletion.\n\
+         - **Does NOT:** catch a writer with access to the store who recomputes the chain, cuts its \
+         tail or restores an older copy. Nothing in mnemo does yet; see \
+         [known limitations](../../../docs/security/known-limitations.md#the-hash-chains-are-keyless).\n\
          - **Does NOT:** enforce a calendar retention window (e.g. the EU AI Act Art.26(6) six-month \
          clock) — that is a deployment policy on top of this log — and does NOT itself constitute \
          legal compliance. It proves the *mechanism* a record-keeping obligation depends on. See \

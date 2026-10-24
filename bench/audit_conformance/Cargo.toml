@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "Offline, deterministic audit-conformance proof for mnemo's tamper-evident, SHA-256 hash-chained memory-write log (EU AI Act Art.12 / DPDPA record-keeping)."
+description = "Offline, deterministic audit-conformance proof for mnemo's SHA-256 hash-chained memory-write log (EU AI Act Art.12 / DPDPA record-keeping)."
 
 [[bin]]
 name = "audit_conformance"

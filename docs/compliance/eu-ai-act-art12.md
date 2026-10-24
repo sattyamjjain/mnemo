@@ -3,10 +3,12 @@
 > **Not legal advice.** This document maps mnemo's *technical* capabilities to
 > the text of Regulation (EU) 2024/1689 (the AI Act). Whether a given
 > deployment is compliant is a legal determination that depends on the system,
-> its intended purpose, and current law. mnemo supplies substrate — an
-> append-only, tamper-evident, externally-verifiable memory-write log — not a
-> compliance certificate. Verify every article reference against the current
-> Official Journal text.
+> its intended purpose, and current law. mnemo supplies substrate, an
+> append-only, hash-chained memory-write log that can be checked outside mnemo,
+> not a compliance certificate. The chain catches edits made without recomputing
+> it, not someone with write access to the store
+> ([scope](../security/known-limitations.md#the-hash-chains-are-keyless)).
+> Verify every article reference against the current Official Journal text.
 
 ## The obligation
 
@@ -35,11 +37,11 @@ provisional and confirm against the final instrument before relying on them.
 | Art. clause | Obligation | mnemo mechanism (shipped) | Where |
 |---|---|---|---|
 | 12(1) | Automatic recording of events over the system lifetime | Every `remember` appends a `MemoryWrite` event; every `forget` appends a `MemoryDelete`/`MemoryRedact` event. The `agent_events` log is append-only. | `query/remember.rs`, `query/forget.rs` |
-| 12(1) | Logs must be trustworthy (not silently editable) | Each event carries a SHA-256 `content_hash` chained to the previous event's hash (`prev_hash`); `verify_event_integrity` recomputes the chain and names the first broken link. PostgreSQL enforces this with a `prevent_event_modification` trigger on `agent_events`. | `hash.rs::verify_event_chain`, `query/event_builder.rs`, `mnemo-postgres` migration |
+| 12(1) | Logs must be trustworthy (not silently editable) | Each event carries a SHA-256 `content_hash` chained to the previous event's hash (`prev_hash`); `verify_event_integrity` recomputes the chain and names the first broken link. PostgreSQL blocks `UPDATE` and `DELETE` on `agent_events` with a `prevent_event_modification` trigger. On DuckDB nothing does, and a writer who recomputes the links is not caught ([scope](../security/known-limitations.md#the-hash-chains-are-keyless)). | `hash.rs::verify_event_chain`, `query/event_builder.rs`, `mnemo-postgres` migration |
 | 12(2)–(3) | Identify situations that may present a risk; traceability | Causality tracing over the event graph (`trace_causality`, up/down/both); poisoning-detection events; per-memory provenance (`source_type`, `source_id`) and HMAC-signed read receipts. | `query/causality.rs`, `query/poisoning.rs`, `provenance.rs` |
 | 26(6) | Keep logs for ≥ 6 months | The log is **append-only**: `forget` is a logged, appended event, **not an erasure**. The original write row is retained (soft-delete sets `deleted_at`; the row and its write event survive), so "what was written, by whom, when, and that it was later forgotten" is reconstructable for any retention window. Point-in-time reconstruction via `replay { as_of }`. | `query/forget.rs` (SoftDelete), `query/replay.rs` (`as_of`) |
 
-### Evidence that the log is tamper-evident
+### Evidence for what the chain catches
 
 The claim above is not asserted — it is **proven, offline and deterministically**,
 by the audit-conformance bench:
@@ -56,12 +58,17 @@ It also emits a fixed, **recomputable SHA-256 crypto vector** so the chaining
 algorithm can be checked with any off-the-shelf hash tool. Report:
 [`bench/audit_conformance/results/conformance.md`](../../bench/audit_conformance/results/conformance.md).
 
+What the bench does not model: a writer who recomputes the chain, cuts its tail
+or restores an older copy. Nothing in mnemo catches that yet; see
+[known limitations](../security/known-limitations.md#the-hash-chains-are-keyless).
+
 ## What mnemo does NOT do
 
 - **It does not enforce the six-month clock.** Retention duration, purge policy,
   and legal-hold are deployment configuration layered on top of the append-only
-  log — mnemo guarantees the log is *complete and tamper-evident*, which is the
-  precondition a retention obligation needs, not the calendar policy itself.
+  log. mnemo keeps the log append-only and hash-chained, which is the
+  precondition a retention obligation needs, not the calendar policy itself. It
+  does not yet prove the log is complete: a truncated tail still verifies.
 - **It is not a conformity assessment.** Art.12 is one clause among many
   (risk management, data governance, human oversight, transparency). mnemo
   addresses the record-keeping substrate only.

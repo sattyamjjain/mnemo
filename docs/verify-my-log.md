@@ -6,7 +6,8 @@ Five minutes, one Python file, no dependencies. At the end you will have watched
 a tampered record get caught by name.
 
 This page does not tell you what your obligations are. mnemo is a component. It
-produces **a tamper-evident, independently verifiable event log**; whether that
+produces **an event log you can verify independently**, within the limits in
+[What a PASS does not mean](#what-a-pass-does-not-mean); whether that
 satisfies a particular regulation is a question about your system and your
 regulator, not about this tool.
 
@@ -112,8 +113,10 @@ $? = 1
 what the file claims. They differ, so the content was changed after the hash was
 taken. Non-zero exit, so this drops straight into a pipeline.
 
-To rewrite that record undetected you would have to recompute its hash *and*
-every link after it — which is what a hash chain is for.
+To rewrite that record undetected you would have to recompute its hash *and* the
+links on either side of it. Each link covers only the record before it, so that is
+three hashes, and anyone who holds the file can compute them. The next section is
+about that limit.
 
 ## What a PASS does not mean
 
@@ -132,6 +135,9 @@ Stated plainly, because a verifier oversold is worse than none:
 - **Not real timestamps.** `created_at` is an input to the hash, not an
   attestation. A writer choosing its own clock is bound to that choice, not to
   its truth.
+
+The same limits apply to the chains inside mnemo. They are written up, with the
+planned fix, in [known limitations](security/known-limitations.md#the-hash-chains-are-keyless).
 
 ## What writing this page found
 

@@ -7,11 +7,13 @@ Compliance primitives for **[Mnemo](https://github.com/sattyamjjain/mnemo)** —
 the on-prem, MCP-native, cryptographically-auditable memory database for AI
 agents. This crate layers **DPDPA consent management** and **EU AI Act Art.12
 audit-log export** on top of [`mnemo-core`](https://crates.io/crates/mnemo-core)'s
-tamper-evident hash chain.
+hash chain.
 
-> **Not legal advice.** These are the *technical* substrate — an append-only,
-> tamper-evident, externally-verifiable memory-write log with signed export and
-> consent records — not a compliance certificate. See the honest, hedged
+> **Not legal advice.** These are the *technical* substrate, an append-only,
+> hash-chained memory-write log with signed export and consent records, not a
+> compliance certificate. The chain catches edits that were not re-hashed, not
+> someone who can rewrite the store
+> ([details](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless)). See the honest, hedged
 > regulatory mappings:
 > [EU AI Act Art.12](https://github.com/sattyamjjain/mnemo/blob/main/docs/compliance/eu-ai-act-art12.md)
 > · [India DPDP](https://github.com/sattyamjjain/mnemo/blob/main/docs/compliance/dpdp-2027.md).

@@ -187,11 +187,12 @@ enum Command {
     /// Export the memory-write hash chain for offline verification.
     ///
     /// The repository promises "a SHA-256 hash-chained log an auditor can
-    /// verify offline, without trusting the store or the vendor". Every
-    /// verifier that shipped before this required linking `mnemo-core` or
-    /// calling a running `mnemo` — which satisfies "without trusting the
-    /// store" but not "without trusting the vendor", and there was no way to
-    /// get the log out of the database at all.
+    /// check offline, without running the vendor's code". Every verifier that
+    /// shipped before this required linking `mnemo-core` or calling a running
+    /// `mnemo`, and there was no way to get the log out of the database at all.
+    /// The check covers edits made without re-hashing; the chain has no key, so
+    /// it does not stop someone who can rewrite the store (see
+    /// `docs/security/known-limitations.md`).
     ///
     /// The export is deliberately dumb: plain JSONL, primitive fields, hex
     /// hashes, no mnemo types. `tools/verify_mnemo_chain.py` reads it with

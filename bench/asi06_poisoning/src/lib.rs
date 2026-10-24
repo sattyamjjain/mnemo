@@ -23,11 +23,14 @@
 //! it. Write-time *quarantine* is a **separate** layer (the anomaly detector;
 //! measured by [`bench/poisoning`](../../bench/poisoning) and
 //! [`docs/BENCH_POISONING.md`](../../docs/BENCH_POISONING.md)). What the auditable
-//! layer guarantees is that **poisoning cannot be hidden**: any attempt to erase
-//! the true fact, forge a clean provenance, or splice the drift trail out of the
-//! history is **cryptographically rejected** by an offline verifier. That is the
-//! regulated-AI wedge (EU AI Act Art.12 / DPDPA / HIPAA §164.312(b)): tamper-
-//! evident, attributable memory an auditor can check without trusting the store.
+//! layer adds is that a **cover-up shows**: erasing the true fact, forging a
+//! clean provenance, or splicing the drift trail out of the history is
+//! **rejected** by an offline verifier, as long as the adversary does not
+//! recompute the chain. This bench's adversary never does. One with write access
+//! to the store who re-hashes after the edit is not caught by families A and C
+//! (see `docs/security/known-limitations.md`). That is the regulated-AI wedge
+//! (EU AI Act Art.12 / DPDPA / HIPAA §164.312(b)): attributable memory an auditor
+//! can check without running mnemo's code.
 //!
 //! # Metric — auditable resistance rate
 //!

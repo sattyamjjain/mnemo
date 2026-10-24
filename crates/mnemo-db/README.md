@@ -8,7 +8,7 @@ ships as focused Rust crates, not a single `mnemo-db` crate.
 
 ```bash
 cargo add mnemo-core   # embeddable memory engine: storage, vector + full-text
-                       # search, hash-chained tamper-evident audit log
+                       # search, hash-chained audit log
 cargo add mnemo-mcp    # MCP server: REMEMBER / RECALL / FORGET / SHARE as tools
 ```
 

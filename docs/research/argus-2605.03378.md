@@ -55,9 +55,9 @@ auditing needs:
   ARGUS is replaying a decision and needs to know which retrieved
   items were already suspect at retrieval time.
 - **Append-only audit log.** PostgreSQL trigger
-  (`prevent_event_modification`) enforces the substrate's immutability
-  at the schema level, which is what makes the audit trustworthy
-  months later.
+  (`prevent_event_modification`) makes `agent_events` append-only at
+  the schema level, against anyone who cannot drop the trigger. DuckDB
+  has no equivalent.
 - **Offline verification.** `mnemo verify` reconstructs the envelope
   chain without contacting any cloud account — the substrate is
   audit-trustworthy even when the original deployment is gone.

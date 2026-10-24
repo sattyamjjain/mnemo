@@ -104,7 +104,7 @@ Record₂ → prev_hash = SHA256(content_hash₂ + content_hash₁)
 Record₃ → prev_hash = SHA256(content_hash₃ + content_hash₂)
 ```
 
-The `verify` tool checks the entire chain for tampering using constant-time comparisons.
+The `verify` tool checks the entire chain using constant-time comparisons and names the first record that fails. It catches edits made without re-hashing, not a writer who recomputes the chain ([details](https://github.com/sattyamjjain/mnemo/blob/main/docs/security/known-limitations.md#the-hash-chains-are-keyless)).
 
 ### Security Layers
 

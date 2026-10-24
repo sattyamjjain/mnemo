@@ -96,13 +96,13 @@ the manifest, not the table.
 
 | GPM clause | mnemo | what is actually there, and what is missing |
 |---|---|---|
-| **Ledger integrity** | ✅ | SHA-256 hash-chained `agent_events` with an offline verifier that needs no trust in the store. Measured: **100% single-byte-mutation detection over 256 trials** ([`bench/audit_conformance`](../../bench/audit_conformance)), and delete / reorder / forge-integrity-field each 100% over 200 trials ([`bench/audit_tamper`](../../bench/audit_tamper)), with two **disclosed 0% gaps** — payload-only forge and tail truncation. This is the one clause where mnemo is on comparable ground. |
+| **Ledger integrity** | ➖ | SHA-256 hash-chained `agent_events` with an offline verifier that runs no mnemo code. Measured: **100% single-byte-mutation detection over 256 trials** ([`bench/audit_conformance`](../../bench/audit_conformance)), and delete / reorder / forge-integrity-field each 100% over 200 trials ([`bench/audit_tamper`](../../bench/audit_tamper)), with two **disclosed 0% gaps**: payload-only forge and tail truncation. **But the chain has no key and no anchor outside the store, so it is not verifiable without trusting the store**: a writer with access to it can recompute the chain, cut its tail or roll it back, and it still verifies ([known limitations](../security/known-limitations.md#the-hash-chains-are-keyless)). Of the five clauses this is still the one where mnemo is closest. |
 | **Source binding** | ➖ | [`WriteProvenance`](../../crates/mnemo-core/src/model/write_provenance.rs) binds every `REMEMBER` / `SHARE` to a principal, capability and session over a SHA-256 chain, and `SourceType` records an origin. **But the binding is not admission-controlling and not tamper-proof in the way the clause requires**: `source_type` is optional, defaults to `Agent`, is not covered by the content hash, and does not appear in the read receipt — so a tool return is **not provably separable from user input**. That limitation is already written down in [`docs/security/read-time-provenance.md`](../security/read-time-provenance.md); GPM is the paper that says why it matters. |
 | **Conflict isolation** | ➖ | [`query/conflict.rs`](../../crates/mnemo-core/src/query/conflict.rs) resolves conflicts (including `EvidenceWeighted`) and [`current_fact_resolver`](../../crates/mnemo-core/src/query/current_fact_resolver.rs) drops superseded versions with an optional supersession chain. This is **resolution at read time, not isolation as a state barrier** — the loser is de-ranked, not made unreleasable. |
 | **Non-revival after retraction or deletion** | ❌ | mnemo has soft delete, `forget_subject` redact / hard-delete, and TTL sweeps. It has **no non-revival guarantee**: point-in-time `as_of` recall deliberately skips the deleted check (`passes_filters` in [`query/recall.rs`](../../crates/mnemo-core/src/query/recall.rs) reads `if request.as_of.is_none() && record.is_deleted()`), so a deleted record is reachable again by design. That is a defensible audit feature and a direct violation of this clause. **Conflicts with `as_of` point-in-time recall:** `as_of` recall deliberately surfaces deleted records, which is exactly what non-revival forbids. One of the two has to give. |
 | **Exact claim closure over a fresh view at one verified head** | ❌ | There is no release step to close over. `RECALL` returns ranked records; nothing decides whether a record may support an outgoing claim, and nothing pins the read to a verified head. |
 
-_1 of 5 clauses shipped, 2 partial, 2 not implemented. Table generated from [`governed-persistent-memory-clauses.toml`](governed-persistent-memory-clauses.toml) by [`scripts/gen_gpm_clause_table.py`](../../scripts/gen_gpm_clause_table.py); the symbol each row points at is asserted to exist (or not to exist) by `crates/mnemo-compliance/tests/gpm_clause_manifest.rs`._
+_0 of 5 clauses shipped, 3 partial, 2 not implemented. Table generated from [`governed-persistent-memory-clauses.toml`](governed-persistent-memory-clauses.toml) by [`scripts/gen_gpm_clause_table.py`](../../scripts/gen_gpm_clause_table.py); the symbol each row points at is asserted to exist (or not to exist) by `crates/mnemo-compliance/tests/gpm_clause_manifest.rs`._
 <!-- END generated: gpm-clauses -->
 
 And the structural gap underneath all five:
@@ -123,10 +123,10 @@ a different scope.
 ## Why this is cited rather than adopted
 
 mnemo's axis is *auditability of what was written and read* — a regulator or
-auditor verifying the log offline, without trusting the store (see
+auditor checking the log offline with their own code (see
 [POSITIONING](../POSITIONING.md)). GPM's axis is *governance of what may be
 asserted* — a gate between the store and the agent's outgoing claim. They compose
-well and they are not the same thing: an unforgeable ledger of a bad release is
+well and they are not the same thing: a faithful ledger of a bad release is
 still a bad release, which is exactly the point the paper is making.
 
 Adopting the model is a real design commitment, not a patch:

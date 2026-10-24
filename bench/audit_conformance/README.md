@@ -1,9 +1,11 @@
 # `audit_conformance` — regulated-memory audit-conformance proof
 
 A **deterministic, offline** micro-benchmark that proves mnemo's memory-write
-log is **tamper-evident** and **externally verifiable without trusting the
-store** — the property EU AI Act Art.12 record-keeping, DPDPA record-of-
-processing, and HIPAA §164.312(b) audit controls depend on.
+log catches **edits made without re-hashing**, checked by an **external verifier
+that does not consult the store**: part of what EU AI Act Art.12 record-keeping,
+DPDPA record-of-processing, and HIPAA §164.312(b) audit controls depend on. It
+does not model a writer with store access who recomputes the chain; see
+[known limitations](../../docs/security/known-limitations.md#the-hash-chains-are-keyless).
 
 ```bash
 cargo run --release -p mnemo-audit-conformance-bench
