@@ -60,6 +60,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::query::recall::{ScoredMemory, SupersededRecord};
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum FactIdKind {
+    Text,
+    Integer,
+    Boolean,
+}
+
+// Label first preserves legacy group order when distinct labels have equal scores.
+type FactIdentity = (String, FactIdKind);
+
 /// Opt-in config for the current-fact resolver. Carried on
 /// [`RecallRequest::current_fact_resolver`][crate::query::recall::RecallRequest::current_fact_resolver].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -104,12 +114,13 @@ pub struct ResolverOutput {
 /// writes as a supersession chain.
 ///
 /// Records missing the `fact_key` field in their metadata are
-/// passed through to `kept` untouched.
+/// passed through to `kept` untouched. Supported identity values retain
+/// their JSON type, so number 42 and string "42" form different groups.
 pub fn resolve(cfg: &CurrentFactResolverConfig, candidates: Vec<ScoredMemory>) -> ResolverOutput {
     use std::collections::BTreeMap;
 
     let mut without_key: Vec<ScoredMemory> = Vec::new();
-    let mut groups: BTreeMap<String, Vec<ScoredMemory>> = BTreeMap::new();
+    let mut groups: BTreeMap<FactIdentity, Vec<ScoredMemory>> = BTreeMap::new();
 
     for cand in candidates {
         match extract_fact_id(&cand, &cfg.fact_key) {
@@ -121,7 +132,7 @@ pub fn resolve(cfg: &CurrentFactResolverConfig, candidates: Vec<ScoredMemory>) -
     let mut kept: Vec<ScoredMemory> = without_key;
     let mut superseded: Vec<SupersededRecord> = Vec::new();
 
-    for (fact_id, mut group) in groups {
+    for ((fact_id, _), mut group) in groups {
         // Sort newest → oldest. Tie-break by score (higher wins),
         // then by UUID v7 (which is itself time-sortable).
         group.sort_by(|a, b| {
@@ -164,16 +175,16 @@ pub fn resolve(cfg: &CurrentFactResolverConfig, candidates: Vec<ScoredMemory>) -
     ResolverOutput { kept, superseded }
 }
 
-fn extract_fact_id(m: &ScoredMemory, fact_key: &str) -> Option<String> {
+fn extract_fact_id(m: &ScoredMemory, fact_key: &str) -> Option<FactIdentity> {
     let v = m.metadata.get(fact_key)?;
     if let Some(s) = v.as_str() {
-        return Some(s.to_string());
+        return Some((s.to_string(), FactIdKind::Text));
     }
     if let Some(n) = v.as_i64() {
-        return Some(n.to_string());
+        return Some((n.to_string(), FactIdKind::Integer));
     }
     if let Some(b) = v.as_bool() {
-        return Some(b.to_string());
+        return Some((b.to_string(), FactIdKind::Boolean));
     }
     None
 }
@@ -316,5 +327,131 @@ mod tests {
         let out = resolve(&cfg, vec![older, newer]);
         assert_eq!(out.kept.len(), 1);
         assert_eq!(out.kept[0].content, "newer");
+    }
+
+    // Regression coverage for the type-sensitive identity policy confirmed in #203.
+    fn typed_hit(id: u128, fact: serde_json::Value, time: &str, score: f32) -> ScoredMemory {
+        ScoredMemory {
+            id: Uuid::from_u128(id),
+            content: format!("synthetic-{id}"),
+            agent_id: "test".to_string(),
+            memory_type: MemoryType::Episodic,
+            scope: Scope::Private,
+            importance: 0.5,
+            tags: vec![],
+            metadata: json!({ "fact_id": fact }),
+            score,
+            access_count: 0,
+            created_at: time.to_string(),
+            updated_at: time.to_string(),
+            score_breakdown: None,
+        }
+    }
+
+    #[test]
+    fn different_json_types_with_equal_text_remain_separate_facts() {
+        for (left, right) in [
+            (json!(42), json!("42")),
+            (json!(true), json!("true")),
+            (json!(false), json!("false")),
+        ] {
+            for reverse in [false, true] {
+                for include_chain in [false, true] {
+                    let a = typed_hit(1, left.clone(), "2026-05-22T08:00:00Z", 0.9);
+                    let b = typed_hit(2, right.clone(), "2026-05-22T09:00:00Z", 0.5);
+                    let expected = serde_json::to_value(vec![a.clone(), b.clone()]).unwrap();
+                    let mut candidates: Vec<ScoredMemory> =
+                        serde_json::from_value(expected.clone()).unwrap();
+                    if reverse {
+                        candidates.reverse();
+                    }
+                    let mut cfg = CurrentFactResolverConfig::new("fact_id");
+                    cfg.include_supersession_chain = include_chain;
+                    let out = resolve(&cfg, candidates);
+                    assert_eq!(serde_json::to_value(&out.kept).unwrap(), expected);
+                    assert!(out.superseded.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn supersession_stays_inside_each_json_identity_type() {
+        let cfg = CurrentFactResolverConfig::new("fact_id").with_supersession_chain();
+        let out = resolve(
+            &cfg,
+            vec![
+                typed_hit(1, json!(42), "2026-05-22T08:00:00Z", 0.9),
+                typed_hit(2, json!(42), "2026-05-22T09:00:00Z", 0.5),
+                typed_hit(3, json!("42"), "2026-05-22T07:00:00Z", 0.8),
+                typed_hit(4, json!("42"), "2026-05-22T10:00:00Z", 0.4),
+            ],
+        );
+        assert_eq!(
+            out.kept.iter().map(|m| m.id.as_u128()).collect::<Vec<_>>(),
+            vec![2, 4]
+        );
+        let mut links: Vec<_> = out
+            .superseded
+            .iter()
+            .map(|s| (s.id.as_u128(), s.superseded_by.as_u128()))
+            .collect();
+        links.sort();
+        assert_eq!(links, vec![(1, 2), (3, 4)]);
+        assert!(out.superseded.iter().all(|s| s.fact_id == "42"));
+    }
+
+    #[test]
+    fn noncolliding_equal_score_groups_keep_legacy_lexical_order() {
+        let cfg = CurrentFactResolverConfig::new("fact_id");
+        let candidates = vec![
+            typed_hit(4, json!(true), "2026-05-22T08:00:00Z", 0.5),
+            typed_hit(2, json!(2), "2026-05-22T08:00:00Z", 0.5),
+            typed_hit(3, json!("apple"), "2026-05-22T08:00:00Z", 0.5),
+            typed_hit(1, json!(10), "2026-05-22T08:00:00Z", 0.5),
+        ];
+        let out = resolve(&cfg, candidates);
+        assert_eq!(
+            out.kept.iter().map(|m| m.id.as_u128()).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
+        assert!(out.superseded.is_empty());
+    }
+
+    #[test]
+    fn unsupported_fact_value_types_continue_to_pass_through() {
+        let cfg = CurrentFactResolverConfig::new("fact_id").with_supersession_chain();
+        for value in [
+            json!(null),
+            json!([]),
+            json!({}),
+            json!(1.5),
+            json!(u64::MAX),
+        ] {
+            let a = typed_hit(1, value.clone(), "2026-05-22T08:00:00Z", 0.9);
+            let b = typed_hit(2, value, "2026-05-22T09:00:00Z", 0.5);
+            let expected = serde_json::to_value(vec![a.clone(), b.clone()]).unwrap();
+            let out = resolve(&cfg, vec![a, b]);
+            assert_eq!(serde_json::to_value(out.kept).unwrap(), expected);
+            assert!(out.superseded.is_empty());
+        }
+    }
+
+    #[test]
+    fn equal_boolean_fact_ids_still_resolve_to_the_newest_record() {
+        let cfg = CurrentFactResolverConfig::new("fact_id").with_supersession_chain();
+        let out = resolve(
+            &cfg,
+            vec![
+                typed_hit(1, json!(true), "2026-05-22T08:00:00Z", 0.9),
+                typed_hit(2, json!(true), "2026-05-22T09:00:00Z", 0.5),
+            ],
+        );
+        assert_eq!(out.kept.len(), 1);
+        assert_eq!(out.kept[0].id, Uuid::from_u128(2));
+        assert_eq!(out.superseded.len(), 1);
+        assert_eq!(out.superseded[0].id, Uuid::from_u128(1));
+        assert_eq!(out.superseded[0].superseded_by, Uuid::from_u128(2));
+        assert_eq!(out.superseded[0].fact_id, "true");
     }
 }
